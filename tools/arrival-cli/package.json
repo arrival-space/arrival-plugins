@@ -1,0 +1,25 @@
+{
+  "name": "arrival-cli",
+  "version": "1.0.0",
+  "description": "Interactive CLI for Arrival.Space development",
+  "main": "index.js",
+  "bin": {
+    "arrival-cli": "./index.js"
+  },
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": [
+    "arrival.space",
+    "playcanvas",
+    "cli",
+    "debug",
+    "development"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "commander": "^11.0.0",
+    "ws": "^8.14.0"
+  }
+}

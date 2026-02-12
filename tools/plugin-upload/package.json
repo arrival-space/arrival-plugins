@@ -1,0 +1,23 @@
+{
+    "name": "plugin-upload",
+    "version": "1.0.0",
+    "description": "Upload or update Arrival.Space plugins via the REST API",
+    "main": "index.js",
+    "bin": {
+        "plugin-upload": "./index.js"
+    },
+    "scripts": {
+        "start": "node index.js"
+    },
+    "keywords": [
+        "arrival.space",
+        "plugin",
+        "upload",
+        "cli"
+    ],
+    "author": "",
+    "license": "MIT",
+    "dependencies": {
+        "commander": "^11.0.0"
+    }
+}
