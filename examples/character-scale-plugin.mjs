@@ -7,7 +7,8 @@
  */
 
 export class CharacterScalePlugin extends ArrivalScript {
-    
+    static scriptName = 'Character Scale';
+
     // ═══════════════════════════════════════════════════════════
     // PROPERTIES (shown in editor UI)
     // ═══════════════════════════════════════════════════════════

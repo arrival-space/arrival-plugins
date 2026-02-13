@@ -9,7 +9,7 @@
  * - Number properties with min/max → shows sliders in UI
  */
 export class SoundTrigger extends ArrivalScript {
-    static scriptName = 'soundTrigger';
+    static scriptName = 'Sound Trigger';
     
     // Properties
     soundUrl = "";
@@ -32,7 +32,7 @@ export class SoundTrigger extends ArrivalScript {
         if (!this.soundUrl) return;
         
         // Find camera (player position)
-        const camera = this.find('Camera');
+        const camera = ArrivalSpace.getCamera();
         if (!camera) return;
         
         const playerPos = camera.getPosition();
