@@ -5,7 +5,7 @@
  */
 export class InfoPanel extends ArrivalScript {
     static scriptName = "Dynamic Iframe UI";
-    static description = "Interactive iframe-based 3D UI with real button events, text input, and live state updates.";
+    static description = "Interactive iframe-based 3D UI with real button events, text input, and live animated state updates.";
 
     panelWidth = 2;
     panelHeight = 1;
@@ -21,10 +21,13 @@ export class InfoPanel extends ArrivalScript {
 
     _panel = null;
     _clockTimer = null;
+    _signalTimer = null;
     _clickCount = 0;
     _altAccent = false;
     _panelYaw = 0;
     _spinRemaining = 0;
+    _signalPhase = 0;
+    _sweepAngle = 0;
 
     initialize() {
         this.rebuildPanel();
@@ -34,6 +37,10 @@ export class InfoPanel extends ArrivalScript {
         if (this._clockTimer) {
             clearInterval(this._clockTimer);
             this._clockTimer = null;
+        }
+        if (this._signalTimer) {
+            clearInterval(this._signalTimer);
+            this._signalTimer = null;
         }
 
         if (!this._panel) return;
@@ -76,8 +83,55 @@ export class InfoPanel extends ArrivalScript {
         ">
             <h2 style="margin:0;color:#93c5fd;font-size:24px;">Dynamic Iframe UI</h2>
             <p style="margin:0;line-height:1.35;opacity:.92;">
-                Real HTML events and input fields in 3D space.
+                Real HTML events, input fields, and live animated widgets in 3D space.
             </p>
+
+            <div style="display:flex;gap:12px;align-items:center;">
+                <div id="iframeUiRadar" style="
+                    position:relative;width:84px;height:84px;border-radius:999px;
+                    border:1px solid rgba(96,165,250,.45);
+                    background:radial-gradient(circle at 50% 50%, rgba(59,130,246,.22), rgba(17,24,39,.75) 70%);
+                    overflow:hidden;flex-shrink:0;
+                ">
+                    <div style="position:absolute;inset:14px;border-radius:999px;border:1px solid rgba(147,197,253,.25);"></div>
+                    <div style="position:absolute;inset:28px;border-radius:999px;border:1px solid rgba(147,197,253,.18);"></div>
+                    <div id="iframeUiSweep" style="
+                        position:absolute;left:50%;bottom:50%;
+                        width:2px;height:36px;transform:translateX(-50%) rotate(0deg);
+                        transform-origin:50% 100%;
+                        background:linear-gradient(to top, rgba(16,185,129,.95), rgba(16,185,129,.1));
+                    "></div>
+                    <div id="iframeUiTarget" style="
+                        position:absolute;left:50%;top:50%;width:8px;height:8px;
+                        transform:translate(-50%,-50%);border-radius:999px;
+                        background:#fbbf24;box-shadow:0 0 10px rgba(251,191,36,.75);
+                    "></div>
+                    <div style="
+                        position:absolute;left:50%;top:50%;width:8px;height:8px;
+                        transform:translate(-50%,-50%);border-radius:999px;
+                        background:#34d399;
+                    "></div>
+                </div>
+                <div style="flex:1;">
+                    <div style="font-size:12px;opacity:.85;margin-bottom:6px;">Live Signal</div>
+                    <div style="display:flex;justify-content:space-between;font-size:11px;opacity:.82;margin-bottom:6px;">
+                        <span id="iframeUiBearing">Bearing --°</span>
+                        <span id="iframeUiRange">Range --m</span>
+                    </div>
+                    <div id="iframeUiBars" style="display:flex;align-items:flex-end;gap:4px;height:58px;">
+                        <div data-bar style="flex:1;height:14px;border-radius:999px;background:#22d3ee;"></div>
+                        <div data-bar style="flex:1;height:20px;border-radius:999px;background:#22d3ee;"></div>
+                        <div data-bar style="flex:1;height:26px;border-radius:999px;background:#22d3ee;"></div>
+                        <div data-bar style="flex:1;height:18px;border-radius:999px;background:#22d3ee;"></div>
+                        <div data-bar style="flex:1;height:30px;border-radius:999px;background:#22d3ee;"></div>
+                        <div data-bar style="flex:1;height:16px;border-radius:999px;background:#22d3ee;"></div>
+                        <div data-bar style="flex:1;height:24px;border-radius:999px;background:#22d3ee;"></div>
+                        <div data-bar style="flex:1;height:22px;border-radius:999px;background:#22d3ee;"></div>
+                        <div data-bar style="flex:1;height:28px;border-radius:999px;background:#22d3ee;"></div>
+                        <div data-bar style="flex:1;height:19px;border-radius:999px;background:#22d3ee;"></div>
+                    </div>
+                </div>
+            </div>
 
             <div style="display:flex;gap:10px;font-size:13px;opacity:.9;">
                 <span>Clicks: <strong id="iframeUiCount">0</strong></span>
@@ -117,6 +171,25 @@ export class InfoPanel extends ArrivalScript {
         `.trim();
     }
 
+    getPlayerScanData() {
+        if (!this._panel) return null;
+
+        const camera = ArrivalSpace.getCamera ? ArrivalSpace.getCamera() : this.app.root.findByName("Camera");
+        if (!camera) return null;
+
+        const panelPos = this._panel.getPosition();
+        const cameraPos = camera.getPosition();
+        const toPlayer = cameraPos.clone().sub(panelPos);
+        const distance = toPlayer.length();
+        if (distance <= 0.001) return null;
+
+        const worldAngle = Math.atan2(toPlayer.x, toPlayer.z) * (180 / Math.PI);
+        const panelYaw = this._panel.getEulerAngles().y;
+        const localAngle = (worldAngle - panelYaw + 360) % 360;
+
+        return { angle: localAngle, distance };
+    }
+
     bindPanelEvents() {
         const root = this._panel?._iframePlane?.htmlElement;
         if (!root) return;
@@ -129,6 +202,11 @@ export class InfoPanel extends ArrivalScript {
         const countBtn = root.querySelector("#iframeUiCountBtn");
         const themeBtn = root.querySelector("#iframeUiThemeBtn");
         const spinBtn = root.querySelector("#iframeUiSpinBtn");
+        const sweepEl = root.querySelector("#iframeUiSweep");
+        const targetEl = root.querySelector("#iframeUiTarget");
+        const bearingEl = root.querySelector("#iframeUiBearing");
+        const rangeEl = root.querySelector("#iframeUiRange");
+        const barEls = Array.from(root.querySelectorAll("[data-bar]"));
 
         const refreshClock = () => {
             if (!clockEl) return;
@@ -137,6 +215,47 @@ export class InfoPanel extends ArrivalScript {
 
         refreshClock();
         this._clockTimer = setInterval(refreshClock, 1000);
+
+        const updateSignal = () => {
+            this._signalPhase += 0.28;
+            const scanData = this.getPlayerScanData();
+            const targetAngle = scanData ? scanData.angle : this._sweepAngle;
+            const deltaToTarget = ((targetAngle - this._sweepAngle + 540) % 360) - 180;
+            this._sweepAngle = (this._sweepAngle + deltaToTarget * 0.2 + 360) % 360;
+
+            if (bearingEl) {
+                bearingEl.textContent = scanData ? `Bearing ${Math.round(targetAngle)}°` : "Bearing --°";
+            }
+            if (rangeEl) {
+                rangeEl.textContent = scanData ? `Range ${scanData.distance.toFixed(1)}m` : "Range --m";
+            }
+
+            if (sweepEl) {
+                sweepEl.style.transform = `translateX(-50%) rotate(${this._sweepAngle}deg)`;
+            }
+            if (targetEl) {
+                const radius = 30;
+                const rad = (targetAngle * Math.PI) / 180;
+                const x = Math.sin(rad) * radius;
+                const y = -Math.cos(rad) * radius;
+                targetEl.style.left = `calc(50% + ${x.toFixed(1)}px)`;
+                targetEl.style.top = `calc(50% + ${y.toFixed(1)}px)`;
+                targetEl.style.opacity = scanData ? "1" : "0.35";
+            }
+
+            for (let i = 0; i < barEls.length; i += 1) {
+                const bar = barEls[i];
+                const wave = (Math.sin(this._signalPhase + i * 0.55) + 1) * 0.5;
+                const wobble = (Math.sin(this._signalPhase * 0.33 + i * 1.1) + 1) * 0.5;
+                const lockStrength = 1 - Math.min(Math.abs(deltaToTarget) / 180, 1);
+                const h = Math.round(10 + wave * (24 + lockStrength * 14) + wobble * 8);
+                bar.style.height = `${h}px`;
+                bar.style.opacity = `${0.45 + wave * 0.55}`;
+                bar.style.background = lockStrength > 0.7 ? "#34d399" : "#22d3ee";
+            }
+        };
+        updateSignal();
+        this._signalTimer = setInterval(updateSignal, 50);
 
         if (countBtn) {
             countBtn.onclick = () => {
