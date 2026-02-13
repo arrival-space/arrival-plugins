@@ -1,21 +1,18 @@
 /**
  * Snowfall Particle Plugin - Configurable snow effect using PlayCanvas particle system
  *
- * Load it using: await this.loadPlugin('path/to/snowfall.mjs');
- *
  * Features demonstrated:
  * - PlayCanvas particle system with tunable curves
  * - Procedural default texture (soft radial gradient)
- * - Custom texture loading via ArrivalPluginUtils
- * - Live property updates in update() loop
+ * - Custom texture loading via ArrivalSpace.loadTexture()
+ * - Live property updates via onPropertyChanged()
  * - Hex color string (snowColor) → color picker in UI
  * - Vec3 property (windDirection) → X/Y/Z inputs
  *
  * Properties:
  * - numParticles: Max simulated particles (100-5000)
- * - rate / rate2: Min/max spawn interval in seconds
  * - lifetime: Particle lifespan in seconds
- * - emitterWidth / emitterDepth / emitterHeight: Box emitter dimensions
+ * - emitterWidth / emitterDepth: Box emitter dimensions
  * - snowColor: Particle tint (#hex → color picker)
  * - opacity: Max alpha (0-1)
  * - particleSizeMin / particleSizeMax: Size range
@@ -27,10 +24,7 @@
  * - rotationSpeed: Particle spin in degrees/second
  */
 
-// Get utilities - available globally after pluginUtils.mjs is loaded
-const { loadTexture } = window.ArrivalPluginUtils || {};
-
-export class Snowfall extends pc.Script {
+export class Snowfall extends ArrivalScript {
     static scriptName = "snowfall";
 
     // Public properties - configurable in UI
@@ -53,12 +47,10 @@ export class Snowfall extends pc.Script {
     textureUrl = "https://dzrmwng2ae8bq.cloudfront.net/42485456/10d5001cb6a87179478df46a32bb03059f8da3334b6f4de83e16c5c8d98b8890_52-snowflake-png-image.png";
     rotationSpeed = 50;
     followCamera = true;
-    
-    
 
     // Optional UI hints
     static properties = {
-        numParticles: { title: "Particle Count", min: 10, max: 16384  },
+        numParticles: { title: "Particle Count", min: 10, max: 16384 },
         lifetime: { title: "Lifetime (s)", min: 1, max: 100 },
         emitterWidth: { title: "Emitter Width", min: 1, max: 100 },
         emitterDepth: { title: "Emitter Depth", min: 1, max: 100 },
@@ -88,27 +80,7 @@ export class Snowfall extends pc.Script {
     _isLoadingTexture = false;
     _debugTexture = null;
     _lastDebug = false;
-
-    // Cached previous values for change detection
-    _lastNumParticles = 0;
-    _lastLifetime = 0;
-    _lastEmitterWidth = 0;
-    _lastEmitterDepth = 0;
-    _lastSpawnHeight = 0;
-    _lastKillHeight = 0;
-    _lastSnowColor = "";
-    _lastOpacity = 0;
-    _lastParticleSizeMin = 0;
-    _lastParticleSizeMax = 0;
-    _lastFallSpeed = 0;
-    _lastWindDirectionX = 0;
-    _lastWindDirectionY = 0;
-    _lastWindDirectionZ = 0;
-    _lastWindStrength = 0;
-    _lastTurbulence = 0;
-    _lastRotationSpeed = 0;
-    _lastAlphaTest = true;
-    _lastAlphaDither = false;
+    _logTimer = 0;
 
     initialize() {
         console.log("Snowfall initialized on entity:", this.entity.name);
@@ -124,46 +96,6 @@ export class Snowfall extends pc.Script {
         if (this.textureUrl) {
             this._loadTexture(this.textureUrl);
         }
-
-        // Snapshot all property values
-        this._snapshotProperties();
-
-        // Cleanup on destroy
-        this.once("destroy", () => {
-            console.log("Snowfall destroyed");
-            if (this._particleEntity) {
-                this._particleEntity.destroy();
-                this._particleEntity = null;
-            }
-            if (this._defaultTexture) {
-                this._defaultTexture.destroy();
-                this._defaultTexture = null;
-            }
-            if (this._debugTexture) {
-                this._debugTexture.destroy();
-                this._debugTexture = null;
-            }
-            if (this._loadedTextureAsset) {
-                this.app.assets.remove(this._loadedTextureAsset);
-                this._loadedTextureAsset.unload();
-                this._loadedTextureAsset = null;
-            }
-            this._loadedTexture = null;
-        });
-
-        this.on("enable", () => {
-            if (this._particleEntity?.particlesystem) {
-                this._particleEntity.enabled = true;
-                this._particleEntity.particlesystem.play();
-            }
-        });
-
-        this.on("disable", () => {
-            if (this._particleEntity?.particlesystem) {
-                this._particleEntity.particlesystem.stop();
-                this._particleEntity.enabled = false;
-            }
-        });
     }
 
     // ───────────────────────────────────────────────
@@ -249,51 +181,23 @@ export class Snowfall extends pc.Script {
         }
         this._loadedTexture = null;
 
-        if (loadTexture) {
-            // Use ArrivalPluginUtils
-            try {
-                const { texture, asset } = await loadTexture(url, {
-                    mipmaps: true,
-                    anisotropy: 4,
-                });
-                this._loadedTexture = texture;
-                this._loadedTextureAsset = asset;
-                this._currentTextureUrl = url;
-                this._applyTexture(texture);
-                console.log("Snowfall: Texture loaded successfully");
-            } catch (err) {
-                console.error("Snowfall: Failed to load texture:", err);
-                this._applyTexture(this._defaultTexture);
-                this._currentTextureUrl = "";
-            }
-        } else {
-            // Manual fallback
-            this._loadTextureManual(url);
+        try {
+            const { texture, asset } = await ArrivalSpace.loadTexture(url, {
+                mipmaps: true,
+                anisotropy: 4,
+            });
+            this._loadedTexture = texture;
+            this._loadedTextureAsset = asset;
+            this._currentTextureUrl = url;
+            this._applyTexture(texture);
+            console.log("Snowfall: Texture loaded successfully");
+        } catch (err) {
+            console.error("Snowfall: Failed to load texture:", err);
+            this._applyTexture(this._defaultTexture);
+            this._currentTextureUrl = "";
         }
 
         this._isLoadingTexture = false;
-    }
-
-    _loadTextureManual(url) {
-        const asset = new pc.Asset("snowflakeTexture", "texture", { url: url });
-
-        asset.on("load", (loadedAsset) => {
-            this._loadedTexture = loadedAsset.resource;
-            this._loadedTextureAsset = loadedAsset;
-            this._currentTextureUrl = url;
-            this._applyTexture(this._loadedTexture);
-            console.log("Snowfall: Texture loaded (manual)");
-        });
-
-        asset.on("error", (err) => {
-            console.error("Snowfall: Failed to load texture (manual):", err);
-            this._applyTexture(this._defaultTexture);
-            this._currentTextureUrl = "";
-            this._isLoadingTexture = false;
-        });
-
-        this.app.assets.add(asset);
-        this.app.assets.load(asset);
     }
 
     _applyTexture(texture) {
@@ -326,24 +230,15 @@ export class Snowfall extends pc.Script {
     _buildLocalVelocityCurves() {
         const t = this.turbulence;
 
-        // localVelocity: lower bound of random per-particle velocity
         const localVelocity = new pc.CurveSet([
-            // X: constant negative drift (min)
             [0, -t, 1, -t],
-            // Y: constant downward
             [0, -this.fallSpeed, 1, -this.fallSpeed],
-            // Z: constant negative drift (min)
             [0, -t * 0.7, 1, -t * 0.7],
         ]);
 
-        // localVelocity2: upper bound — each particle picks a random value
-        // between localVelocity and localVelocity2, giving uniform spread
         const localVelocity2 = new pc.CurveSet([
-            // X: constant positive drift (max)
             [0, t, 1, t],
-            // Y: slightly varied downward speed
             [0, -this.fallSpeed * 1.3, 1, -this.fallSpeed * 0.7],
-            // Z: constant positive drift (max)
             [0, t * 0.7, 1, t * 0.7],
         ]);
 
@@ -364,11 +259,9 @@ export class Snowfall extends pc.Script {
     }
 
     _buildScaleGraphs() {
-        // scaleGraph: particle grows slightly then shrinks at end of life
         const scaleGraph = new pc.Curve([0, this.particleSizeMin, 0.1, this.particleSizeMax, 0.8, this.particleSizeMax, 1, this.particleSizeMin * 0.5]);
         scaleGraph.type = pc.CURVE_SMOOTHSTEP;
 
-        // scaleGraph2: variation upper bound
         const scaleGraph2 = new pc.Curve([0, this.particleSizeMax, 0.1, this.particleSizeMax * 1.2, 0.8, this.particleSizeMax * 1.1, 1, this.particleSizeMin]);
         scaleGraph2.type = pc.CURVE_SMOOTHSTEP;
 
@@ -376,7 +269,6 @@ export class Snowfall extends pc.Script {
     }
 
     _buildAlphaGraph() {
-        // Fade in 0-10%, hold, fade out 80-100%
         const alphaGraph = new pc.Curve([0, 0, 0.1, this.opacity, 0.8, this.opacity, 1, 0]);
         alphaGraph.type = pc.CURVE_SMOOTHSTEP;
         return alphaGraph;
@@ -384,7 +276,6 @@ export class Snowfall extends pc.Script {
 
     _buildColorGraph() {
         const rgb = this._hexToRgb(this.snowColor);
-        // Constant color throughout lifetime
         const colorGraph = new pc.CurveSet([
             [0, rgb.r, 1, rgb.r],
             [0, rgb.g, 1, rgb.g],
@@ -421,131 +312,48 @@ export class Snowfall extends pc.Script {
         this.entity.addChild(this._particleEntity);
 
         // Position emitter above the entity
-        // Volume: top = spawnHeight, bottom = killHeight
-        // Center and half-extent keep top/bottom independent of each other
         this._particleEntity.setLocalPosition(0, this.spawnHeight, 0);
 
-        // Auto-calculate rate so the pool stays fully utilized:
-        // rate = lifetime / numParticles (seconds between spawns)
+        // Auto-calculate rate so the pool stays fully utilized
         const num = Math.max(10, Math.floor(this.numParticles));
         const pcRate = Math.max(0.0001, this.lifetime / num);
 
         this._particleEntity.addComponent("particlesystem", {
-            // Emission
             numParticles: num,
             rate: pcRate,
             rate2: pcRate,
             lifetime: this.lifetime,
             emitterShape: pc.EMITTERSHAPE_BOX,
             emitterExtents: new pc.Vec3(this.emitterWidth, 0.5, this.emitterDepth),
-
-            // Wrap — particles that leave the box reappear on the opposite side
             wrap: true,
             wrapBounds: new pc.Vec3(this.emitterWidth, this.spawnHeight - this.killHeight, this.emitterDepth),
-
-            // Orientation
             orientation: pc.PARTICLEORIENTATION_SCREEN,
-
-            // Blending
             blendType: this.alphaTest ? pc.BLEND_NONE : pc.BLEND_NORMAL,
             depthWrite: true,
-            //alphaTest: this.alphaTest ? 0.99 : 0,
-            // Velocity
             localVelocityGraph: localVelocity,
             localVelocityGraph2: localVelocity2,
             velocityGraph: velocityGraph,
-
-            // Scale
             scaleGraph: scaleGraph,
             scaleGraph2: scaleGraph2,
-
-            // Alpha
             alphaGraph: alphaGraph,
-
-            // Color
             colorGraph: colorGraph,
-
-            // Rotation
             startAngle: 0,
             startAngle2: 360,
             rotationSpeedGraph: rotationSpeedGraph,
-
-            // Texture
             colorMap: this._getActiveTexture(),
-
-            // Sorting
             sort: pc.PARTICLESORT_NONE,
-
-            // Lighting
             lighting: false,
             halfLambert: false,
-
-            // Looping
             loop: true,
             preWarm: true,
-
-            // Animation
             animLoop: true,
-
-            // Layer
             layers: [this.app.scene.layers.getLayerByName("Splats").id],
         });
-
-
     }
 
     // ───────────────────────────────────────────────
-    // Property snapshot / change detection
+    // Update curves in-place (no rebuild needed)
     // ───────────────────────────────────────────────
-
-    _snapshotProperties() {
-        this._lastNumParticles = this.numParticles;
-        this._lastLifetime = this.lifetime;
-        this._lastEmitterWidth = this.emitterWidth;
-        this._lastEmitterDepth = this.emitterDepth;
-        this._lastSpawnHeight = this.spawnHeight;
-        this._lastKillHeight = this.killHeight;
-        this._lastSnowColor = this.snowColor;
-        this._lastOpacity = this.opacity;
-        this._lastParticleSizeMin = this.particleSizeMin;
-        this._lastParticleSizeMax = this.particleSizeMax;
-        this._lastFallSpeed = this.fallSpeed;
-        this._lastWindDirectionX = this.windDirection.x;
-        this._lastWindDirectionY = this.windDirection.y;
-        this._lastWindDirectionZ = this.windDirection.z;
-        this._lastWindStrength = this.windStrength;
-        this._lastTurbulence = this.turbulence;
-        this._lastRotationSpeed = this.rotationSpeed;
-        this._lastAlphaTest = this.alphaTest;
-    }
-
-    _needsRebuild() {
-        return (
-            this.numParticles !== this._lastNumParticles ||
-            this.lifetime !== this._lastLifetime ||
-            this.emitterWidth !== this._lastEmitterWidth ||
-            this.emitterDepth !== this._lastEmitterDepth ||
-            this.spawnHeight !== this._lastSpawnHeight ||
-            this.killHeight !== this._lastKillHeight ||
-            this.alphaTest !== this._lastAlphaTest
-        );
-    }
-
-    _needsCurveUpdate() {
-        return (
-            this.snowColor !== this._lastSnowColor ||
-            this.opacity !== this._lastOpacity ||
-            this.particleSizeMin !== this._lastParticleSizeMin ||
-            this.particleSizeMax !== this._lastParticleSizeMax ||
-            this.fallSpeed !== this._lastFallSpeed ||
-            this.windDirection.x !== this._lastWindDirectionX ||
-            this.windDirection.y !== this._lastWindDirectionY ||
-            this.windDirection.z !== this._lastWindDirectionZ ||
-            this.windStrength !== this._lastWindStrength ||
-            this.turbulence !== this._lastTurbulence ||
-            this.rotationSpeed !== this._lastRotationSpeed
-        );
-    }
 
     _updateCurvesInPlace() {
         const ps = this._particleEntity?.particlesystem;
@@ -567,6 +375,48 @@ export class Snowfall extends pc.Script {
     }
 
     // ───────────────────────────────────────────────
+    // Property change handler
+    // ───────────────────────────────────────────────
+
+    onPropertyChanged(name, value, oldValue) {
+        // Structural changes require full rebuild
+        const rebuildProps = ['numParticles', 'lifetime', 'emitterWidth', 'emitterDepth', 'spawnHeight', 'killHeight', 'alphaTest'];
+        if (rebuildProps.includes(name)) {
+            this._buildParticleSystem();
+            return;
+        }
+
+        // Texture URL change
+        if (name === 'textureUrl') {
+            if (value) {
+                this._loadTexture(value);
+            } else {
+                if (this._loadedTextureAsset) {
+                    this.app.assets.remove(this._loadedTextureAsset);
+                    this._loadedTextureAsset.unload();
+                    this._loadedTextureAsset = null;
+                }
+                this._loadedTexture = null;
+                this._currentTextureUrl = "";
+                this._applyTexture(this._defaultTexture);
+            }
+            return;
+        }
+
+        // Debug toggle
+        if (name === 'debug') {
+            this._applyTexture(this._getActiveTexture());
+            return;
+        }
+
+        // Cheap curve property changes
+        const curveProps = ['snowColor', 'opacity', 'particleSizeMin', 'particleSizeMax', 'fallSpeed', 'windDirection', 'windStrength', 'turbulence', 'rotationSpeed'];
+        if (curveProps.includes(name)) {
+            this._updateCurvesInPlace();
+        }
+    }
+
+    // ───────────────────────────────────────────────
     // Update loop
     // ───────────────────────────────────────────────
 
@@ -584,52 +434,15 @@ export class Snowfall extends pc.Script {
             }
         }
 
-        // Check for texture URL changes
-        if (this.textureUrl !== this._currentTextureUrl && !this._isLoadingTexture) {
-            if (this.textureUrl) {
-                this._loadTexture(this.textureUrl);
-            } else {
-                // Cleared — revert to default texture
-                if (this._loadedTextureAsset) {
-                    this.app.assets.remove(this._loadedTextureAsset);
-                    this._loadedTextureAsset.unload();
-                    this._loadedTextureAsset = null;
-                }
-                this._loadedTexture = null;
-                this._currentTextureUrl = "";
-                this._applyTexture(this._defaultTexture);
-            }
-        }
-
-        // Structural changes require full rebuild
-        if (this._needsRebuild()) {
-            this._buildParticleSystem();
-            this._snapshotProperties();
-            return;
-        }
-
-        // Cheap property changes update curves in-place
-        if (this._needsCurveUpdate()) {
-            this._updateCurvesInPlace();
-            this._snapshotProperties();
-        }
-
-        // Debug toggle — swap texture
-        if (this.debug !== this._lastDebug) {
-            this._lastDebug = this.debug;
-            this._applyTexture(this._getActiveTexture());
-        }
-
         // Log alive particle count every 2 seconds (only when debug is on)
         if (this.debug) {
-            if (this._logTimer === undefined) this._logTimer = 0;
             this._logTimer += dt;
             if (this._logTimer >= 2) {
                 this._logTimer = 0;
                 const emitter = this._particleEntity?.particlesystem?.emitter;
                 if (emitter && emitter.particleTex) {
                     const stride = emitter.numParticleVerts * 4;
-                    const lifeOffset = 2 * 4 + 3; // life is at row 2, column 3
+                    const lifeOffset = 2 * 4 + 3;
                     const num = emitter.numParticles;
                     let alive = 0;
                     for (let i = 0; i < num; i++) {
@@ -640,5 +453,26 @@ export class Snowfall extends pc.Script {
                 }
             }
         }
+    }
+
+    destroy() {
+        if (this._particleEntity) {
+            this._particleEntity.destroy();
+            this._particleEntity = null;
+        }
+        if (this._defaultTexture) {
+            this._defaultTexture.destroy();
+            this._defaultTexture = null;
+        }
+        if (this._debugTexture) {
+            this._debugTexture.destroy();
+            this._debugTexture = null;
+        }
+        if (this._loadedTextureAsset) {
+            this.app.assets.remove(this._loadedTextureAsset);
+            this._loadedTextureAsset.unload();
+            this._loadedTextureAsset = null;
+        }
+        this._loadedTexture = null;
     }
 }
