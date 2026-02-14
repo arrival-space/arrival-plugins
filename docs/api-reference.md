@@ -316,15 +316,23 @@ Uniformly scale an entity.
 
 #### `ArrivalSpace.getPlayer()`
 
-Get player `CharacterController` entity.
+Get player `CharacterController` entity. Use this for the character's **position** in the world.
+
+**Returns:** `pc.Entity | null`
+
+#### `ArrivalSpace.getPlayerMesh()`
+
+Get the player's avatar mesh entity (`ReadyPlayerMe`) which has the `anim` component.
 
 **Returns:** `pc.Entity | null`
 
 #### `ArrivalSpace.getCamera()`
 
-Get camera entity.
+Get camera entity. Use this for the player's **viewing direction** (heading/yaw).
 
 **Returns:** `pc.Entity | null`
+
+> **3rd-person note:** The camera orbits the player character, so `getCamera().getPosition()` is NOT the character's position. Use `getPlayer()` for position and `getCamera()` for heading.
 
 #### `ArrivalSpace.getUser()`
 
@@ -339,6 +347,193 @@ Capture current camera view and upload screenshot.
 Defaults: `width=1024`, `height=768`
 
 **Returns:** `Promise<{ success: boolean, url?: string, error?: string }>`
+
+---
+
+### Character Animation
+
+#### `ArrivalSpace.setPlayerAnimation(state, url, options?)`
+
+Replace a character animation by loading a GLB and assigning it to an animation state. Pass `null` as the URL to reset to the default animation.
+
+By default, root bone XZ translation is stripped so animations play in place (the character doesn't drift). This is usually what you want since movement is handled by the engine. Pass `{ inPlace: false }` to keep the original root motion.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `state` | `string` | Animation state to replace |
+| `url` | `string \| null` | GLB URL with the animation, or `null` to reset |
+| `options.inPlace` | `boolean` | Strip root bone XZ movement (default: `true`) |
+
+**State names:** `"Idle"`, `"Forward"` (walk), `"Jumping"`, `"Signature1"` through `"Signature4"`
+
+**Returns:** `Promise<boolean>`
+
+```javascript
+// Replace walk animation (root motion stripped automatically)
+await ArrivalSpace.setPlayerAnimation('Forward', 'https://example.com/zombie_walk.glb');
+
+// Keep root motion (character will drift with the animation)
+await ArrivalSpace.setPlayerAnimation('Forward', url, { inPlace: false });
+
+// Reset to default
+await ArrivalSpace.setPlayerAnimation('Forward', null);
+```
+
+### Movement & Animation Speed
+
+By default, movement speed and walk animation speed are **coupled** — slowing down movement also slows the animation proportionally (e.g. walking through mud). Use `setPlayerAnimSpeed` when you need **independent** control over animation playback (e.g. a custom animation that has a different natural cadence).
+
+#### `ArrivalSpace.setPlayerSpeed(multiplier)`
+
+Set the character movement speed multiplier. Affects both physics movement and walk animation speed proportionally — unless `setPlayerAnimSpeed` has been called for that state, in which case animation speed is decoupled.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `multiplier` | `number` | Speed multiplier (`1.0` = default, `0.5` = half speed) |
+
+```javascript
+// Slow everything down (movement + animation) — e.g. mud, slugs
+ArrivalSpace.setPlayerSpeed(0.3);
+
+// Reset
+ArrivalSpace.setPlayerSpeed(1);
+```
+
+#### `ArrivalSpace.setPlayerAnimSpeed(state, speed)`
+
+Set the animation playback speed for a specific state, **decoupled from movement speed**. Once set, the state's animation speed is no longer affected by `setPlayerSpeed` — the override is absolute. Pass `null` to remove the override and re-couple with movement speed.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `state` | `string` | `"Idle"`, `"Forward"`, or `"Jumping"` |
+| `speed` | `number \| null` | Playback speed (`1.0` = normal, `0` = frozen, `2.0` = double), or `null` to remove override |
+
+```javascript
+// Freeze idle pose (e.g. custom idle animation as a static pose)
+ArrivalSpace.setPlayerAnimSpeed('Idle', 0);
+
+// Custom walk animation plays at normal speed, independent of moveSpeed
+ArrivalSpace.setPlayerAnimSpeed('Forward', 1.0);
+
+// Remove override — re-couples with setPlayerSpeed
+ArrivalSpace.setPlayerAnimSpeed('Forward', null);
+```
+
+---
+
+### Avatar Customization
+
+Avatars are built from modular parts. Each part belongs to a **category** and is identified by its **part ID** (a GLB filename from the catalog).
+
+**Catalog files** (JSON with every part ID, thumbnail URL, and description per category):
+- Male: `https://ugc.arrival.space/avatar-parts/catalog.json`
+- Female: `https://ugc.arrival.space/avatar-parts-female/catalog.json`
+
+#### Categories
+
+| Category | Description | Notes |
+|----------|-------------|-------|
+| `body` | Body build/shape | |
+| `head` | Face | |
+| `teeth` | Teeth mesh | |
+| `eyeLeft` | Left eye | |
+| `eyeRight` | Right eye | |
+| `hair` | Hair style | Auto-removed when headwear is set |
+| `glasses` | Eyewear | |
+| `headwear` | Hats, helmets, headgear | Auto-removes hair when set |
+| `facewear` | Masks, scarves, etc. | |
+| `top` | Upper body clothing | |
+| `bottom` | Lower body clothing | |
+| `footwear` | Shoes/boots | |
+
+Part IDs look like `"headwear-5.glb"`, `"hair-12.glb"`, etc. Use `getAvatarCatalog()` to browse all available parts, their IDs, and thumbnail URLs.
+
+#### `ArrivalSpace.getAvatarCatalog(gender?)`
+
+Fetch the full parts catalog. Cached after first call.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `gender` | `string` | `"male"` | `"male"` or `"female"` |
+
+**Returns:** `Promise<{ baseUrl: string, categories: Object } | null>`
+
+Each category contains a `parts` array with `{ id, name, glbUrl, thumbnailUrl, appearance }`.
+
+```javascript
+const catalog = await ArrivalSpace.getAvatarCatalog();
+const helmets = catalog.categories.headwear.parts;
+console.log(helmets.map(h => h.id)); // ["headwear-1.glb", "headwear-2.glb", ...]
+```
+
+#### `ArrivalSpace.getAvatarConfig()`
+
+Get the current avatar's parts configuration (parts map, tints, gender). Returns `null` if the avatar is not a modular parts-based avatar.
+
+**Returns:** `Promise<{ parts: Object, tints: Object, gender: string } | null>`
+
+```javascript
+const config = await ArrivalSpace.getAvatarConfig();
+// { parts: { body: "C87448.glb", head: "male-face-1.glb", ... },
+//   tints: { skinColor: "C87448", hairColor: "2C1810" },
+//   gender: "male" }
+```
+
+#### `ArrivalSpace.setAvatarParts(partsToSet, options?)`
+
+Change one or more avatar parts and re-render. Changes are **temporary** (visual only, not saved to the user's profile). Set a part to `null` to remove it.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `partsToSet` | `Object` | Map of category to part ID |
+| `options.tints` | `Object` | Override tint colors (`{ skinColor, hairColor }`) |
+| `options.gender` | `string` | Override gender for part resolution |
+
+**Returns:** `Promise<{ ok: boolean, error?: string }>`
+
+```javascript
+// Put on a helmet
+await ArrivalSpace.setAvatarParts({ headwear: 'headwear-5.glb' });
+
+// Change outfit
+await ArrivalSpace.setAvatarParts({ top: 'top-12.glb', bottom: 'bottom-3.glb' });
+
+// Remove headwear
+await ArrivalSpace.setAvatarParts({ headwear: null });
+```
+
+#### `ArrivalSpace.resetAvatar()`
+
+Reset the avatar to the user's saved state. Use this in `destroy()` to cleanly undo all temporary avatar changes (restores hair, original outfit, etc.).
+
+**Returns:** `Promise<boolean>`
+
+```javascript
+// In plugin destroy — restores the user's original avatar
+async destroy() {
+    await ArrivalSpace.resetAvatar();
+}
+```
+
+---
+
+### App UI
+
+#### `ArrivalSpace.setAppUIVisible(visible)`
+
+Show or hide the app's built-in UI (HUD, overlays, name tags, etc.). Useful for immersive experiences that want a clean viewport. Same as pressing the H key.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `visible` | `boolean` | `true` to show, `false` to hide |
+
+```javascript
+// Hide app UI for immersive mode
+ArrivalSpace.setAppUIVisible(false);
+
+// Restore on destroy
+ArrivalSpace.setAppUIVisible(true);
+```
 
 ---
 
