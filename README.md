@@ -22,6 +22,7 @@ export class MyPlugin extends ArrivalScript {
 
 ## Documentation
 
+- [Agent Quickstart](docs/00-agent-quickstart.md) - High-signal coding checklist for LLM/plugin generation
 - [Getting Started](docs/getting-started.md) - Create your first plugin
 - [API Reference](docs/api-reference.md) - ArrivalScript & ArrivalSpace API
 - [Properties](docs/properties.md) - Expose settings in the editor
@@ -33,7 +34,7 @@ export class MyPlugin extends ArrivalScript {
 | Type | Example | UI Component |
 |------|---------|--------------|
 | `number` | `speed = 5` | Numeric slider |
-| `boolean` | `enabled = true` | Toggle switch |
+| `boolean` | `isEnabled = true` | Toggle switch |
 | `string` | `label = "Hello"` | Text field |
 | `color` | `color = "#ff0000"` | Color picker |
 | `vec3` | `pos = { x: 0, y: 1, z: 0 }` | X/Y/Z inputs |
@@ -61,13 +62,23 @@ See [Multiplayer Documentation](docs/multiplayer.md) for details.
 
 | Plugin | Description |
 |--------|-------------|
+| [Annotation Marker](examples/annotation-marker.mjs) | 3D marker with icon and markdown popup panel |
+| [Avatar Animation](examples/avatar-animation.mjs) | Override player idle/walk/jump animations |
+| [Bouncy Box](examples/bouncy-box.mjs) | Simple bouncing motion behavior |
+| [Box Stack](examples/box-stack.mjs) | Physics pyramid of boxes and spheres |
+| [Character Scale](examples/character-scale-plugin.mjs) | Adjust character scale and movement feel |
+| [Dynamic Light](examples/dynamic-light.mjs) | Configurable cone/point light controller |
+| [GLB Model](examples/glb-model.mjs) | Load and attach an external GLB model |
 | [Hello World](examples/hello-world.mjs) | Simplest possible plugin |
-| [Spinning Object](examples/spinning-object.mjs) | Rotation with vec3 control |
-| [Floating Object](examples/floating-object.mjs) | Smooth floating animation |
+| [Info Panel](examples/info-panel.mjs) | Dynamic world-space iframe/UI panel |
+| [NPC Character](examples/npc-character.mjs) | Spawn and control a follower NPC |
+| [Outfit Override](examples/outfit-override.mjs) | Temporarily override avatar outfit parts |
+| [Physics Box](examples/physics-box.mjs) | Basic rigidbody/collision example |
+| [Post Process Volume](examples/post-process-volume.mjs) | Local post-effects blend volume |
+| [Shooter HUD](examples/shooter-hud.mjs) | Game-style HUD overlay example |
+| [Simple Chat](examples/simple-chat.mjs) | Multiplayer chat with `ArrivalSpace.net` |
+| [Snowfall](examples/snowfall.mjs) | Configurable snowfall particle effect |
 | [Sound Trigger](examples/sound-trigger.mjs) | Play sound on proximity |
-| [Model Loader](examples/model-loader.mjs) | Load GLB models dynamically |
-| [Info Panel](examples/info-panel.mjs) | Billboard HTML panel |
-| [Simple Camera Path](examples/camera-path-simple.mjs) | Single-path camera plugin (one plugin entity = one path) |
 
 ## Resources
 
