@@ -22,6 +22,8 @@ export class MyPlugin extends ArrivalScript {
 | `this.localPosition` | `pc.Vec3` | Local position (get/set) |
 | `this.rotation` | `pc.Vec3` | Euler rotation in degrees (get/set) |
 
+Avoid reserved plugin property names such as `enabled`, `app`, and `entity`.
+
 ### Scene Methods
 
 #### `find(name)`
@@ -65,6 +67,28 @@ Temporarily lock/unlock game pointer input while interacting with UI.
 #### `lockKeyboard()` / `unlockKeyboard()`
 
 Temporarily lock/unlock movement keys while typing in UI fields.
+
+### NPC And Param Schema Helpers
+
+#### `createNPC(options?)`
+
+Convenience wrapper for `ArrivalSpace.createNPC(options?)`.
+
+#### `refreshParamSchema()`
+
+Force the host editor to re-read this plugin's parameter schema.
+
+#### `setParamOptions(paramName, options, refresh?)`
+
+Replace dropdown options for a parameter at runtime.
+
+#### `appendParamOptions(paramName, optionsToAdd, refresh?)`
+
+Append deduped dropdown options for a parameter at runtime.
+
+#### `getParamOptions(paramName)`
+
+Get the current dropdown options array for a parameter.
 
 ### Lifecycle Methods
 
@@ -421,6 +445,33 @@ ArrivalSpace.setPlayerAnimSpeed('Forward', null);
 
 ---
 
+### NPC Helpers
+
+#### `ArrivalSpace.createNPC(options?)`
+
+Create a controllable NPC with avatar and animation helpers.
+
+Supports:
+- spawn/transform options (`position`, `rotation`, `scale`, `parent`)
+- avatar setup (`avatarUrl`, `avatarConfig`, `avatarParts`, `avatarGender`)
+- movement tuning (`speed`, `turnSpeed`, `stopDistance`)
+- optional custom animation refs (`animations.idle`, `animations.walk`, `animations.jump`)
+
+**Returns:** `Promise<npcController>`
+
+Common controller methods:
+- `npc.walkTo(target, options?)`
+- `npc.stop()`
+- `npc.lookAt(target)`
+- `npc.setAnimation(state, animationRef, options?)`
+- `npc.applyAvatarConfig(config, renderOptions?)`
+- `npc.setAvatarParts(parts, options?)`
+- `npc.setSpeed(value)`, `npc.setTurnSpeed(value)`, `npc.setStopDistance(value)`
+- `npc.getState()`
+- `npc.destroy()`
+
+---
+
 ### Avatar Customization
 
 Avatars are built from modular parts. Each part belongs to a **category** and is identified by its **part ID** (a GLB filename from the catalog).
@@ -465,6 +516,16 @@ const catalog = await ArrivalSpace.getAvatarCatalog();
 const helmets = catalog.categories.headwear.parts;
 console.log(helmets.map(h => h.id)); // ["headwear-1.glb", "headwear-2.glb", ...]
 ```
+
+#### `ArrivalSpace.getAvatarAnimationCatalog(gender?)`
+
+Fetch available avatar animation keys (for example `walking.glb`, `shooter/rifle_run.glb`).
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `gender` | `string` | `"male"` | `"male"` or `"female"` |
+
+**Returns:** `Promise<string[] | null>`
 
 #### `ArrivalSpace.getAvatarConfig()`
 
@@ -536,6 +597,24 @@ ArrivalSpace.setAppUIVisible(true);
 ```
 
 ---
+
+### Post Effects (Advanced)
+
+For local volume-like effects (see `examples/post-process-volume.mjs`), plugins can use:
+
+- `this.app.customTravelCenter.updatePostEffects(params)`
+
+Typical `params` keys:
+- `toneMapping`
+- `saturation`
+- `contrast`
+- `brightness`
+- `sharpness`
+- `bloomEnabled`
+- `bloomIntensity`
+- `bloomThreshold`
+- `bloomBlurLevel`
+- `gamma`
 
 ### Space Loading
 

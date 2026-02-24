@@ -10,7 +10,7 @@ Simply declare class properties with default values:
 export class MyPlugin extends ArrivalScript {
     
     speed = 5;              // number → slider/input
-    enabled = true;         // boolean → toggle
+    isEnabled = true;       // boolean → toggle
     label = "Hello";        // string → text field
 }
 ```
@@ -109,6 +109,21 @@ static properties = {
 static properties = {
     mode: {
         title: 'Mode',
+        options: ['off', 'low', 'high'], // dropdown
+    }
+};
+```
+
+You can also use labeled options:
+
+```javascript
+static properties = {
+    lightType: {
+        title: 'Light Type',
+        options: [
+            { label: 'Cone', value: 'cone' },
+            { label: 'Point', value: 'point' },
+        ],
     }
 };
 ```
@@ -117,10 +132,33 @@ static properties = {
 
 ```javascript
 static properties = {
-    enabled: {
+    isEnabled: {
         title: 'Enable Effect',
     }
 };
+```
+
+## Reserved Names
+
+Do not use built-in script property names as plugin parameters. In particular, avoid:
+
+- `enabled` (most common issue)
+- `app`
+- `entity`
+
+Use custom names such as `isEnabled`, `featureEnabled`, or `enabledByDefault`.
+
+## Runtime Dropdown Updates
+
+You can update dropdown options dynamically from your script:
+
+```javascript
+async initialize() {
+    const choices = ['', 'walking.glb', 'idle.glb'];
+    this.setParamOptions('idleAnimation', choices, false);
+    this.setParamOptions('walkAnimation', choices, false);
+    this.refreshParamSchema();
+}
 ```
 
 ### For Vec3
@@ -185,7 +223,7 @@ export class MyPlugin extends ArrivalScript {
 }
 ```
 
-**Important:** Without `onPropertyChanged()`, changes only take effect after reload!
+**Important:** Property values update immediately, but `onPropertyChanged()` is where you should handle rebuild/reconfigure work.
 
 ## Complete Example
 
@@ -199,13 +237,13 @@ export class FloatingObject extends ArrivalScript {
     // Properties (shown in editor)
     height = 0.5;
     speed = 2;
-    enabled = true;
+    isEnabled = true;
     
     // Schema for better UI
     static properties = {
         height: { title: 'Float Height', min: 0, max: 5 },
         speed: { title: 'Float Speed', min: 0, max: 10 },
-        enabled: { title: 'Enable Floating' }
+        isEnabled: { title: 'Enable Floating' }
     };
     
     // Private state
@@ -223,7 +261,7 @@ export class FloatingObject extends ArrivalScript {
     }
     
     update(dt) {
-        if (!this.enabled) return;
+        if (!this.isEnabled) return;
         
         this._time += dt;
         

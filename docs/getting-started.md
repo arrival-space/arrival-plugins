@@ -43,16 +43,18 @@ export class MyPlugin extends ArrivalScript {
     // These show up in the editor
     speed = 5;
     height = 1.0;
-    enabled = true;
+    isEnabled = true;
     label = "Hello";
     
     update(dt) {
-        if (this.enabled) {
+        if (this.isEnabled) {
             this.entity.rotate(0, this.speed * dt, 0);
         }
     }
 }
 ```
+
+Avoid reserved property names such as `enabled`, `app`, and `entity`. Use custom names like `isEnabled`.
 
 **Supported property types:**
 - `number` → Slider/input

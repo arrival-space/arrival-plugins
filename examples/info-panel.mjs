@@ -8,7 +8,7 @@ export class InfoPanel extends ArrivalScript {
     static description = "Interactive iframe-based 3D UI with real button events, text input, and live animated state updates.";
 
     panelWidth = 2;
-    panelHeight = 1;
+    panelHeight = 1.5;
     billboard = false;
     offsetY = 1;
 
@@ -24,7 +24,7 @@ export class InfoPanel extends ArrivalScript {
     _signalTimer = null;
     _clickCount = 0;
     _altAccent = false;
-    _panelYaw = 0;
+    _panelYaw = 180;
     _spinRemaining = 0;
     _signalPhase = 0;
     _sweepAngle = 0;

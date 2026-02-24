@@ -460,6 +460,8 @@ doNetworkAction() {
 | `max` | `number` | - | Maximum value |
 | `step` | `number` | - | Value increment |
 | `ui` | `boolean` | `true` | Show in editor |
+| `group` | `string` | - | Editor section/group label |
+| `options` | `array` | - | Dropdown options (`enum`, `choices`, and `values` aliases supported) |
 | `sync` | `boolean` | `false` | Enable network sync |
 | `authority` | `string` | `'any'` | `'any'`, `'owner'`, or `'self'` |
 | `throttle` | `number` | `100` | Min ms between updates |
