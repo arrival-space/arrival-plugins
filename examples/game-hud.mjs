@@ -1,5 +1,5 @@
 /**
- * Shooter HUD — cinematic game-style overlay UI.
+ * Game HUD — cinematic game-style overlay UI.
  * Showcase: getUIContainer(), setAppUIVisible(), HTML overlay, net.getPlayers(),
  *           getPlayer(), getCamera(), click handling, update loop.
  *
@@ -16,8 +16,8 @@
  *
  * Press H in-game to toggle the app UI back if needed.
  */
-export class ShooterHud extends ArrivalScript {
-    static scriptName = 'shooterHud';
+export class GameHud extends ArrivalScript {
+    static scriptName = 'gameHud';
 
     health = 100;
     maxHealth = 100;
@@ -39,8 +39,8 @@ export class ShooterHud extends ArrivalScript {
         const ui = this.getUIContainer();
         ui.innerHTML = `
         <style>
-            #shooter-hud * { box-sizing: border-box; margin: 0; }
-            #shooter-hud {
+            #game-hud * { box-sizing: border-box; margin: 0; }
+            #game-hud {
                 position: fixed; inset: 0;
                 font-family: 'Rajdhani', 'Segoe UI', sans-serif;
                 color: #fff; pointer-events: none;
@@ -179,7 +179,7 @@ export class ShooterHud extends ArrivalScript {
             .sh-flash.active { opacity: 1; }
         </style>
 
-        <div id="shooter-hud">
+        <div id="game-hud">
             <div class="sh-flash js-flash"></div>
 
             <!-- Crosshair -->
