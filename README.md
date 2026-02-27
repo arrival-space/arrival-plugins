@@ -70,6 +70,7 @@ See [Multiplayer Documentation](docs/multiplayer.md) for details.
 | [Dynamic Light](examples/dynamic-light.mjs) | Configurable cone/point light controller |
 | [GLB Model](examples/glb-model.mjs) | Load and attach an external GLB model |
 | [Hello World](examples/hello-world.mjs) | Simplest possible plugin |
+| [Hover Board](examples/hover-board.mjs) | Rideable dynamic board with avatar animation, input, and physics tuning |
 | [Info Panel](examples/info-panel.mjs) | Dynamic world-space iframe/UI panel |
 | [NPC Character](examples/npc-character.mjs) | Spawn and control a follower NPC |
 | [Outfit Override](examples/outfit-override.mjs) | Temporarily override avatar outfit parts |

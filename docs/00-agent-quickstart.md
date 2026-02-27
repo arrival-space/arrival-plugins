@@ -58,6 +58,10 @@ export class MyPlugin extends ArrivalScript {
 - Materials: `ArrivalSpace.createMaterial`
 - Avatar override: `ArrivalSpace.setAvatarParts` and `ArrivalSpace.resetAvatar` in `destroy()`
 - Player animation override: `ArrivalSpace.setPlayerAnimation`, `setPlayerAnimSpeed`, `setPlayerSpeed`
+- Global physics stepping: `ArrivalSpace.setPhysicsStepRate` (world-global, latest call wins)
+- Avatar visual offset: `ArrivalSpace.setPlayerAvatarOffset`
+- Player input hooks: `this.onKeyDown`, `this.onKeyUp`
+- Standing-object detection: `ArrivalSpace.getStandingObject`, `ArrivalSpace.onStandingObjectChanged`
 - NPC behavior: `ArrivalSpace.createNPC`
 - Multiplayer state: `attribute(default, { sync: true, authority: ... })`
 - Multiplayer events: `ArrivalSpace.net.send/on/...`
@@ -80,11 +84,13 @@ export class MyPlugin extends ArrivalScript {
 - Reset temporary global/avatar/player overrides:
   - `ArrivalSpace.resetAvatar()`
   - `ArrivalSpace.setPlayerAnimation(..., null)` where applicable.
+  - `ArrivalSpace.setPlayerAvatarOffset(0, 0, 0)` where applicable.
 
 ## High-Signal Examples
 
 - `examples/npc-character.mjs`: `createNPC`, avatar config, follow logic.
 - `examples/avatar-animation.mjs`: animation override + dynamic dropdown options.
+- `examples/hover-board.mjs`: standing-object hooks, avatar offset, animation triggers, and dynamic physics.
 - `examples/outfit-override.mjs`: avatar parts override + reset.
 - `examples/post-process-volume.mjs`: local post-effects blending.
 - `examples/annotation-marker.mjs`: texture panel UI with interaction.

@@ -21,6 +21,7 @@ export class MyPlugin extends ArrivalScript {
 | `this.position` | `pc.Vec3` | World position (get/set) |
 | `this.localPosition` | `pc.Vec3` | Local position (get/set) |
 | `this.rotation` | `pc.Vec3` | Euler rotation in degrees (get/set) |
+| `this.standingObject` | `pc.Entity \| null` | Entity the local player is currently standing on |
 
 Avoid reserved plugin property names such as `enabled`, `app`, and `entity`.
 
@@ -37,6 +38,61 @@ Find all entities with a specific tag.
 #### `findChild(name)`
 
 Find a child entity by name.
+
+### Player Helpers
+
+#### `setPhysicsStepRate(stepHz, maxSubSteps?)`
+
+Set the global physics simulation step rate for the current world.
+
+This affects the shared physics world, not just this plugin.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `stepHz` | `number` | Physics tick rate in Hz (for example `60`, `120`, `180`) |
+| `maxSubSteps` | `number` | Maximum Bullet substeps per frame (default: `10`) |
+
+**Returns:** `boolean`
+
+#### `setPlayerAvatarOffset(x, y, z)`
+
+Apply a visual local offset to the local player's avatar mesh without affecting physics. This is useful when a custom animation makes the avatar appear too high or too low.
+
+Pass `0, 0, 0` to reset the offset.
+
+#### `onStandingObjectChanged(callback)`
+
+Subscribe to changes in the entity the local player is standing on.
+
+**Callback:** `(currentEntity, previousEntity) => {}`
+
+**Returns:** `Function` unsubscribe function
+
+#### `onceStandingObjectChanged(callback)`
+
+Subscribe once to the next standing-object change.
+
+#### `offStandingObjectChanged(callback)`
+
+Remove a standing-object change listener registered with this script as scope.
+
+### Input Helpers
+
+#### `onKeyDown(key, callback)`
+
+Listen for a keyboard key-down event.
+
+`key` can be a key string such as `"e"` or a PlayCanvas key code.
+
+**Returns:** `Function` unsubscribe function
+
+#### `onKeyUp(key, callback)`
+
+Listen for a keyboard key-up event.
+
+`key` can be a key string such as `"e"` or a PlayCanvas key code.
+
+**Returns:** `Function` unsubscribe function
 
 ### UI Methods
 
@@ -350,6 +406,59 @@ Get the player's avatar mesh entity (`ReadyPlayerMe`) which has the `anim` compo
 
 **Returns:** `pc.Entity | null`
 
+#### `ArrivalSpace.setPhysicsStepRate(stepHz, maxSubSteps?)`
+
+Set the global physics simulation step rate for the current world.
+
+This affects the shared physics world, so if multiple plugins call it, the latest call wins.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `stepHz` | `number` | Physics tick rate in Hz (for example `60`, `120`, `180`) |
+| `maxSubSteps` | `number` | Maximum Bullet substeps per frame (default: `10`) |
+
+**Returns:** `boolean`
+
+```javascript
+// Use the default engine stepping
+ArrivalSpace.setPhysicsStepRate(60, 10);
+
+// Increase stability for demanding physics interactions
+ArrivalSpace.setPhysicsStepRate(120, 10);
+```
+
+#### `ArrivalSpace.setPlayerAvatarOffset(x, y, z)`
+
+Apply a visual local offset to the local player's avatar mesh without affecting physics.
+
+Pass `0, 0, 0` to reset the offset.
+
+**Returns:** `boolean`
+
+#### `ArrivalSpace.getStandingObject()`
+
+Get the entity the local player is currently standing on.
+
+**Returns:** `pc.Entity | null`
+
+#### `ArrivalSpace.onStandingObjectChanged(callback)`
+
+Subscribe to standing-object changes.
+
+**Callback:** `(currentEntity, previousEntity) => {}`
+
+**Returns:** `Function` unsubscribe function
+
+#### `ArrivalSpace.onceStandingObjectChanged(callback)`
+
+Subscribe once to the next standing-object change.
+
+**Returns:** `Function` unsubscribe function
+
+#### `ArrivalSpace.offStandingObjectChanged(callback)`
+
+Remove a standing-object change listener.
+
 #### `ArrivalSpace.getCamera()`
 
 Get camera entity. Use this for the player's **viewing direction** (heading/yaw).
@@ -387,6 +496,7 @@ By default, root bone XZ translation is stripped so animations play in place (th
 | `state` | `string` | Animation state to replace |
 | `url` | `string \| null` | GLB URL with the animation, or `null` to reset |
 | `options.inPlace` | `boolean` | Strip root bone XZ movement (default: `true`) |
+| `options.startTime` | `number` | Start the animation at this time offset in seconds (default: `0`) |
 
 **State names:** `"Idle"`, `"Forward"` (walk), `"Jumping"`, `"Signature1"` through `"Signature4"`
 
@@ -398,6 +508,9 @@ await ArrivalSpace.setPlayerAnimation('Forward', 'https://example.com/zombie_wal
 
 // Keep root motion (character will drift with the animation)
 await ArrivalSpace.setPlayerAnimation('Forward', url, { inPlace: false });
+
+// Start an emote part-way through the clip
+await ArrivalSpace.setPlayerAnimation('Signature1', url, { startTime: 1.25 });
 
 // Reset to default
 await ArrivalSpace.setPlayerAnimation('Forward', null);
