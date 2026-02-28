@@ -3,7 +3,9 @@
  *
  * Spawns a rigid-body vehicle with 4 wheels using Ammo.js
  * btRaycastVehicle. Walk up to it to auto-mount, then drive
- * with WASD. Press F to dismount.
+ * with WASD. Press Esc to dismount. On mobile, the left
+ * virtual stick provides analog steering and throttle, with
+ * a tap-to-exit button.
  */
 export class VehiclePhysics extends ArrivalScript {
     static scriptName = "Vehicle Physics";
@@ -340,12 +342,38 @@ export class VehiclePhysics extends ArrivalScript {
                     transition: opacity 0.25s;
                 }
                 .vehicle-speed.visible { opacity: 1; }
+                .vehicle-exit-btn {
+                    position: fixed;
+                    top: 20px;
+                    right: 20px;
+                    background: rgba(0, 0, 0, 0.5);
+                    color: #fff;
+                    border: 1px solid rgba(255,255,255,0.3);
+                    border-radius: 8px;
+                    padding: 10px 18px;
+                    font: 15px/1.2 sans-serif;
+                    cursor: pointer;
+                    opacity: 0;
+                    pointer-events: none;
+                    transition: opacity 0.25s;
+                    z-index: 100;
+                    -webkit-tap-highlight-color: transparent;
+                }
+                .vehicle-exit-btn.visible { opacity: 1; pointer-events: auto; }
+                .vehicle-exit-btn:active { background: rgba(255,255,255,0.2); }
             </style>
             <div class="vehicle-speed"></div>
             <div class="vehicle-hint"></div>
+            <button class="vehicle-exit-btn">Exit</button>
         `;
         this._hintEl = ui.querySelector(".vehicle-hint");
         this._speedEl = ui.querySelector(".vehicle-speed");
+        this._exitBtn = ui.querySelector(".vehicle-exit-btn");
+        this._exitBtn.addEventListener("pointerdown", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this._dismount();
+        });
     }
 
     _showHint(text) {
@@ -380,7 +408,12 @@ export class VehiclePhysics extends ArrivalScript {
             ArrivalSpace.setPlayerAnimation("Forward", this.rideIdleUrl);
         }
 
-        this._showHint("<kbd>WASD</kbd> drive · <kbd>Space</kbd> brake · <kbd>R</kbd> flip · <kbd>Esc</kbd> exit");
+        if (this.isMobile) {
+            this._showHint("Stick to drive");
+            if (this._exitBtn) this._exitBtn.classList.add("visible");
+        } else {
+            this._showHint("<kbd>WASD</kbd> drive · <kbd>Space</kbd> brake · <kbd>R</kbd> flip · <kbd>Esc</kbd> exit");
+        }
         if (this._speedEl) this._speedEl.classList.add("visible");
 
         // Snap player onto seat immediately
@@ -406,6 +439,7 @@ export class VehiclePhysics extends ArrivalScript {
 
         this._showHint(null);
         if (this._speedEl) this._speedEl.classList.remove("visible");
+        if (this._exitBtn) this._exitBtn.classList.remove("visible");
 
         // Teleport player to the right side of the vehicle
         const player = ArrivalSpace.getPlayer();
@@ -467,6 +501,7 @@ export class VehiclePhysics extends ArrivalScript {
 
     _handleInput(dt) {
         const kb = this.app.keyboard;
+        const stick = this.getLeftStick();
 
         // Dismount
         if (kb.wasPressed(pc.KEY_ESCAPE)) {
@@ -495,23 +530,29 @@ export class VehiclePhysics extends ArrivalScript {
         let targetSteering = 0;
         if (kb.isPressed(pc.KEY_A) || kb.isPressed(pc.KEY_LEFT))  targetSteering =  steerLimit;
         if (kb.isPressed(pc.KEY_D) || kb.isPressed(pc.KEY_RIGHT)) targetSteering = -steerLimit;
+        // Mobile stick steering (analog)
+        if (Math.abs(stick.x) > 0.05) targetSteering = -stick.x * steerLimit;
         this._currentSteering = pc.math.lerp(this._currentSteering, targetSteering, dt * this.steeringSpeed);
         this.setSteering(this._currentSteering);
 
         // Engine / brake
         let engineForce = 0;
         let brakeForce = 0;
-        const throttle = kb.isPressed(pc.KEY_W) || kb.isPressed(pc.KEY_UP);
-        const reverse  = kb.isPressed(pc.KEY_S) || kb.isPressed(pc.KEY_DOWN);
+        const throttle = kb.isPressed(pc.KEY_W) || kb.isPressed(pc.KEY_UP) || stick.y > 0.1;
+        const reverse  = kb.isPressed(pc.KEY_S) || kb.isPressed(pc.KEY_DOWN) || stick.y < -0.1;
         // Forward speed: positive = moving forward
         const fwdSpeed = -this.entity.forward.dot(this.entity.rigidbody.linearVelocity);
         if (throttle) {
             engineForce = this.maxEngineForce;
+            // Analog throttle from stick
+            if (stick.y > 0.1) engineForce *= Math.min(1, stick.y);
         } else if (reverse) {
             if (fwdSpeed > 0.3) {
                 brakeForce = this.maxBrakingForce;
+                if (stick.y < -0.1) brakeForce *= Math.min(1, Math.abs(stick.y));
             } else {
                 engineForce = -this.maxEngineForce * 0.5;
+                if (stick.y < -0.1) engineForce *= Math.min(1, Math.abs(stick.y));
             }
         } else {
             brakeForce = this.idleBrake;

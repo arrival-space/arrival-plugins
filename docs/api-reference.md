@@ -122,7 +122,23 @@ Temporarily lock/unlock game pointer input while interacting with UI.
 
 #### `lockKeyboard()` / `unlockKeyboard()`
 
-Temporarily lock/unlock movement keys while typing in UI fields.
+Temporarily lock/unlock movement keys while typing in UI fields. When locking, any in-progress avatar movement is zeroed out. On mobile, the virtual joystick values remain readable via `getLeftStick()` / `getRightStick()` but avatar movement events are suppressed.
+
+#### `isMobile`
+
+`boolean` — `true` if running on a touch/mobile device.
+
+#### `getLeftStick()`
+
+Get the current left virtual joystick input (movement stick on mobile).
+
+**Returns:** `{ x: number, y: number }` — values from -1 to 1. `x` = left/right (strafe), `y` = forward/back. Returns `{x: 0, y: 0}` on desktop or when no touch is active.
+
+#### `getRightStick()`
+
+Get the current right virtual joystick input (camera stick on mobile).
+
+**Returns:** `{ x: number, y: number }` — raw stick position. Returns `{x: 0, y: 0}` on desktop or when no touch is active.
 
 ### NPC And Param Schema Helpers
 
