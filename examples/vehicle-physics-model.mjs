@@ -630,7 +630,8 @@ export class VehiclePhysicsModel extends ArrivalScript {
 
         // Speed
         const speed = this.entity.rigidbody.linearVelocity.length();
-        if (this._speedEl) this._speedEl.textContent = `${speed.toFixed(1)} m/s`;
+        const kmh = (speed / 0.7) * 3.6;
+        if (this._speedEl) this._speedEl.textContent = `${Math.round(kmh)} km/h`;
 
         // Steering (decays with speed)
         const steerLimit = pc.math.lerp(this.maxSteering, this.minSteering,
