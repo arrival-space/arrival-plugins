@@ -80,7 +80,7 @@ See [Multiplayer Documentation](docs/multiplayer.md) for details.
 | [Simple Chat](examples/simple-chat.mjs) | Multiplayer chat with `ArrivalSpace.net` |
 | [Snowfall](examples/snowfall.mjs) | Configurable snowfall particle effect |
 | [Sound Trigger](examples/sound-trigger.mjs) | Play sound on proximity |
-| [Vehicle Physics](examples/vehicle-physics.mjs) | Driveable vehicle with suspension, engine, and input controls |
+| [Vehicle Physics Model](examples/vehicle-physics-model.mjs) | Driveable vehicle with custom chassis/wheel GLB models, headlights, suspension, and input controls |
 
 ## Resources
 

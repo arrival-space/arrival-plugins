@@ -210,6 +210,16 @@ Current plugin API version string.
 
 Load a GLB/GLTF 3D model.
 
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `parent` | `pc.Entity` | - | Parent entity. Use `this.entity` so the model is auto-destroyed on unload |
+| `name` | `string` | - | Entity name |
+| `scale` | `number` | `1` | Uniform scale |
+| `position` | `{x,y,z}` | - | Local position |
+| `rotation` | `{x,y,z}` | - | Euler rotation |
+
+**Important:** Always parent loaded models and sub-entities to `this.entity` (not `this.app.root`). Children of `this.entity` are automatically destroyed when the plugin is removed. Entities on the scene root will persist as orphans.
+
 **Returns:** `Promise<{ entity: pc.Entity, asset: pc.Asset }>`
 
 #### `ArrivalSpace.loadTexture(url, options?)`
@@ -969,5 +979,7 @@ https://developer.playcanvas.com/api/
 ```javascript
 const box = new pc.Entity("Box");
 box.addComponent("render", { type: "box" });
-this.entity.addChild(box);
+this.entity.addChild(box); // always parent to this.entity for auto-cleanup
 ```
+
+**Note:** Always add sub-entities as children of `this.entity`, not `this.app.root`. Children of your plugin entity are auto-destroyed on unload. `setPosition()` and `setRotation()` set world-space transforms regardless of parent hierarchy, so parenting does not limit positioning.

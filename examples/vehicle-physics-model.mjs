@@ -215,25 +215,15 @@ export class VehiclePhysicsModel extends ArrivalScript {
     // ═════════════════════════════════════════════════════════
 
     async _buildVisuals() {
-        // Clean up orphaned wheels from a previous instance (hot reload)
-        if (this.entity._vpmWheels) {
-            for (const w of this.entity._vpmWheels) {
-                if (w && !w._destroyed) w.destroy();
-            }
-        }
-
         // Chassis model
         await this._loadChassisModel();
 
         // Wheel containers (positioned by physics each frame)
         for (let i = 0; i < 4; i++) {
             const container = new pc.Entity(`Wheel_${i}`);
-            this.app.root.addChild(container);
+            this.entity.addChild(container);
             this._wheelEntities.push(container);
         }
-
-        // Stash on entity so next reload can find them
-        this.entity._vpmWheels = this._wheelEntities;
 
         await this._loadWheelModels();
     }
@@ -889,10 +879,6 @@ export class VehiclePhysicsModel extends ArrivalScript {
         }
         this._wheelModelEntities = [];
 
-        // Wheels are parented to app.root, not this.entity — must destroy manually
-        for (const w of this._wheelEntities) {
-            if (w && !w._destroyed) w.destroy();
-        }
         this._wheelEntities = [];
 
         for (const s of this._shapeEntities) {
