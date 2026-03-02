@@ -64,7 +64,7 @@ export class Snowfall extends ArrivalScript {
         windDirection: { title: "Wind Direction", min: -5, max: 5 },
         windStrength: { title: "Wind Strength", min: 0, max: 5 },
         turbulence: { title: "Turbulence", min: 0, max: 3 },
-        textureUrl: { title: "Texture URL" },
+        textureUrl: { title: "Texture URL", editor: "asset" },
         rotationSpeed: { title: "Rotation Speed", min: 0, max: 360 },
         followCamera: { title: "Follow Camera" },
         alphaTest: { title: "Alpha Test" },

@@ -8,7 +8,7 @@
     modelUrl = "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/main/2.0/Duck/glTF-Binary/Duck.glb";
 
     static properties = {
-        modelUrl: { title: "Model URL" },
+        modelUrl: { title: "Model URL", editor: "asset" },
         modelScale: { title: "Model Scale", min: 0.01, max: 10 },
         rotationSpeed: { title: "Rotation Speed", min: -180, max: 180 },
         bounceHeight: { title: "Bounce Height", min: 0, max: 5 },
