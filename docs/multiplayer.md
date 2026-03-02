@@ -461,11 +461,21 @@ doNetworkAction() {
 | `step` | `number` | - | Value increment |
 | `ui` | `boolean` | `true` | Show in editor |
 | `group` | `string` | - | Editor section/group label |
+| `editor` | `string` | - | UI editor hint, e.g. `'asset'` for upload-backed string params |
 | `options` | `array` | - | Dropdown options (`enum`, `choices`, and `values` aliases supported) |
 | `sync` | `boolean` | `false` | Enable network sync |
 | `authority` | `string` | `'any'` | `'any'`, `'owner'`, or `'self'` |
 | `throttle` | `number` | `100` | Min ms between updates |
 | `onChange` | `string` | - | Callback method name |
+
+Example for an upload-backed string field:
+
+```js
+textureUrl = attribute('', {
+    title: 'Texture',
+    editor: 'asset'
+});
+```
 
 ### `ArrivalSpace.net`
 

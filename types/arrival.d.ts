@@ -163,6 +163,8 @@ interface AttributeOptions {
     ui?: boolean;
     /** UI grouping/section name */
     group?: string;
+    /** UI editor hint (for example: 'asset' for upload-backed string fields) */
+    editor?: string;
     /** Enable network synchronization with automatic late-joiner sync (default: false) */
     sync?: boolean;
     /** Who can modify synced values: 'any' | 'owner' | 'self' (default: 'any') */
