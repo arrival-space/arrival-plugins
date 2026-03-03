@@ -756,6 +756,17 @@ export class VehiclePhysicsModel extends ArrivalScript {
     //  MOTOR API
     // ═════════════════════════════════════════════════════════
 
+    onEntityMoved() {
+        this._spawnPos = this.entity.getPosition().clone();
+        this._spawnRot = this.entity.getRotation().clone();
+
+        if (!this.entity.rigidbody) return;
+
+        this.entity.rigidbody.linearVelocity = pc.Vec3.ZERO;
+        this.entity.rigidbody.angularVelocity = pc.Vec3.ZERO;
+        this.entity.rigidbody.teleport(this._spawnPos, this._spawnRot);
+    }
+
     applyEngineForce(force) {
         if (!this._vehicle) return;
         this._vehicle.applyEngineForce(force, 2);
