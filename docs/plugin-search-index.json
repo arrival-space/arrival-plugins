@@ -1,0 +1,233 @@
+{
+  "version": 1,
+  "updated_at": "2026-03-03",
+  "source": "curated",
+  "total_entries": 29,
+  "entries": [
+    {
+      "path": "README.md",
+      "kind": "readme",
+      "title": "Arrival.Space Plugins",
+      "summary": "Repository overview with quick start guidance, documentation links, supported property types, and the example plugin catalog.",
+      "keywords": ["arrival", "plugins", "plugin repo", "overview", "quick start", "documentation", "examples"]
+    },
+    {
+      "path": "docs/00-agent-quickstart.md",
+      "kind": "doc",
+      "title": "Agent Quickstart",
+      "summary": "High-signal checklist for generating Arrival.Space plugins, including shape, cleanup, property authoring, and example selection.",
+      "keywords": ["agent", "quickstart", "llm", "prompting", "plugin generation", "checklist", "cleanup", "examples"]
+    },
+    {
+      "path": "docs/api-reference.md",
+      "kind": "doc",
+      "title": "API Reference",
+      "summary": "Reference for ArrivalScript lifecycle, ArrivalSpace helpers, model loading, UI, audio, physics, animation, avatars, and plugin management.",
+      "keywords": ["api", "reference", "arrivalscript", "arrivalspace", "methods", "helpers", "physics", "ui", "models"]
+    },
+    {
+      "path": "docs/getting-started.md",
+      "kind": "doc",
+      "title": "Getting Started",
+      "summary": "Step-by-step introduction to creating a first plugin, adding properties, using the API, and understanding lifecycle hooks.",
+      "keywords": ["getting started", "first plugin", "beginner", "intro", "lifecycle", "properties", "tutorial"]
+    },
+    {
+      "path": "docs/multiplayer.md",
+      "kind": "doc",
+      "title": "Multiplayer API",
+      "summary": "Guide to synchronized state and messaging with attribute() and ArrivalSpace.net for real-time multiplayer plugins.",
+      "keywords": ["multiplayer", "networking", "attribute", "sync", "arrivalspace.net", "messages", "real-time"]
+    },
+    {
+      "path": "docs/properties.md",
+      "kind": "doc",
+      "title": "Properties",
+      "summary": "Explains supported property types, static property schema, dynamic options, vec3 fields, and runtime updates in the editor UI.",
+      "keywords": ["properties", "schema", "editor ui", "numbers", "boolean", "string", "color", "vec3"]
+    },
+    {
+      "path": "examples/annotation-marker.mjs",
+      "kind": "example",
+      "title": "Annotation Marker",
+      "summary": "3D marker with an icon and markdown popup content rendered as an in-world panel.",
+      "script_name": "Annotation Marker",
+      "keywords": ["annotation", "marker", "popup", "markdown", "panel", "world-space ui", "label"]
+    },
+    {
+      "path": "examples/avatar-animation.mjs",
+      "kind": "example",
+      "title": "Avatar Animation",
+      "summary": "Overrides player idle, walk, and jump animations using custom GLBs and demonstrates animation speed control.",
+      "script_name": "avatarAnimation",
+      "keywords": ["avatar", "animation", "setplayeranimation", "walk", "idle", "jump", "custom glb", "movement"]
+    },
+    {
+      "path": "examples/bouncy-box.mjs",
+      "kind": "example",
+      "title": "Bouncy Box",
+      "summary": "Simple rotating and bouncing debug box used as a minimal behavior example.",
+      "script_name": "Bouncy Box",
+      "keywords": ["bouncy box", "bounce", "rotation", "debug box", "simple motion", "basic example"]
+    },
+    {
+      "path": "examples/box-stack.mjs",
+      "kind": "example",
+      "title": "Box Stack",
+      "summary": "Builds a physics pyramid of boxes and spheres, showing rigidbody setup and tunable visual parameters.",
+      "script_name": "Box Stack",
+      "keywords": ["physics", "box stack", "pyramid", "boxes", "spheres", "rigidbody", "collision"]
+    },
+    {
+      "path": "examples/character-scale-plugin.mjs",
+      "kind": "example",
+      "title": "Character Scale",
+      "summary": "Adjusts the controlled character's scale and movement feel with an in-world draggable slider UI.",
+      "script_name": "Character Scale",
+      "keywords": ["character scale", "player scale", "avatar scale", "slider", "ui", "movement", "controls"]
+    },
+    {
+      "path": "examples/dynamic-light.mjs",
+      "kind": "example",
+      "title": "Dynamic Light",
+      "summary": "Reusable cone or point light controller with configurable light properties and optional helper visuals.",
+      "script_name": "Dynamic Light",
+      "keywords": ["light", "dynamic light", "spotlight", "point light", "lighting", "emissive", "helper"]
+    },
+    {
+      "path": "examples/game-hud.mjs",
+      "kind": "example",
+      "title": "Game HUD",
+      "summary": "Cinematic game-style HUD overlay that demonstrates app UI visibility, HTML overlays, and player-aware interface state.",
+      "script_name": "gameHud",
+      "keywords": ["hud", "game hud", "overlay", "ui", "html", "app ui", "players", "heads-up display"]
+    },
+    {
+      "path": "examples/glb-model.mjs",
+      "kind": "example",
+      "title": "GLB Model",
+      "summary": "Loads and attaches an external GLB model as a child of the plugin entity.",
+      "script_name": "GLB Model",
+      "keywords": ["glb", "model", "loadglb", "3d model", "attach model", "asset loading"]
+    },
+    {
+      "path": "examples/hello-world.mjs",
+      "kind": "example",
+      "title": "Hello World",
+      "summary": "Smallest possible Arrival.Space plugin showing the basic script shape and lifecycle entry point.",
+      "script_name": "helloWorld",
+      "keywords": ["hello world", "minimal", "basic plugin", "starter", "simple example"]
+    },
+    {
+      "path": "examples/hover-board.mjs",
+      "kind": "example",
+      "title": "Hover Board",
+      "summary": "Rideable hover board with avatar animation hooks, player input handling, standing-object logic, and dynamic physics.",
+      "script_name": "Hover Board",
+      "keywords": ["hover board", "rideable", "vehicle", "standing object", "input", "physics", "avatar animation"]
+    },
+    {
+      "path": "examples/info-panel.mjs",
+      "kind": "example",
+      "title": "Dynamic Iframe UI",
+      "summary": "Dynamic world-space information panel built with createHTMLPanel and iframe or CSS-driven content.",
+      "script_name": "Dynamic Iframe UI",
+      "keywords": ["info panel", "iframe", "html panel", "world-space ui", "dashboard", "panel"]
+    },
+    {
+      "path": "examples/npc-character.mjs",
+      "kind": "example",
+      "title": "NPC Character",
+      "summary": "Spawns an NPC and makes it follow the local player, demonstrating createNPC and avatar setup.",
+      "script_name": "NPC Character",
+      "keywords": ["npc", "character", "createNPC", "follower", "avatar", "ai character", "companion"]
+    },
+    {
+      "path": "examples/outfit-override.mjs",
+      "kind": "example",
+      "title": "Outfit Override",
+      "summary": "Temporarily overrides the player's avatar outfit parts and shows how to restore them on cleanup.",
+      "script_name": "Outfit Override",
+      "keywords": ["outfit", "avatar parts", "setavatarparts", "clothing", "customization", "resetavatar"]
+    },
+    {
+      "path": "examples/physics-box.mjs",
+      "kind": "example",
+      "title": "Physics Box",
+      "summary": "Basic rigidbody and collision example for a simple physics-enabled object.",
+      "script_name": "Physics Box",
+      "keywords": ["physics box", "rigidbody", "collision", "basic physics", "box", "ammo"]
+    },
+    {
+      "path": "examples/post-process-volume.mjs",
+      "kind": "example",
+      "title": "PostProcessVolume",
+      "summary": "Local post-effects blend volume that smoothly overrides room post-processing as the player moves through space.",
+      "script_name": "PostProcessVolume",
+      "keywords": ["post process", "post-processing", "volume", "bloom", "contrast", "brightness", "local effect"]
+    },
+    {
+      "path": "examples/simple-chat.mjs",
+      "kind": "example",
+      "title": "Simple Chat",
+      "summary": "Multiplayer chat example using ArrivalSpace.net messages plus synced values for lightweight shared UI state.",
+      "script_name": "simpleChatPlugin",
+      "keywords": ["chat", "multiplayer chat", "arrivalspace.net", "messages", "sync", "typing indicator", "ui"]
+    },
+    {
+      "path": "examples/snowfall.mjs",
+      "kind": "example",
+      "title": "Snowfall Particle Plugin",
+      "summary": "Configurable snowfall effect built with the PlayCanvas particle system, tunable curves, wind, and custom texture support.",
+      "script_name": "snowfall",
+      "keywords": ["snowfall", "snow", "particle", "particles", "particle system", "playcanvas particles", "weather", "wind"]
+    },
+    {
+      "path": "examples/sound-trigger.mjs",
+      "kind": "example",
+      "title": "Sound Trigger",
+      "summary": "Plays a sound when the player gets close to the object, demonstrating proximity-based audio behavior.",
+      "script_name": "Sound Trigger",
+      "keywords": ["sound", "audio", "proximity", "trigger", "play sound", "distance", "interaction"]
+    },
+    {
+      "path": "examples/splat-fire.mjs",
+      "kind": "example",
+      "title": "Procedural Splats - Fire",
+      "summary": "Animated GSplat fire effect with flame, smoke, and sparks driven by CPU-updated splat data.",
+      "script_name": "Procedural Splats",
+      "keywords": ["splat", "splats", "procedural splats", "fire", "flame", "smoke", "sparks", "gsplat", "effect"]
+    },
+    {
+      "path": "examples/splat-fog.mjs",
+      "kind": "example",
+      "title": "Procedural Splats - Fog",
+      "summary": "Box-shaped volumetric fog volume built from a uniform GSplat lattice with editable size, alpha, and overlap.",
+      "script_name": "Procedural Splats Fog",
+      "keywords": ["splat", "splats", "procedural splats", "fog", "gsplat", "volume", "volumetric", "mist", "effect"]
+    },
+    {
+      "path": "examples/splat-grass.mjs",
+      "kind": "example",
+      "title": "Procedural Splats - Grass",
+      "summary": "Dense procedural grass field made from anisotropic GSplats, with blade height, width, lean, and spawn control.",
+      "script_name": "Procedural Splats Grass",
+      "keywords": ["splat", "splats", "procedural splats", "grass", "foliage", "gsplat", "field", "vegetation", "effect"]
+    },
+    {
+      "path": "examples/vehicle-physics-model.mjs",
+      "kind": "example",
+      "title": "Vehicle Physics Model",
+      "summary": "Driveable Ammo.js vehicle with custom chassis and wheel GLBs, suspension, headlights, and desktop/mobile mount controls.",
+      "script_name": "Vehicle Physics Model",
+      "keywords": ["vehicle", "car", "physics", "ammo", "raycast vehicle", "driveable", "wheels", "headlights", "mount"]
+    },
+    {
+      "path": "types/arrival.d.ts",
+      "kind": "type",
+      "title": "TypeScript Definitions",
+      "summary": "Type definitions for Arrival.Space plugin development, including ArrivalScript, ArrivalSpace, and commonly used PlayCanvas types.",
+      "keywords": ["types", "typescript", "definitions", "arrival.d.ts", "intellisense", "autocomplete", "playcanvas"]
+    }
+  ]
+}
