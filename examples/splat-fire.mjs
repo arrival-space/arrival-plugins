@@ -15,33 +15,33 @@ const TYPE_FLAME = 0;
 const TYPE_SMOKE = 1;
 const TYPE_SPARK = 2;
 
-export class ProceduralSplats extends ArrivalScript {
-    static scriptName = "Procedural Splats";
+export class ProceduralSplatsFire extends ArrivalScript {
+    static scriptName = "Splat Fire";
 
     splatCount = 1400;
     flameHeight = 0.5215000000000006;
     flameRadius = 0.7506249999999998;
     smokeHeight = 2.2;
-    sparkHeight = 4.1225;
+    sparkHeight = 2.0;
     smokeRatio = 0.11000000000000015;
-    sparkRatio = 0.0455;
+    sparkRatio = 0;
     turbulence = 0.24;
     windDirection = { x: 0.25, y: 0, z: 0.1 };
     windStrength = 0;
-    fireSpeed = 0.3599999999999996;
-    brightness = 1;
-    smokeOpacity = 0.7;
-    flameColor = { r: 1, g: 0.72, b: 0.18 };
+    fireSpeed = 0.36;
+    brightness = 1.334;
+    smokeOpacity = 0.391;
+    flameColor = { r: 1, g: 0.811, b: 0.467 };
     smokeColor = { r: 0.22, g: 0.22, b: 0.24 };
     sparkColor = { r: 1, g: 0.35, b: 0.08 };
     flameAlpha = 1;
     smokeAlpha = 1;
     sparkAlpha = 1;
-    flameIntensity = 1;
+    flameIntensity = 1.5;
     smokeIntensity = 1;
-    sparkIntensity = 1;
+    sparkIntensity = 4.30;
     normalLighting = true;
-    normalLightingStrength = 0.9;
+    normalLightingStrength = 0.6;
     useStageDirectionalLight = true;
     lightDirection = { x: 0.3, y: -1, z: 0.2 };
 

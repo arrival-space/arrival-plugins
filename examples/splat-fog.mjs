@@ -8,7 +8,7 @@
 const SH_C0 = 0.28209479177387814;
 
 export class ProceduralSplatsFog extends ArrivalScript {
-    static scriptName = "Procedural Splats Fog";
+    static scriptName = "Splat Fog";
 
     splatCount = 3000;
     volumeSize = { x: 10, y: 5, z: 10 };

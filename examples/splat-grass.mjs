@@ -9,7 +9,7 @@ const SH_C0 = 0.28209479177387814;
 const CENTER_COLLISION_TAG = "procedural-grass-center-collision";
 
 export class ProceduralSplatsGrass extends ArrivalScript {
-    static scriptName = "Procedural Splats Grass";
+    static scriptName = "Splat Grass";
 
     splatCount = 10000;
     planeSize = { x: 6, y:0, z: 6 };
@@ -387,6 +387,19 @@ export class ProceduralSplatsGrass extends ArrivalScript {
     }
 
     onPropertyChanged() {
+        if (!pc.GSplatData || !pc.GSplatResource || !pc.GSplatInstance) {
+            return;
+        }
+
+        if (!this._spawnReady) {
+            this._pendingRebuild = true;
+            return;
+        }
+
+        this._rebuild();
+    }
+
+    onEntityMoved() {
         if (!pc.GSplatData || !pc.GSplatResource || !pc.GSplatInstance) {
             return;
         }
