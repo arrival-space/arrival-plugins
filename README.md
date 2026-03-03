@@ -79,8 +79,24 @@ See [Multiplayer Documentation](docs/multiplayer.md) for details.
 | [Shooter HUD](examples/shooter-hud.mjs) | Game-style HUD overlay example |
 | [Simple Chat](examples/simple-chat.mjs) | Multiplayer chat with `ArrivalSpace.net` |
 | [Snowfall](examples/snowfall.mjs) | Configurable snowfall particle effect |
+| [Splat Snow](examples/splat-snow.mjs) | Flattened GSplat snow cover that raycasts onto collision surfaces |
 | [Sound Trigger](examples/sound-trigger.mjs) | Play sound on proximity |
 | [Vehicle Physics Model](examples/vehicle-physics-model.mjs) | Driveable vehicle with custom chassis/wheel GLB models, headlights, suspension, and input controls |
+
+## MCP Search Index Maintenance
+
+When adding, renaming, or removing example files, also update [docs/plugin-search-index.json](docs/plugin-search-index.json).
+
+- Add or update the matching entry for each new example with:
+  - `path`
+  - `kind`
+  - `title`
+  - `summary`
+  - `script_name` (for examples)
+  - focused `keywords` that describe what someone would search for
+- Keep the metadata concise and based on the actual file contents, not guesses.
+- Remove entries for deleted examples and rename entries when filenames change.
+- Update `total_entries` so it matches the actual number of items in `entries`.
 
 ## Resources
 

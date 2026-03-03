@@ -2,7 +2,7 @@
   "version": 1,
   "updated_at": "2026-03-03",
   "source": "curated",
-  "total_entries": 29,
+  "total_entries": 30,
   "entries": [
     {
       "path": "README.md",
@@ -181,6 +181,14 @@
       "summary": "Configurable snowfall effect built with the PlayCanvas particle system, tunable curves, wind, and custom texture support.",
       "script_name": "snowfall",
       "keywords": ["snowfall", "snow", "particle", "particles", "particle system", "playcanvas particles", "weather", "wind"]
+    },
+    {
+      "path": "examples/splat-snow.mjs",
+      "kind": "example",
+      "title": "Procedural Splats - Snow",
+      "summary": "Flattened GSplat snow cover that raycasts onto collision surfaces and builds soft packed snow clumps instead of round blobs.",
+      "script_name": "Procedural Splats Snow",
+      "keywords": ["splat", "splats", "procedural splats", "snow", "snow cover", "gsplat", "collision", "flattened", "packed snow", "effect"]
     },
     {
       "path": "examples/sound-trigger.mjs",
