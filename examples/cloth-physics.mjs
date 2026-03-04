@@ -13,6 +13,12 @@ export class ClothPhysics extends ArrivalScript {
     collisionMargin = 0.04;
     colliderDistance = 4;
     clothColor = "#d7c6ab";
+    textureUrl = "";
+    normalMapUrl = "";
+    metallicMapUrl = "";
+    specularMapUrl = "";
+    playerProxyHeight = 2.4;
+    playerProxyWidth = 0.15;
 
     static properties = {
         width: { title: "Width", min: 0.5, max: 6, step: 0.1 },
@@ -26,7 +32,13 @@ export class ClothPhysics extends ArrivalScript {
         gravity: { title: "Gravity", min: 0, max: 20, step: 0.1 },
         collisionMargin: { title: "Collision Margin", min: 0.005, max: 0.2, step: 0.005 },
         colliderDistance: { title: "Collider Range", min: 0.5, max: 12, step: 0.1 },
-        clothColor: { title: "Cloth Color" }
+        clothColor: { title: "Cloth Color" },
+        textureUrl: { title: "Texture", editor: "asset" },
+        normalMapUrl: { title: "Normal Map", editor: "asset" },
+        metallicMapUrl: { title: "Metallic Map", editor: "asset" },
+        specularMapUrl: { title: "Specular Map", editor: "asset" },
+        playerProxyHeight: { title: "Player Proxy Height", min: 0.5, max: 3, step: 0.05 },
+        playerProxyWidth: { title: "Player Proxy Width", min: 0.01, max: 2, step: 0.05 }
     };
 
     _worldLayer = null;
@@ -34,6 +46,22 @@ export class ClothPhysics extends ArrivalScript {
     _meshNode = null;
     _meshInstance = null;
     _material = null;
+    _loadedTexture = null;
+    _loadedTextureAsset = null;
+    _currentTextureUrl = "";
+    _isLoadingTexture = false;
+    _loadedNormalMap = null;
+    _loadedNormalMapAsset = null;
+    _currentNormalMapUrl = "";
+    _isLoadingNormalMap = false;
+    _loadedMetallicMap = null;
+    _loadedMetallicMapAsset = null;
+    _currentMetallicMapUrl = "";
+    _isLoadingMetallicMap = false;
+    _loadedSpecularMap = null;
+    _loadedSpecularMapAsset = null;
+    _currentSpecularMapUrl = "";
+    _isLoadingSpecularMap = false;
     _positions = null;
     _normals = null;
     _indices = null;
@@ -84,12 +112,56 @@ export class ClothPhysics extends ArrivalScript {
             return;
         }
 
+        if (name === "textureUrl") {
+            if (value) {
+                this._loadTexture(value);
+            } else {
+                this._disposeLoadedTexture();
+                this._applyTexture(null);
+            }
+            return;
+        }
+
+        if (name === "normalMapUrl") {
+            if (value) {
+                this._loadNormalMap(value);
+            } else {
+                this._disposeLoadedNormalMap();
+                this._applyNormalMap(null);
+            }
+            return;
+        }
+
+        if (name === "metallicMapUrl") {
+            if (value) {
+                this._loadMetallicMap(value);
+            } else {
+                this._disposeLoadedMetallicMap();
+                this._applyMetallicMap(null);
+            }
+            return;
+        }
+
+        if (name === "specularMapUrl") {
+            if (value) {
+                this._loadSpecularMap(value);
+            } else {
+                this._disposeLoadedSpecularMap();
+                this._applySpecularMap(null);
+            }
+            return;
+        }
+
         this._teardownCurtain();
         this._buildCurtain();
     }
 
     destroy() {
         this._teardownCurtain();
+        this._disposeLoadedTexture();
+        this._disposeLoadedNormalMap();
+        this._disposeLoadedMetallicMap();
+        this._disposeLoadedSpecularMap();
     }
 
     _buildCurtain() {
@@ -105,6 +177,30 @@ export class ClothPhysics extends ArrivalScript {
         this._createAnchorBodies();
         this._createNearbyColliders();
         this._updateRenderMesh();
+
+        if (this.textureUrl) {
+            this._loadTexture(this.textureUrl);
+        } else {
+            this._applyTexture(this._loadedTexture);
+        }
+
+        if (this.normalMapUrl) {
+            this._loadNormalMap(this.normalMapUrl);
+        } else {
+            this._applyNormalMap(this._loadedNormalMap);
+        }
+
+        if (this.metallicMapUrl) {
+            this._loadMetallicMap(this.metallicMapUrl);
+        } else {
+            this._applyMetallicMap(this._loadedMetallicMap);
+        }
+
+        if (this.specularMapUrl) {
+            this._loadSpecularMap(this.specularMapUrl);
+        } else {
+            this._applySpecularMap(this._loadedSpecularMap);
+        }
     }
 
     _createPhysicsWorld() {
@@ -150,14 +246,21 @@ export class ClothPhysics extends ArrivalScript {
 
         this._positions = new Float32Array(pointCount * 3);
         this._normals = new Float32Array(pointCount * 3);
+        this._uvs = new Float32Array(pointCount * 2);
         this._indices = [];
         this._topEdgeLocalPoints = [];
 
         for (let y = 0; y <= rows; y++) {
             for (let x = 0; x <= cols; x++) {
+                const vertexIndex = y * (cols + 1) + x;
+
                 if (y === 0) {
                     this._topEdgeLocalPoints.push(this._localGridPoint(x, 0));
                 }
+
+                const uvIndex = vertexIndex * 2;
+                this._uvs[uvIndex] = x / cols;
+                this._uvs[uvIndex + 1] = 1 - (y / rows);
 
                 if (x === cols || y === rows) {
                     continue;
@@ -176,18 +279,32 @@ export class ClothPhysics extends ArrivalScript {
         this._mesh = new pc.Mesh(this.app.graphicsDevice);
         this._mesh.setPositions(this._positions);
         this._mesh.setNormals(this._normals);
+        this._mesh.setUvs(0, this._uvs);
         this._mesh.setIndices(this._indices);
         this._mesh.update(pc.PRIMITIVE_TRIANGLES);
 
         this._material = new pc.StandardMaterial();
         this._material.useLighting = true;
+        this._material.useMetalness = true;
         this._material.cull = pc.CULLFACE_NONE;
         this._material.shininess = 8;
+        this._material.bumpiness = 1;
+        this._material.metalness = 1;
+        this._material.metalnessMapChannel = "r";
+        this._material.gloss = 1;
+        this._material.glossMapChannel = "r";
+        this._material.opacityMapChannel = "a";
+        this._material.alphaTest = 0.05;
         this._applyMaterialColor(this.clothColor);
+        this._applyTexture(this._loadedTexture);
+        this._applyNormalMap(this._loadedNormalMap);
+        this._applyMetallicMap(this._loadedMetallicMap);
+        this._applySpecularMap(this._loadedSpecularMap);
 
         this._meshNode = new pc.GraphNode("ClothPhysicsCurtain");
         this._meshInstance = new pc.MeshInstance(this._mesh, this._material, this._meshNode);
         this._meshInstance.cull = false;
+        this._meshInstance.castShadow = true;
 
         if (this._worldLayer) {
             this._worldLayer.addMeshInstances([this._meshInstance]);
@@ -281,10 +398,13 @@ export class ClothPhysics extends ArrivalScript {
         const entity = collision.entity;
         const entityScale = entity.getScale();
         const maxScale = Math.max(Math.abs(entityScale.x), Math.abs(entityScale.y), Math.abs(entityScale.z));
+        const isPlayer = entity.name === "CharacterController" || !!entity.script?.characterController;
         let shape = null;
         let usesScale = false;
 
-        if (type === "box") {
+        if (isPlayer) {
+            shape = new Ammo.btCapsuleShape(this.playerProxyWidth, this.playerProxyHeight);
+        } else if (type === "box") {
             const halfExtents = collision.halfExtents || new pc.Vec3(0.5, 0.5, 0.5);
             const size = new Ammo.btVector3(
                 Math.max(0.01, halfExtents.x),
@@ -417,9 +537,222 @@ export class ClothPhysics extends ArrivalScript {
         const rgb = this._hexToRgb(hex);
         this._material.diffuse = new pc.Color(rgb.r, rgb.g, rgb.b);
         this._material.emissive = new pc.Color(0, 0, 0);
-        this._material.specular = new pc.Color(0.08, 0.08, 0.08);
+        this._material.specular = new pc.Color(0.5, 0.5, 0.5);
         this._material.opacity = 1;
         this._material.update();
+    }
+
+    async _loadTexture(url) {
+        if (!url || this._isLoadingTexture) {
+            return;
+        }
+
+        if (url === this._currentTextureUrl && this._loadedTexture) {
+            this._applyTexture(this._loadedTexture);
+            return;
+        }
+
+        this._isLoadingTexture = true;
+
+        try {
+            this._disposeLoadedTexture();
+
+            const { texture, asset } = await ArrivalSpace.loadTexture(url, {
+                mipmaps: true,
+                anisotropy: 4
+            });
+
+            this._loadedTexture = texture;
+            this._loadedTextureAsset = asset;
+            this._currentTextureUrl = url;
+            this._applyTexture(texture);
+        } catch (error) {
+            console.error("[ClothPhysics] Failed to load texture:", error);
+            this._currentTextureUrl = "";
+            this._applyTexture(null);
+        }
+
+        this._isLoadingTexture = false;
+    }
+
+    async _loadNormalMap(url) {
+        if (!url || this._isLoadingNormalMap) {
+            return;
+        }
+
+        if (url === this._currentNormalMapUrl && this._loadedNormalMap) {
+            this._applyNormalMap(this._loadedNormalMap);
+            return;
+        }
+
+        this._isLoadingNormalMap = true;
+
+        try {
+            this._disposeLoadedNormalMap();
+
+            const { texture, asset } = await ArrivalSpace.loadTexture(url, {
+                mipmaps: true,
+                anisotropy: 4
+            });
+
+            this._loadedNormalMap = texture;
+            this._loadedNormalMapAsset = asset;
+            this._currentNormalMapUrl = url;
+            this._applyNormalMap(texture);
+        } catch (error) {
+            console.error("[ClothPhysics] Failed to load normal map:", error);
+            this._currentNormalMapUrl = "";
+            this._applyNormalMap(null);
+        }
+
+        this._isLoadingNormalMap = false;
+    }
+
+    async _loadMetallicMap(url) {
+        if (!url || this._isLoadingMetallicMap) {
+            return;
+        }
+
+        if (url === this._currentMetallicMapUrl && this._loadedMetallicMap) {
+            this._applyMetallicMap(this._loadedMetallicMap);
+            return;
+        }
+
+        this._isLoadingMetallicMap = true;
+
+        try {
+            this._disposeLoadedMetallicMap();
+
+            const { texture, asset } = await ArrivalSpace.loadTexture(url, {
+                mipmaps: true,
+                anisotropy: 4
+            });
+
+            this._loadedMetallicMap = texture;
+            this._loadedMetallicMapAsset = asset;
+            this._currentMetallicMapUrl = url;
+            this._applyMetallicMap(texture);
+        } catch (error) {
+            console.error("[ClothPhysics] Failed to load metallic map:", error);
+            this._currentMetallicMapUrl = "";
+            this._applyMetallicMap(null);
+        }
+
+        this._isLoadingMetallicMap = false;
+    }
+
+    async _loadSpecularMap(url) {
+        if (!url || this._isLoadingSpecularMap) {
+            return;
+        }
+
+        if (url === this._currentSpecularMapUrl && this._loadedSpecularMap) {
+            this._applySpecularMap(this._loadedSpecularMap);
+            return;
+        }
+
+        this._isLoadingSpecularMap = true;
+
+        try {
+            this._disposeLoadedSpecularMap();
+
+            const { texture, asset } = await ArrivalSpace.loadTexture(url, {
+                mipmaps: true,
+                anisotropy: 4
+            });
+
+            this._loadedSpecularMap = texture;
+            this._loadedSpecularMapAsset = asset;
+            this._currentSpecularMapUrl = url;
+            this._applySpecularMap(texture);
+        } catch (error) {
+            console.error("[ClothPhysics] Failed to load specular map:", error);
+            this._currentSpecularMapUrl = "";
+            this._applySpecularMap(null);
+        }
+
+        this._isLoadingSpecularMap = false;
+    }
+
+    _applyTexture(texture) {
+        if (!this._material) {
+            return;
+        }
+
+        this._material.diffuseMap = texture || null;
+        this._material.opacityMap = texture || null;
+        this._material.update();
+    }
+
+    _applyNormalMap(texture) {
+        if (!this._material) {
+            return;
+        }
+
+        this._material.normalMap = texture || null;
+        this._material.update();
+    }
+
+    _applyMetallicMap(texture) {
+        if (!this._material) {
+            return;
+        }
+
+        this._material.metalnessMap = texture || null;
+        this._material.update();
+    }
+
+    _applySpecularMap(texture) {
+        if (!this._material) {
+            return;
+        }
+
+        this._material.glossMap = texture || null;
+        this._material.update();
+    }
+
+    _disposeLoadedTexture() {
+        if (this._loadedTextureAsset) {
+            this.app.assets.remove(this._loadedTextureAsset);
+            this._loadedTextureAsset.unload();
+            this._loadedTextureAsset = null;
+        }
+
+        this._loadedTexture = null;
+        this._currentTextureUrl = "";
+    }
+
+    _disposeLoadedNormalMap() {
+        if (this._loadedNormalMapAsset) {
+            this.app.assets.remove(this._loadedNormalMapAsset);
+            this._loadedNormalMapAsset.unload();
+            this._loadedNormalMapAsset = null;
+        }
+
+        this._loadedNormalMap = null;
+        this._currentNormalMapUrl = "";
+    }
+
+    _disposeLoadedMetallicMap() {
+        if (this._loadedMetallicMapAsset) {
+            this.app.assets.remove(this._loadedMetallicMapAsset);
+            this._loadedMetallicMapAsset.unload();
+            this._loadedMetallicMapAsset = null;
+        }
+
+        this._loadedMetallicMap = null;
+        this._currentMetallicMapUrl = "";
+    }
+
+    _disposeLoadedSpecularMap() {
+        if (this._loadedSpecularMapAsset) {
+            this.app.assets.remove(this._loadedSpecularMapAsset);
+            this._loadedSpecularMapAsset.unload();
+            this._loadedSpecularMapAsset = null;
+        }
+
+        this._loadedSpecularMap = null;
+        this._currentSpecularMapUrl = "";
     }
 
     _recalculateNormals() {
