@@ -1,24 +1,25 @@
 export class ClothPhysics extends ArrivalScript {
     static scriptName = "ClothPhysics";
 
-    width = 1.8;
+    width = 2.6;
     height = 2.6;
-    segmentsX = 10;
-    segmentsY = 16;
+    segmentsX = 20;
+    segmentsY = 20;
     clothMass = 1.2;
     clothDamping = 0.04;
     clothFriction = 0.8;
     clothStiffness = 0.9;
     gravity = 9.8;
     collisionMargin = 0.04;
-    colliderDistance = 4;
-    clothColor = "#d7c6ab";
-    textureUrl = "";
-    normalMapUrl = "";
-    metallicMapUrl = "";
-    specularMapUrl = "";
+    colliderDistance = 100;
+    debugFreeze = false;
+    clothColor = "#ffffff";
+    textureUrl = "https://dzrmwng2ae8bq.cloudfront.net/42485456/85f65e96ba99d068545356a3470a78b02e6fd2f7fb6c86091ea88d4844f69970_fabric_curtain_diffuse_red.jpg";
+    normalMapUrl = "https://dzrmwng2ae8bq.cloudfront.net/42485456/df95540322f699e36486696c83c15e2557e47ff643f93ef53e00f2b727d61062_fabric_curtain_normal.jpg";
+    specularMapUrl = "https://dzrmwng2ae8bq.cloudfront.net/42485456/bae7e06285ee7142545a5a879b120ae211cdfc350ec0c885e1e0defcbc2be012_fabric_curtain_metallic.jpg";
+    metalness = 1;
     playerProxyHeight = 2.4;
-    playerProxyWidth = 0.15;
+    playerProxyWidth = 0.2;
 
     static properties = {
         width: { title: "Width", min: 0.5, max: 6, step: 0.1 },
@@ -32,11 +33,12 @@ export class ClothPhysics extends ArrivalScript {
         gravity: { title: "Gravity", min: 0, max: 20, step: 0.1 },
         collisionMargin: { title: "Collision Margin", min: 0.005, max: 0.2, step: 0.005 },
         colliderDistance: { title: "Collider Range", min: 0.5, max: 12, step: 0.1 },
+        debugFreeze: { title: "Debug Freeze" },
         clothColor: { title: "Cloth Color" },
         textureUrl: { title: "Texture", editor: "asset" },
         normalMapUrl: { title: "Normal Map", editor: "asset" },
-        metallicMapUrl: { title: "Metallic Map", editor: "asset" },
         specularMapUrl: { title: "Specular Map", editor: "asset" },
+        metalness: { title: "Metalness", min: 0, max: 1, step: 0.05 },
         playerProxyHeight: { title: "Player Proxy Height", min: 0.5, max: 3, step: 0.05 },
         playerProxyWidth: { title: "Player Proxy Width", min: 0.01, max: 2, step: 0.05 }
     };
@@ -54,10 +56,6 @@ export class ClothPhysics extends ArrivalScript {
     _loadedNormalMapAsset = null;
     _currentNormalMapUrl = "";
     _isLoadingNormalMap = false;
-    _loadedMetallicMap = null;
-    _loadedMetallicMapAsset = null;
-    _currentMetallicMapUrl = "";
-    _isLoadingMetallicMap = false;
     _loadedSpecularMap = null;
     _loadedSpecularMapAsset = null;
     _currentSpecularMapUrl = "";
@@ -88,7 +86,12 @@ export class ClothPhysics extends ArrivalScript {
     _tmpPoint = new pc.Vec3();
 
     initialize() {
-        this._buildCurtain();
+
+        if (this.app.loadTracker?.loadingSpace) {
+            this.app.once("hideLoadingScreen", this._buildCurtain.bind(this));
+        } else {
+            this._buildCurtain();
+        }
     }
 
     update(dt) {
@@ -101,7 +104,9 @@ export class ClothPhysics extends ArrivalScript {
 
         const stepDt = Math.min(dt, 1 / 20);
         const steps = Math.max(1, Math.min(4, Math.ceil(stepDt * 60)));
-        this._dynamicsWorld.stepSimulation(stepDt, steps, stepDt / steps);
+
+        if (!this.debugFreeze) 
+            this._dynamicsWorld.stepSimulation(stepDt, steps, stepDt / steps);
 
         this._updateRenderMesh();
     }
@@ -109,6 +114,11 @@ export class ClothPhysics extends ArrivalScript {
     onPropertyChanged(name, value) {
         if (name === "clothColor") {
             this._applyMaterialColor(value);
+            return;
+        }
+
+        if (name === "metalness") {
+            this._applyMetalness(value);
             return;
         }
 
@@ -132,16 +142,6 @@ export class ClothPhysics extends ArrivalScript {
             return;
         }
 
-        if (name === "metallicMapUrl") {
-            if (value) {
-                this._loadMetallicMap(value);
-            } else {
-                this._disposeLoadedMetallicMap();
-                this._applyMetallicMap(null);
-            }
-            return;
-        }
-
         if (name === "specularMapUrl") {
             if (value) {
                 this._loadSpecularMap(value);
@@ -160,7 +160,6 @@ export class ClothPhysics extends ArrivalScript {
         this._teardownCurtain();
         this._disposeLoadedTexture();
         this._disposeLoadedNormalMap();
-        this._disposeLoadedMetallicMap();
         this._disposeLoadedSpecularMap();
     }
 
@@ -188,12 +187,6 @@ export class ClothPhysics extends ArrivalScript {
             this._loadNormalMap(this.normalMapUrl);
         } else {
             this._applyNormalMap(this._loadedNormalMap);
-        }
-
-        if (this.metallicMapUrl) {
-            this._loadMetallicMap(this.metallicMapUrl);
-        } else {
-            this._applyMetallicMap(this._loadedMetallicMap);
         }
 
         if (this.specularMapUrl) {
@@ -289,16 +282,14 @@ export class ClothPhysics extends ArrivalScript {
         this._material.cull = pc.CULLFACE_NONE;
         this._material.shininess = 8;
         this._material.bumpiness = 1;
-        this._material.metalness = 1;
-        this._material.metalnessMapChannel = "r";
         this._material.gloss = 1;
         this._material.glossMapChannel = "r";
         this._material.opacityMapChannel = "a";
         this._material.alphaTest = 0.05;
         this._applyMaterialColor(this.clothColor);
+        this._applyMetalness(this.metalness);
         this._applyTexture(this._loadedTexture);
         this._applyNormalMap(this._loadedNormalMap);
-        this._applyMetallicMap(this._loadedMetallicMap);
         this._applySpecularMap(this._loadedSpecularMap);
 
         this._meshNode = new pc.GraphNode("ClothPhysicsCurtain");
@@ -313,6 +304,7 @@ export class ClothPhysics extends ArrivalScript {
 
     _createClothBody() {
         const worldInfo = this._dynamicsWorld.getWorldInfo();
+
         const topLeft = this._toWorldPoint(this._localGridPoint(0, 0));
         const topRight = this._toWorldPoint(this._localGridPoint(this._segmentCountX(), 0));
         const bottomLeft = this._toWorldPoint(this._localGridPoint(0, this._segmentCountY()));
@@ -377,6 +369,14 @@ export class ClothPhysics extends ArrivalScript {
                 continue;
             }
 
+            if(!collision.enabled) {
+                continue;
+            }
+
+            if(!collision?.entity?.rigidbody) {
+                continue;
+            }
+
             const pos = collision.entity.getPosition();
             const dx = pos.x - center.x;
             const dy = pos.y - center.y;
@@ -414,9 +414,13 @@ export class ClothPhysics extends ArrivalScript {
             shape = new Ammo.btBoxShape(size);
             Ammo.destroy(size);
             usesScale = true;
+            
         } else if (type === "sphere") {
             shape = new Ammo.btSphereShape(Math.max(0.01, (collision.radius || 0.5) * maxScale));
+            
         } else if (type === "capsule" || type === "cylinder" || type === "cone") {
+            console.log("[ClothPhysics] Unsupported collider type:", type, "for entity", entity);
+
             const radius = collision.radius || 0.25;
             shape = new Ammo.btSphereShape(Math.max(0.01, radius * maxScale));
         } else {
@@ -451,6 +455,12 @@ export class ClothPhysics extends ArrivalScript {
 
         const transform = new Ammo.btTransform();
         transform.setIdentity();
+        const origin = new Ammo.btVector3(worldPoint.x, worldPoint.y, worldPoint.z);
+        const rotation = new Ammo.btQuaternion(0, 0, 0, 1);
+        transform.setOrigin(origin);
+        transform.setRotation(rotation);
+        Ammo.destroy(origin);
+        Ammo.destroy(rotation);
 
         const motionState = new Ammo.btDefaultMotionState(transform);
         const inertia = new Ammo.btVector3(0, 0, 0);
@@ -463,7 +473,6 @@ export class ClothPhysics extends ArrivalScript {
         this._dynamicsWorld.addRigidBody(body, 1, -1);
 
         const proxy = { body, shape, transform, motionState, info, inertia };
-        this._setBodyTransform(body, worldPoint, pc.Quat.IDENTITY);
         return proxy;
     }
 
@@ -565,6 +574,8 @@ export class ClothPhysics extends ArrivalScript {
             this._loadedTexture = texture;
             this._loadedTextureAsset = asset;
             this._currentTextureUrl = url;
+            this._loadedTexture.addressU = pc.ADDRESS_CLAMP_TO_EDGE;
+            this._loadedTexture.addressV = pc.ADDRESS_CLAMP_TO_EDGE;
             this._applyTexture(texture);
         } catch (error) {
             console.error("[ClothPhysics] Failed to load texture:", error);
@@ -598,6 +609,8 @@ export class ClothPhysics extends ArrivalScript {
             this._loadedNormalMap = texture;
             this._loadedNormalMapAsset = asset;
             this._currentNormalMapUrl = url;
+            this._loadedNormalMap.addressU = pc.ADDRESS_CLAMP_TO_EDGE;
+            this._loadedNormalMap.addressV = pc.ADDRESS_CLAMP_TO_EDGE;
             this._applyNormalMap(texture);
         } catch (error) {
             console.error("[ClothPhysics] Failed to load normal map:", error);
@@ -606,39 +619,6 @@ export class ClothPhysics extends ArrivalScript {
         }
 
         this._isLoadingNormalMap = false;
-    }
-
-    async _loadMetallicMap(url) {
-        if (!url || this._isLoadingMetallicMap) {
-            return;
-        }
-
-        if (url === this._currentMetallicMapUrl && this._loadedMetallicMap) {
-            this._applyMetallicMap(this._loadedMetallicMap);
-            return;
-        }
-
-        this._isLoadingMetallicMap = true;
-
-        try {
-            this._disposeLoadedMetallicMap();
-
-            const { texture, asset } = await ArrivalSpace.loadTexture(url, {
-                mipmaps: true,
-                anisotropy: 4
-            });
-
-            this._loadedMetallicMap = texture;
-            this._loadedMetallicMapAsset = asset;
-            this._currentMetallicMapUrl = url;
-            this._applyMetallicMap(texture);
-        } catch (error) {
-            console.error("[ClothPhysics] Failed to load metallic map:", error);
-            this._currentMetallicMapUrl = "";
-            this._applyMetallicMap(null);
-        }
-
-        this._isLoadingMetallicMap = false;
     }
 
     async _loadSpecularMap(url) {
@@ -664,6 +644,8 @@ export class ClothPhysics extends ArrivalScript {
             this._loadedSpecularMap = texture;
             this._loadedSpecularMapAsset = asset;
             this._currentSpecularMapUrl = url;
+            this._loadedSpecularMap.addressU = pc.ADDRESS_CLAMP_TO_EDGE;
+            this._loadedSpecularMap.addressV = pc.ADDRESS_CLAMP_TO_EDGE;
             this._applySpecularMap(texture);
         } catch (error) {
             console.error("[ClothPhysics] Failed to load specular map:", error);
@@ -693,12 +675,12 @@ export class ClothPhysics extends ArrivalScript {
         this._material.update();
     }
 
-    _applyMetallicMap(texture) {
+    _applyMetalness(value) {
         if (!this._material) {
             return;
         }
 
-        this._material.metalnessMap = texture || null;
+        this._material.metalness = value;
         this._material.update();
     }
 
@@ -731,17 +713,6 @@ export class ClothPhysics extends ArrivalScript {
 
         this._loadedNormalMap = null;
         this._currentNormalMapUrl = "";
-    }
-
-    _disposeLoadedMetallicMap() {
-        if (this._loadedMetallicMapAsset) {
-            this.app.assets.remove(this._loadedMetallicMapAsset);
-            this._loadedMetallicMapAsset.unload();
-            this._loadedMetallicMapAsset = null;
-        }
-
-        this._loadedMetallicMap = null;
-        this._currentMetallicMapUrl = "";
     }
 
     _disposeLoadedSpecularMap() {
