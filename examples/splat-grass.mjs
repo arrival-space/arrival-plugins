@@ -11,19 +11,19 @@ const CENTER_COLLISION_TAG = "procedural-grass-center-collision";
 export class ProceduralSplatsGrass extends ArrivalScript {
     static scriptName = "Splat Grass";
 
-    splatCount = 10000;
-    planeSize = { x: 6, y:0, z: 6 };
+    splatCount = 100000;
+    planeSize = { x: 10, y:0, z: 10 };
     grassHeight = 0.07;
     widthScale = 0.22;
     angleVariation = 0.5;
     positionJitter = 1;
-    useSpawnRaycast = false;
-    raycastHeight = 4;
+    useSpawnRaycast = true;
+    raycastHeight = 1;
     raycastDepth = 12;
     overlapScale = 1;
     alpha = 0.38;
-    baseColor = { r: 0.2, g: 0.54, b: 0.12 };
-    tipColor = { r: 0.52, g: 0.82, b: 0.26 };
+    baseColor = { r: 0.058, g: 0.16, b: 0.039 };
+    tipColor = { r: 0.3960, g: 0.6117, b: 0.1058 };
 
     static properties = {
         splatCount: { title: "Splat Count", min: 1, max: 200000 },
