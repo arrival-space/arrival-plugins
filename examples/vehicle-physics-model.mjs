@@ -74,6 +74,8 @@ export class VehiclePhysicsModel extends ArrivalScript {
     seatOffsetX = 0.224;
     seatOffsetY = -0.184;
     seatOffsetZ = -0.016;
+    cameraTargetHeightOffset = -0.3;
+    cameraTargetDistance = 2.7;
     rideIdleUrl = "driving.glb";
 
     static properties = {
@@ -124,6 +126,8 @@ export class VehiclePhysicsModel extends ArrivalScript {
         seatOffsetX:           { title: "Seat Side",              min: -1,   max: 1,   step: 0.05 },
         seatOffsetY:           { title: "Seat Height",            min: -1,   max: 3,   step: 0.05 },
         seatOffsetZ:           { title: "Seat Forward",           min: -1,   max: 1,   step: 0.05 },
+        cameraTargetHeightOffset: { title: "Camera Height Offset", min: -1, max: 2, step: 0.05 },
+        cameraTargetDistance:  { title: "Camera Distance",        min: 0.8,  max: 4,   step: 0.05 },
         rideIdleUrl:           { title: "Ride Idle Animation" },
     };
 
@@ -140,6 +144,7 @@ export class VehiclePhysicsModel extends ArrivalScript {
     _currentSteering = 0;
     _dismountCooldown = 0;
     _hintEl = null;
+    _savedCameraTargetHeightOffset = null;
 
     // Seat back (small upright behind driver)
     static SEAT_HE = [0.18, 0.14, 0.04];
@@ -503,6 +508,11 @@ export class VehiclePhysicsModel extends ArrivalScript {
         // Disable player collision capsule so it doesn't interfere with the vehicle
         ArrivalSpace.setPlayerCollision(false);
 
+        // Apply shared camera target height offset while mounted
+        this._savedCameraTargetHeightOffset = ArrivalSpace.getCameraTargetHeightOffset();
+        ArrivalSpace.setCameraTargetHeightOffset(this.cameraTargetHeightOffset);
+        ArrivalSpace.setCameraTargetDistance(this.cameraTargetDistance);
+
         // Track vehicle yaw for camera sync (atan2 on forward, avoids Euler flips)
         const fwd = this.entity.forward;
         this._lastVehicleYaw = Math.atan2(-fwd.x, -fwd.z) * (180 / Math.PI);
@@ -548,6 +558,11 @@ export class VehiclePhysicsModel extends ArrivalScript {
 
         // Re-enable player collision capsule
         ArrivalSpace.setPlayerCollision(true);
+
+        // Restore previous shared camera target height offset
+        const restoreOffset = this._savedCameraTargetHeightOffset ?? 0;
+        ArrivalSpace.setCameraTargetHeightOffset(restoreOffset);
+        this._savedCameraTargetHeightOffset = null;
 
         // Teleport player to the right side of the vehicle
         const player = ArrivalSpace.getPlayer();
@@ -682,14 +697,14 @@ export class VehiclePhysicsModel extends ArrivalScript {
         if (this._dismountCooldown > 0) this._dismountCooldown -= dt;
 
         // Reset if fallen off the world
-        if (this.entity.getPosition().y < -10) {
+        if (this.entity.getPosition().y < -100) {
             this._resetToSpawn();
         }
 
 
         // Flip upright if tipped on its side
         const up = this.entity.up;
-        if (up.y < 0.17) {
+        if (up.y < 0.0) {
             const pos = this.entity.getPosition();
             const fwd = this.entity.forward;
             const yaw = Math.atan2(-fwd.x, -fwd.z) * (180 / Math.PI);
@@ -790,6 +805,18 @@ export class VehiclePhysicsModel extends ArrivalScript {
     // ═════════════════════════════════════════════════════════
 
     onPropertyChanged(name) {
+        if (name === "cameraTargetHeightOffset") {
+            if (this._mounted) {
+                ArrivalSpace.setCameraTargetHeightOffset(this.cameraTargetHeightOffset);
+            }
+            return;
+        }
+        if (name === "cameraTargetDistance") {
+            if (this._mounted) {
+                ArrivalSpace.setCameraTargetDistance(this.cameraTargetDistance);
+            }
+            return;
+        }
         if (name === "rideIdleUrl") {
             if (this._mounted) {
                 ArrivalSpace.setPlayerAnimation("Idle", this.rideIdleUrl || null);
