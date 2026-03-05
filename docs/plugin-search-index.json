@@ -87,6 +87,14 @@
       "keywords": ["character scale", "player scale", "avatar scale", "slider", "ui", "movement", "controls"]
     },
     {
+      "path": "examples/cloth-physics.mjs",
+      "kind": "example",
+      "title": "Cloth Physics",
+      "summary": "Soft-body curtain example using Ammo.js cloth simulation, top-edge anchors, textured rendering, and nearby collider proxies.",
+      "script_name": "ClothPhysics",
+      "keywords": ["cloth", "curtain", "soft body", "ammo", "physics", "fabric", "anchors", "collisions"]
+    },
+    {
       "path": "examples/dynamic-light.mjs",
       "kind": "example",
       "title": "Dynamic Light",

@@ -94,6 +94,7 @@ export class MyPlugin extends ArrivalScript {
 - `examples/hover-board.mjs`: standing-object hooks, avatar offset, animation triggers, and dynamic physics.
 - `examples/outfit-override.mjs`: avatar parts override + reset.
 - `examples/post-process-volume.mjs`: local post-effects blending.
+- `examples/cloth-physics.mjs`: simple soft-body curtain with Ammo.js cloth simulation, anchored top edge, texture/shadow controls, and nearby collision proxying.
 - `examples/splat-fire.mjs`, `examples/splat-fog.mjs`, `examples/splat-grass.mjs`: procedural GSplat examples for animated fire, volumetric fog, and dense grass using editable effect parameters.
 - `examples/annotation-marker.mjs`: texture panel UI with interaction.
 - `examples/vehicle-physics-model.mjs`: Ammo.js raycast vehicle, compound collision, custom GLB models, headlights, mount/dismount.
