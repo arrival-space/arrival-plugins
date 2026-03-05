@@ -353,6 +353,11 @@ export class ClothPhysics extends ArrivalScript {
     _createAnchorBodies() {
         for (let i = 0; i < this._topEdgeLocalPoints.length; i++) {
             const worldPoint = this._toWorldPoint(this._topEdgeLocalPoints[i]);
+            
+            /// add a small error so cloth falls more naturally instead of perfectly flat at the start
+            worldPoint.z += Math.random() * 0.01 - 0.005;
+            worldPoint.x += Math.random() * 0.01 - 0.005;
+
             const anchor = this._createStaticBoxBody(worldPoint, 0.015);
             this._anchorBodies.push(anchor);
             this._clothBody.appendAnchor(i, anchor.body, true, 1);
