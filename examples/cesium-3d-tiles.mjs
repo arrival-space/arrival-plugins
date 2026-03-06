@@ -513,6 +513,19 @@ export class CesiumTiles extends ArrivalScript {
                 name: `TileMesh_${this._containers.length}`,
             });
 
+            let renderAnchor = ecefCenter;
+            if (!rtcCenter && CesiumTiles.isIdentityLikeMat4(M)) {
+                const glbAnchor = this._extractGlbAnchor(tileEntity);
+                if (glbAnchor) {
+                    renderAnchor = glbAnchor;
+                    const anchorPos = CesiumTiles.xformPoint(
+                        ecefToLocal, renderAnchor.x, renderAnchor.y, renderAnchor.z
+                    );
+                    container.setLocalPosition(anchorPos.x * s, anchorPos.y * s, anchorPos.z * s);
+                    container._cesiumTileData = { pos: anchorPos };
+                }
+            }
+
             // Reset GLB internal ECEF node transforms.
             // Google 3D Tiles bakes ECEF position + Z-up→Y-up rotation into
             // GLB nodes. We strip these and handle positioning/rotation ourselves.
@@ -546,6 +559,23 @@ export class CesiumTiles extends ArrivalScript {
             for (const child of e.children || []) reset(child);
         };
         reset(entity);
+    }
+
+    _extractGlbAnchor(entity) {
+        let anchor = null;
+        const visit = (e) => {
+            if (anchor) return;
+            const p = e.getLocalPosition();
+            const magSq = p.x * p.x + p.y * p.y + p.z * p.z;
+            if (magSq > 1e10) {
+                const r = e.getLocalRotation();
+                anchor = CesiumTiles.rotateVec3ByQuatInverse(p, r);
+                return;
+            }
+            for (const child of e.children || []) visit(child);
+        };
+        visit(entity);
+        return anchor;
     }
 
     /**
@@ -736,6 +766,28 @@ export class CesiumTiles extends ArrivalScript {
 
     static translationMat4(tx, ty, tz) {
         return new Float64Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, tx, ty, tz, 1]);
+    }
+
+    static isIdentityLikeMat4(m, eps = 1e-6) {
+        const id = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+        for (let i = 0; i < 16; i++) {
+            if (Math.abs(m[i] - id[i]) > eps) return false;
+        }
+        return true;
+    }
+
+    static rotateVec3ByQuatInverse(v, q) {
+        const ux = -q.x, uy = -q.y, uz = -q.z, s = q.w;
+        const dot = ux * v.x + uy * v.y + uz * v.z;
+        const crossX = uy * v.z - uz * v.y;
+        const crossY = uz * v.x - ux * v.z;
+        const crossZ = ux * v.y - uy * v.x;
+        const uu = ux * ux + uy * uy + uz * uz;
+        return {
+            x: 2 * dot * ux + (s * s - uu) * v.x + 2 * s * crossX,
+            y: 2 * dot * uy + (s * s - uu) * v.y + 2 * s * crossY,
+            z: 2 * dot * uz + (s * s - uu) * v.z + 2 * s * crossZ,
+        };
     }
 
     /** Multiply two 4x4 column-major matrices: result = a * b */

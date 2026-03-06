@@ -1,10 +1,13 @@
 export class LocalizedLightProbePlugin extends ArrivalScript {
-    static scriptName = "localizedLightProbe";
+    static scriptName = "Light Probe";
 
     probeEnabled = true;
-    radius = 8;
+    radius = 2;
     falloffExponent = 2;
     priority = 0;
+    overridePrimaryLight = true;
+    overrideEnvironment = false;
+    overridePostEffects = false;
     azimuth = 0;
     elevation = -45;
     primaryLightColor = "#ffffff";
@@ -24,25 +27,28 @@ export class LocalizedLightProbePlugin extends ArrivalScript {
 
     static properties = {
         probeEnabled: { title: "Enabled" },
+        debugVolume: { title: "Debug Volume" },
         radius: { title: "Radius", min: 0.1, max: 100, step: 0.1 },
         falloffExponent: { title: "Falloff", min: 0.1, max: 8, step: 0.1 },
         priority: { title: "Priority", min: -100, max: 100, step: 1 },
-        azimuth: { title: "Azimuth", min: -180, max: 180, step: 1 },
-        elevation: { title: "Elevation", min: -89, max: 89, step: 1 },
-        primaryLightColor: { title: "Light Color" },
-        primaryLightIntensity: { title: "Light Intensity", min: 0, max: 20, step: 0.01 },
-        primaryShadowIntensity: { title: "Shadow Intensity", min: 0, max: 1, step: 0.01 },
-        hdrUrl: { title: "HDR URL", editor: "asset" },
-        hdrEncoding: { title: "HDR Encoding" },
-        environmentRotation: { title: "Env Rotation", min: -180, max: 180, step: 1 },
-        environmentIntensity: { title: "Env Intensity", min: 0, max: 20, step: 0.01 },
-        postSaturation: { title: "Saturation", min: 0, max: 3, step: 0.01 },
-        postContrast: { title: "Contrast", min: 0, max: 3, step: 0.01 },
-        postBrightness: { title: "Brightness", min: 0, max: 3, step: 0.01 },
-        postSharpness: { title: "Sharpness", min: 0, max: 3, step: 0.01 },
-        postBloomIntensity: { title: "Bloom Intensity", min: 0, max: 3, step: 0.01 },
-        postBloomThreshold: { title: "Bloom Threshold", min: 0, max: 3, step: 0.01 },
-        debugVolume: { title: "Debug Volume" }
+        overridePrimaryLight: { title: "Override Light" },
+        azimuth: { title: "Azimuth", min: -180, max: 180, step: 1, enabledBy: "overridePrimaryLight" },
+        elevation: { title: "Elevation", min: -89, max: 89, step: 1, enabledBy: "overridePrimaryLight" },
+        primaryLightColor: { title: "Light Color", enabledBy: "overridePrimaryLight" },
+        primaryLightIntensity: { title: "Light Intensity", min: 0, max: 20, step: 0.01, enabledBy: "overridePrimaryLight" },
+        primaryShadowIntensity: { title: "Shadow Intensity", min: 0, max: 1, step: 0.01, enabledBy: "overridePrimaryLight" },
+        overrideEnvironment: { title: "Override Environment" },
+        hdrUrl: { title: "HDR URL", editor: "asset", enabledBy: "overrideEnvironment" },
+        hdrEncoding: { title: "HDR Encoding", enabledBy: "overrideEnvironment" },
+        environmentRotation: { title: "Env Rotation", min: -180, max: 180, step: 1, enabledBy: "overrideEnvironment" },
+        environmentIntensity: { title: "Env Intensity", min: 0, max: 20, step: 0.01, enabledBy: "overrideEnvironment" },
+        overridePostEffects: { title: "Override Post FX" },
+        postSaturation: { title: "Saturation", min: 0, max: 3, step: 0.01, enabledBy: "overridePostEffects" },
+        postContrast: { title: "Contrast", min: 0, max: 3, step: 0.01, enabledBy: "overridePostEffects" },
+        postBrightness: { title: "Brightness", min: 0, max: 3, step: 0.01, enabledBy: "overridePostEffects" },
+        postSharpness: { title: "Sharpness", min: 0, max: 3, step: 0.01, enabledBy: "overridePostEffects" },
+        postBloomIntensity: { title: "Bloom Intensity", min: 0, max: 3, step: 0.01, enabledBy: "overridePostEffects" },
+        postBloomThreshold: { title: "Bloom Threshold", min: 0, max: 3, step: 0.01, enabledBy: "overridePostEffects" }
     };
 
     initialize() {
@@ -107,30 +113,44 @@ export class LocalizedLightProbePlugin extends ArrivalScript {
     }
 
     _buildConfig() {
-        return {
+        const config = {
             enabled: this.probeEnabled,
             priority: this.priority,
-            primaryLight: {
+            primaryLight: undefined,
+            environment: undefined,
+            postEffects: undefined
+        };
+
+        if (this.overridePrimaryLight) {
+            config.primaryLight = {
                 direction: this._directionFromAngles(),
                 color: this.primaryLightColor,
                 intensity: this.primaryLightIntensity,
                 shadowIntensity: this.primaryShadowIntensity
-            },
-            environment: {
+            };
+        }
+
+        if (this.overrideEnvironment) {
+            config.environment = {
                 hdrUrl: this.hdrUrl || null,
                 hdrEncoding: this.hdrEncoding || "linear",
                 rotation: this.environmentRotation,
                 intensity: this.environmentIntensity
-            },
-            postEffects: {
+            };
+        }
+
+        if (this.overridePostEffects) {
+            config.postEffects = {
                 saturation: this.postSaturation,
                 contrast: this.postContrast,
                 brightness: this.postBrightness,
                 sharpness: this.postSharpness,
                 bloomIntensity: this.postBloomIntensity,
                 bloomThreshold: this.postBloomThreshold
-            }
-        };
+            };
+        }
+
+        return config;
     }
 
     _directionFromAngles() {
