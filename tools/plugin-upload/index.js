@@ -90,6 +90,20 @@ async function apiRequest(server, apiKey, method, endpoint, body = null) {
     return json;
 }
 
+async function findEntity(server, apiKey, spaceId, entityId) {
+    let cursor = null;
+
+    do {
+        const qs = cursor ? `?limit=200&cursor=${encodeURIComponent(cursor)}` : "?limit=200";
+        const res = await apiRequest(server, apiKey, "GET", `/spaces/${spaceId}/entities${qs}`);
+        const found = res.data.entities.find((entity) => entity.entity_id === entityId);
+        if (found) return found;
+        cursor = res.data.hasMore ? res.data.nextCursor : null;
+    } while (cursor);
+
+    return null;
+}
+
 // ── OAuth PKCE helpers ──────────────────────────────────────────────────────
 
 function generateCodeVerifier() {
@@ -336,7 +350,19 @@ async function cmdUpload(filePath, opts) {
     log.dim(`  4/4 ${action} entity...`);
 
     const createBody = { resource_key: resourceKey };
-    if (entityId) createBody.entity_id = entityId;
+    if (entityId) {
+        createBody.entity_id = entityId;
+
+        // Preserve existing plugin params and transforms on update.
+        const existingEntity = await findEntity(server, apiKey, spaceId, entityId);
+        if (!existingEntity) {
+            throw new Error(`Existing entity not found: ${entityId}`);
+        }
+
+        createBody.entity_data = {
+            ...existingEntity.entity_data,
+        };
+    }
 
     const createRes = await apiRequest(server, apiKey, "POST", `/spaces/${spaceId}/entities`, createBody);
     const verb = entityId ? "updated" : "created";

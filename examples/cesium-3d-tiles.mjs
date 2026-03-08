@@ -25,9 +25,11 @@ export class CesiumTiles extends ArrivalScript {
     assetId = "";
     latitude = 40.748817;
     longitude = -73.985428;
-    maxTiles = 9;
+    maxTiles = 48;
+    lodBias = 1.0;
     tileScale = 1.0;
     maxDepth = 20;
+    cameraFarClip = 200000;
 
     static properties = {
         cesiumIonToken: { title: "Cesium Ion Token" },
@@ -35,16 +37,42 @@ export class CesiumTiles extends ArrivalScript {
         latitude: { title: "Latitude", min: -90, max: 90 },
         longitude: { title: "Longitude", min: -180, max: 180 },
         maxTiles: { title: "Max Tiles", min: 1, max: 500 },
+        lodBias: { title: "LOD Bias", min: 0.25, max: 4, step: 0.05 },
         tileScale: { title: "Scale", min: 0.001, max: 100 },
         maxDepth: { title: "Max Depth", min: 1, max: 50 },
+        cameraFarClip: { title: "Camera Far Clip", min: 1000, max: 2000000, step: 1000 },
     };
 
     // ── Internal state ──
-    _containers = [];
-    _blobUrls = [];
+    _loadedTiles = new Map();
+    _pendingTiles = new Map();
+    _loadQueue = [];
+    _wantedTileIds = new Set();
+    _externalTilesets = new Map();
     _loading = false;
     _statusEl = null;
     _loadedCount = 0;
+    _activeLoads = 0;
+    _sessionId = 0;
+    _selectionEpoch = 0;
+    _selectionDirty = false;
+    _selectionRunning = false;
+    _selectionTimer = 0;
+    _lastCameraLocal = null;
+    _rootContext = null;
+    _ecefToLocal = null;
+    _selectionInterval = 0.35;
+    _cameraMoveThreshold = 6;
+    _maxConcurrentLoads = 8;
+    _selectionNodeBudgetMin = 2000;
+    _selectionGraceEpochs = 0;
+    _cameraCullBase = 2500;
+    _cameraCullPerTile = 60;
+    _cameraCullRadiusScale = 12;
+    _nearRefineMultiplier = 48;
+    _nearRefineMinimum = 250;
+    _sseConstant = 2400;
+    _sseThreshold = 6;
 
     // ── WGS84 ellipsoid ──
     static A = 6378137.0;
@@ -55,6 +83,7 @@ export class CesiumTiles extends ArrivalScript {
     // ────────────────────────────────────────────
 
     initialize() {
+        this._applyCameraFarClip();
         if (!this.cesiumIonToken || !this.assetId) {
             this._status("Configure cesiumIonToken and assetId to begin");
             return;
@@ -62,17 +91,58 @@ export class CesiumTiles extends ArrivalScript {
         this._streamTiles();
     }
 
+    update(dt) {
+        if (!this._rootContext) return;
+
+        const cameraLocal = this._getCameraLocalPosition();
+        if (!cameraLocal) return;
+
+        this._selectionTimer += dt;
+
+        let moved = false;
+        if (!this._lastCameraLocal) {
+            moved = true;
+        } else if (CesiumTiles.dist3(cameraLocal, this._lastCameraLocal) >= this._cameraMoveThreshold) {
+            moved = true;
+        }
+
+        if (moved) {
+            this._lastCameraLocal = cameraLocal;
+            this._selectionDirty = true;
+        }
+
+        if (this._selectionDirty && !this._selectionRunning && this._selectionTimer >= this._selectionInterval) {
+            this._selectionTimer = 0;
+            this._refreshSelection(cameraLocal);
+        }
+
+        this._pumpLoadQueue();
+    }
+
     onPropertyChanged(name) {
         if (name === "tileScale") {
             this._rebuildTransforms();
             return;
         }
-        if (this.cesiumIonToken && this.assetId) {
-            this._streamTiles();
+
+        if (name === "cameraFarClip") {
+            this._applyCameraFarClip();
+            return;
         }
+
+        if (!this.cesiumIonToken || !this.assetId) return;
+
+        if (name === "maxTiles" || name === "maxDepth" || name === "lodBias") {
+            this._selectionDirty = true;
+            this._selectionTimer = this._selectionInterval;
+            return;
+        }
+
+        this._streamTiles();
     }
 
     destroy() {
+        this._sessionId++;
         this._cleanup();
         this.removeUI();
         this._statusEl = null;
@@ -117,7 +187,7 @@ export class CesiumTiles extends ArrivalScript {
     // ────────────────────────────────────────────
 
     async _streamTiles() {
-        if (this._loading) return;
+        const session = ++this._sessionId;
         this._loading = true;
         this._cleanup();
 
@@ -125,6 +195,7 @@ export class CesiumTiles extends ArrivalScript {
             // 1) Cesium Ion endpoint
             this._status("Authenticating with Cesium Ion...");
             const ep = await this._ionEndpoint();
+            if (session !== this._sessionId) return;
             if (!ep) return;
 
             // Build unified fetch headers (Bearer token or external headers)
@@ -136,6 +207,7 @@ export class CesiumTiles extends ArrivalScript {
             // 2) Fetch tileset.json
             this._status("Fetching tileset.json...");
             const tileset = await this._fetchJson(ep.url, authHeaders);
+            if (session !== this._sessionId) return;
             if (!tileset?.root) {
                 this._status("Error: invalid tileset.json (no root)");
                 return;
@@ -154,45 +226,32 @@ export class CesiumTiles extends ArrivalScript {
                 return;
             }
 
-            // 3) Target coordinate in ECEF
-            const target = CesiumTiles.geodeticToECEF(this.latitude, this.longitude, 0);
+            this._ecefToLocal = CesiumTiles.buildEcefToLocal(this.latitude, this.longitude);
+            this._rootContext = {
+                id: "root",
+                tile: tileset.root,
+                xform: CesiumTiles.identity4(),
+                parentUrl: ep.url,
+                headers: authHeaders,
+                depth: 0,
+                parentRefine: "REPLACE",
+            };
+            this._selectionDirty = true;
+            this._selectionTimer = this._selectionInterval;
+            this._lastCameraLocal = null;
+            this._status("Streaming tiles...");
 
-            // 4) ECEF-to-local transform matrix
-            const ecefToLocal = CesiumTiles.buildEcefToLocal(this.latitude, this.longitude);
-
-            // 5) Traverse tile tree — pass full ep.url so query params
-            //    (key, session, etc.) propagate to child URLs.
-            this._status("Traversing tile tree...");
-            const candidates = [];
-            await this._traverse(
-                tileset.root, CesiumTiles.identity4(), target,
-                candidates, ep.url, authHeaders, 0, "REPLACE"
-            );
-
-            if (candidates.length === 0) {
-                this._status("No tiles found near this coordinate");
-                return;
+            const cameraLocal = this._getCameraLocalPosition();
+            if (cameraLocal) {
+                await this._refreshSelection(cameraLocal);
             }
-
-            // 6) Sort by distance, pick closest N
-            candidates.sort((a, b) => a.distance - b.distance);
-            const toLoad = candidates.slice(0, this.maxTiles);
-            this._status(`Loading ${toLoad.length} of ${candidates.length} candidate tiles...`);
-
-            // 7) Load tiles in parallel
-            this._loadedCount = 0;
-            const total = toLoad.length;
-            const promises = toLoad.map((t) =>
-                this._loadTile(t, ecefToLocal, authHeaders, total)
-            );
-            await Promise.all(promises);
-
-            this._status(`Done: ${this._containers.length} tiles loaded`);
         } catch (err) {
             console.error("CesiumTiles:", err);
             this._status(`Error: ${err.message}`);
         } finally {
-            this._loading = false;
+            if (session === this._sessionId) {
+                this._loading = false;
+            }
         }
     }
 
@@ -280,149 +339,395 @@ export class CesiumTiles extends ArrivalScript {
     }
 
     // ────────────────────────────────────────────
-    // Tile tree traversal
+    // Tile selection / streaming
     // ────────────────────────────────────────────
 
-    async _traverse(tile, parentXform, target, out, parentUrl, headers, depth, parentRefine) {
-        if (depth > this.maxDepth) return;
+    _getCameraLocalPosition() {
+        const camera = ArrivalSpace.getCamera?.() || ArrivalSpace.getPlayer?.();
+        if (!camera) return null;
 
-        // Compose this tile's world transform
-        const xform = tile.transform
-            ? CesiumTiles.mat4Mul(parentXform, new Float64Array(tile.transform))
-            : parentXform;
+        const cameraPos = camera.getPosition();
+        const base = this.entity.getPosition();
+        return {
+            x: cameraPos.x - base.x,
+            y: cameraPos.y - base.y,
+            z: cameraPos.z - base.z,
+        };
+    }
 
-        // Spatial cull: skip branches far from target
-        if (!this._tileNearTarget(tile, xform, target)) return;
+    _applyCameraFarClip() {
+        const cameraEntity = ArrivalSpace.getCamera?.();
+        const cameraComponent = cameraEntity?.camera;
+        if (!cameraComponent) return;
 
-        const refine = (tile.refine || parentRefine || "REPLACE").toUpperCase();
-        const contentUri = tile.content?.uri || tile.content?.url;
-        const hasChildren = tile.children && tile.children.length > 0;
-        const isLeaf = !hasChildren || depth >= this.maxDepth;
+        cameraComponent.farClip = Math.max(cameraComponent.farClip || 0, this.cameraFarClip);
+    }
 
-        // Handle external tileset references (content pointing to another tileset.json)
-        if (contentUri && this._isJsonUri(contentUri)) {
-            try {
-                const childUrl = this._resolveUrl(contentUri, parentUrl);
-                const childSet = await this._fetchJson(childUrl, headers);
-                if (childSet?.root) {
-                    // Pass the child's full URL as parent — its query params
-                    // (session, key, etc.) propagate to grandchild URLs.
-                    await this._traverse(
-                        childSet.root, xform, target, out,
-                        childUrl, headers, depth, refine
-                    );
+    async _refreshSelection(cameraLocal) {
+        if (this._selectionRunning || !this._rootContext || !this._ecefToLocal) return;
+
+        const session = this._sessionId;
+        this._selectionRunning = true;
+        this._selectionDirty = false;
+
+        try {
+            const { desired, visited, budget } = this._selectTilesForCamera(cameraLocal);
+            if (session !== this._sessionId) return;
+            this._applySelection(desired, visited, budget);
+        } catch (err) {
+            console.error("CesiumTiles: selection failed:", err);
+        } finally {
+            if (session === this._sessionId) {
+                this._selectionRunning = false;
+            }
+        }
+    }
+
+    _selectTilesForCamera(cameraLocal) {
+        const desired = new Map();
+        const queue = [];
+        const desiredLimit = Math.max(this.maxTiles * 4, 64);
+        const nodeBudget = this._selectionNodeBudget();
+        let visited = 0;
+
+        const pushContext = (context) => {
+            const metric = this._tileMetric(context.tile, context.xform, cameraLocal);
+            if (!metric) return;
+            if (!this._tileWithinActiveRange(metric, context.depth)) return;
+            this._heapPush(queue, {
+                ...context,
+                metric,
+                priority: this._tilePriority(context.tile, metric),
+            });
+        };
+
+        pushContext(this._rootContext);
+
+        while (queue.length > 0 && visited < nodeBudget) {
+            const current = this._heapPop(queue);
+            visited++;
+
+            const tile = current.tile;
+            const refine = (tile.refine || current.parentRefine || "REPLACE").toUpperCase();
+            const contentUri = tile.content?.uri || tile.content?.url;
+            const hasRenderableContent = contentUri && !this._isJsonUri(contentUri);
+            const children = this._expandChildren(current);
+            const shouldRefine = (
+                children.length > 0 &&
+                current.depth < this.maxDepth &&
+                this._shouldRefineTile(tile, current.metric, current.depth)
+            );
+            const keepParentFallback = (
+                refine !== "ADD" &&
+                hasRenderableContent &&
+                shouldRefine &&
+                !children.some((child) =>
+                    this._loadedTiles.has(child.id) || this._pendingTiles.has(child.id)
+                )
+            );
+            const descend = children.length > 0 && (!hasRenderableContent || shouldRefine);
+
+            if (hasRenderableContent && (refine === "ADD" || !descend || keepParentFallback)) {
+                desired.set(current.id, {
+                    id: current.id,
+                    uri: contentUri,
+                    parentUrl: current.parentUrl,
+                    headers: current.headers,
+                    transform: current.xform,
+                    depth: current.depth,
+                    metric: current.metric,
+                    priority: current.priority,
+                });
+                if (desired.size > desiredLimit) {
+                    let lowestId = null;
+                    let lowestPriority = Infinity;
+                    for (const [id, tileInfo] of desired) {
+                        if (tileInfo.priority < lowestPriority) {
+                            lowestPriority = tileInfo.priority;
+                            lowestId = id;
+                        }
+                    }
+                    if (lowestId) desired.delete(lowestId);
                 }
-            } catch (e) {
-                console.warn("CesiumTiles: external tileset failed:", contentUri, e.message);
+            }
+
+            if (descend) {
+                for (const child of children) {
+                    pushContext(child);
+                }
             }
         }
 
-        // Collect renderable content
-        if (contentUri && !this._isJsonUri(contentUri)) {
-            // For REPLACE refinement: only render leaf tiles (finest available LOD)
-            // For ADD refinement: render all tiles with content
-            if (refine === "ADD" || isLeaf) {
-                const { distance, center } = this._tileCenterAndDistance(tile, xform, target);
-                out.push({
-                    uri: contentUri,
-                    parentUrl,
-                    transform: xform,
-                    distance,
-                    ecefCenter: center,
-                    depth,
+        return {
+            desired: Array.from(desired.values())
+                .sort((a, b) => b.priority - a.priority)
+                .slice(0, this.maxTiles),
+            visited,
+            budget: nodeBudget,
+        };
+    }
+
+    _selectionNodeBudget() {
+        return Math.max(this._selectionNodeBudgetMin, this.maxTiles * 12);
+    }
+
+    _tileWithinActiveRange(metric, depth) {
+        const maxDistance = Math.max(
+            this._cameraCullBase + this.maxTiles * this._cameraCullPerTile,
+            metric.radius * Math.max(this._cameraCullRadiusScale - depth, 4)
+        );
+        return metric.distance - metric.radius <= maxDistance;
+    }
+
+    _expandChildren(context) {
+        const children = [];
+        const tile = context.tile;
+        const refine = (tile.refine || context.parentRefine || "REPLACE").toUpperCase();
+        const contentUri = tile.content?.uri || tile.content?.url;
+
+        if (contentUri && this._isJsonUri(contentUri)) {
+            const childUrl = this._resolveUrl(contentUri, context.parentUrl);
+            const external = this._ensureExternalTileset(childUrl, context.headers);
+            if (external?.root) {
+                children.push({
+                    id: `${context.id}::ext`,
+                    tile: external.root,
+                    xform: context.xform,
+                    parentUrl: childUrl,
+                    headers: context.headers,
+                    depth: context.depth + 1,
+                    parentRefine: refine,
                 });
             }
         }
 
-        // Recurse into children
-        if (hasChildren && depth < this.maxDepth) {
-            for (const child of tile.children) {
-                await this._traverse(
-                    child, xform, target, out,
-                    parentUrl, headers, depth + 1, refine
-                );
+        if (tile.children?.length) {
+            for (let i = 0; i < tile.children.length; i++) {
+                const child = tile.children[i];
+                const childXform = child.transform
+                    ? CesiumTiles.mat4Mul(context.xform, new Float64Array(child.transform))
+                    : context.xform;
+                children.push({
+                    id: `${context.id}/${i}`,
+                    tile: child,
+                    xform: childXform,
+                    parentUrl: context.parentUrl,
+                    headers: context.headers,
+                    depth: context.depth + 1,
+                    parentRefine: refine,
+                });
             }
         }
+
+        return children;
+    }
+
+    _ensureExternalTileset(url, headers) {
+        const cached = this._externalTilesets.get(url);
+        if (cached) {
+            return cached.state === "ready" ? cached : null;
+        }
+
+        const session = this._sessionId;
+        const record = { state: "loading", root: null };
+        this._externalTilesets.set(url, record);
+
+        this._fetchJson(url, headers)
+            .then((childSet) => {
+                if (session !== this._sessionId) return;
+                if (!childSet?.root) {
+                    record.state = "error";
+                    return;
+                }
+                record.state = "ready";
+                record.root = childSet.root;
+                this._selectionDirty = true;
+                this._selectionTimer = this._selectionInterval;
+            })
+            .catch((err) => {
+                if (session !== this._sessionId) return;
+                record.state = "error";
+                console.warn("CesiumTiles: external tileset failed:", url, err.message);
+            });
+
+        return null;
+    }
+
+    _applySelection(desired, visited, budget) {
+        const epoch = ++this._selectionEpoch;
+        this._wantedTileIds = new Set(desired.map((tile) => tile.id));
+
+        for (const tile of desired) {
+            const loaded = this._loadedTiles.get(tile.id);
+            if (loaded) {
+                loaded.lastWantedEpoch = epoch;
+                continue;
+            }
+
+            const pending = this._pendingTiles.get(tile.id);
+            if (pending) {
+                pending.lastWantedEpoch = epoch;
+            }
+        }
+
+        for (const [id, record] of this._loadedTiles) {
+            if (!this._wantedTileIds.has(id) && epoch - record.lastWantedEpoch >= this._selectionGraceEpochs) {
+                this._unloadTile(id);
+            }
+        }
+
+        this._loadQueue = desired
+            .filter((tile) => !this._loadedTiles.has(tile.id) && !this._pendingTiles.has(tile.id))
+            .sort((a, b) => b.priority - a.priority);
+
+        this._pumpLoadQueue();
+        this._loadedCount = this._loadedTiles.size;
+        this._status(
+            `Streaming tiles: ${this._loadedTiles.size} loaded, ${this._pendingTiles.size} loading, ` +
+            `${desired.length} wanted, ${visited}/${budget} checked`
+        );
+    }
+
+    _pumpLoadQueue() {
+        while (this._activeLoads < this._maxConcurrentLoads && this._loadQueue.length > 0) {
+            const next = this._loadQueue.shift();
+            if (!this._wantedTileIds.has(next.id)) continue;
+            if (this._loadedTiles.has(next.id) || this._pendingTiles.has(next.id)) continue;
+
+            const session = this._sessionId;
+            const pending = { lastWantedEpoch: this._selectionEpoch, session };
+            this._pendingTiles.set(next.id, pending);
+            this._activeLoads++;
+
+            this._loadTile(next, session)
+                .catch((err) => {
+                    console.error("CesiumTiles: tile load failed:", next.uri, err);
+                })
+                .finally(() => {
+                    if (this._pendingTiles.get(next.id) === pending) {
+                        this._pendingTiles.delete(next.id);
+                    }
+                    if (session === this._sessionId) {
+                        this._activeLoads = Math.max(0, this._activeLoads - 1);
+                        this._selectionDirty = true;
+                        this._selectionTimer = this._selectionInterval;
+                        this._pumpLoadQueue();
+                    }
+                });
+        }
+    }
+
+    _unloadTile(id) {
+        const record = this._loadedTiles.get(id);
+        if (!record) return;
+
+        try { ArrivalSpace.disposeEntity(record.container, { destroyAssets: true }); } catch (_) {}
+        try { URL.revokeObjectURL(record.blobUrl); } catch (_) {}
+        this._loadedTiles.delete(id);
+        this._loadedCount = this._loadedTiles.size;
     }
 
     _isJsonUri(uri) {
         return uri.split("?")[0].toLowerCase().endsWith(".json");
     }
 
-    /**
-     * Check if a tile's bounding volume is near the target ECEF point.
-     * Returns false to prune the branch early when it's clearly too far.
-     */
-    _tileNearTarget(tile, xform, target) {
+    _tileMetric(tile, xform, cameraLocal) {
+        if (!this._ecefToLocal) return null;
+
         const bv = tile.boundingVolume;
-        if (!bv) return true;
-
-        if (bv.region) {
-            const [w, s, e, n] = bv.region;
-            const latR = this.latitude * Math.PI / 180;
-            const lonR = this.longitude * Math.PI / 180;
-            // Pad the region check to include neighboring tiles
-            const padLon = Math.max((e - w) * 2, 0.005);
-            const padLat = Math.max((n - s) * 2, 0.005);
-            return (
-                lonR >= w - padLon && lonR <= e + padLon &&
-                latR >= s - padLat && latR <= n + padLat
+        if (!bv) {
+            const centerEcef = { x: xform[12], y: xform[13], z: xform[14] };
+            const localCenter = CesiumTiles.xformPoint(
+                this._ecefToLocal, centerEcef.x, centerEcef.y, centerEcef.z
             );
+            return {
+                centerEcef,
+                localCenter,
+                radius: 50,
+                distance: CesiumTiles.dist3(localCenter, cameraLocal),
+            };
         }
 
-        if (bv.box) {
-            const c = CesiumTiles.xformPoint(xform, bv.box[0], bv.box[1], bv.box[2]);
-            const ha = bv.box.slice(3);
-            // Approximate bounding sphere from half-axes
-            const radius = Math.sqrt(
-                ha[0] * ha[0] + ha[1] * ha[1] + ha[2] * ha[2] +
-                ha[3] * ha[3] + ha[4] * ha[4] + ha[5] * ha[5] +
-                ha[6] * ha[6] + ha[7] * ha[7] + ha[8] * ha[8]
-            );
-            const d = CesiumTiles.dist3(c, target);
-            return d < radius * 5;
-        }
-
-        if (bv.sphere) {
-            const c = CesiumTiles.xformPoint(xform, bv.sphere[0], bv.sphere[1], bv.sphere[2]);
-            return CesiumTiles.dist3(c, target) < bv.sphere[3] * 5;
-        }
-
-        return true;
-    }
-
-    /** Distance and ECEF center of a tile's bounding volume. */
-    _tileCenterAndDistance(tile, xform, target) {
-        const bv = tile.boundingVolume;
-        if (!bv) return { distance: Infinity, center: null };
-
-        let c;
+        let centerEcef;
+        let radius = 50;
         if (bv.region) {
             const [w, s, e, n, h0, h1] = bv.region;
-            c = CesiumTiles.geodeticToECEF(
+            const alt = ((h0 || 0) + (h1 || 0)) / 2;
+            centerEcef = CesiumTiles.geodeticToECEF(
                 ((s + n) / 2) * 180 / Math.PI,
                 ((w + e) / 2) * 180 / Math.PI,
-                (h0 + h1) / 2
+                alt
+            );
+            const corners = [
+                CesiumTiles.geodeticToECEF(s * 180 / Math.PI, w * 180 / Math.PI, alt),
+                CesiumTiles.geodeticToECEF(s * 180 / Math.PI, e * 180 / Math.PI, alt),
+                CesiumTiles.geodeticToECEF(n * 180 / Math.PI, w * 180 / Math.PI, alt),
+                CesiumTiles.geodeticToECEF(n * 180 / Math.PI, e * 180 / Math.PI, alt),
+            ];
+            radius = Math.max(
+                ...corners.map((corner) => CesiumTiles.dist3(corner, centerEcef)),
+                Math.abs((h1 || 0) - (h0 || 0)) * 0.5
             );
         } else if (bv.box) {
-            c = CesiumTiles.xformPoint(xform, bv.box[0], bv.box[1], bv.box[2]);
+            centerEcef = CesiumTiles.xformPoint(xform, bv.box[0], bv.box[1], bv.box[2]);
+            const a = CesiumTiles.xformVectorLength(xform, bv.box[3], bv.box[4], bv.box[5]);
+            const b = CesiumTiles.xformVectorLength(xform, bv.box[6], bv.box[7], bv.box[8]);
+            const c = CesiumTiles.xformVectorLength(xform, bv.box[9], bv.box[10], bv.box[11]);
+            radius = Math.sqrt(a * a + b * b + c * c);
         } else if (bv.sphere) {
-            c = CesiumTiles.xformPoint(xform, bv.sphere[0], bv.sphere[1], bv.sphere[2]);
+            centerEcef = CesiumTiles.xformPoint(xform, bv.sphere[0], bv.sphere[1], bv.sphere[2]);
+            radius = bv.sphere[3] * CesiumTiles.maxLinearScale(xform);
         } else {
-            return { distance: Infinity, center: null };
+            centerEcef = { x: xform[12], y: xform[13], z: xform[14] };
         }
 
-        return { distance: CesiumTiles.dist3(c, target), center: c };
+        const localCenter = CesiumTiles.xformPoint(
+            this._ecefToLocal, centerEcef.x, centerEcef.y, centerEcef.z
+        );
+        return {
+            centerEcef,
+            localCenter,
+            radius,
+            distance: CesiumTiles.dist3(localCenter, cameraLocal),
+        };
+    }
+
+    _tilePriority(tile, metric) {
+        const geometricError = Math.max(tile.geometricError || metric.radius || 1, 1);
+        return (geometricError * this.lodBias * 1000) / Math.max(metric.distance - metric.radius, 1);
+    }
+
+    _shouldRefineTile(tile, metric, depth) {
+        if (depth >= this.maxDepth) return false;
+        if (metric.distance <= Math.max(
+            metric.radius * this._nearRefineMultiplier,
+            this._nearRefineMinimum
+        )) {
+            return true;
+        }
+
+        const geometricError = tile.geometricError || 0;
+        if (geometricError <= 0) {
+            return depth < Math.min(this.maxDepth, 8);
+        }
+
+        const sse = (geometricError * this._sseConstant * this.lodBias) /
+            Math.max(metric.distance - metric.radius, 1);
+        return sse > this._sseThreshold;
     }
 
     // ────────────────────────────────────────────
     // Tile loading
     // ────────────────────────────────────────────
 
-    async _loadTile(info, ecefToLocal, headers, total) {
+    async _loadTile(info, session) {
+        let container = null;
+        let blobUrl = null;
+
         try {
             const url = this._resolveUrl(info.uri, info.parentUrl);
-            const buf = await this._fetchBuffer(url, headers);
+            const buf = await this._fetchBuffer(url, info.headers);
+            if (session !== this._sessionId || !this._ecefToLocal) return;
 
             let glbData;
             let rtcCenter = null;
@@ -432,7 +737,7 @@ export class CesiumTiles extends ArrivalScript {
                 const parsed = CesiumTiles.parseB3dm(buf);
                 glbData = parsed.glbData;
                 rtcCenter = parsed.rtcCenter;
-            } else if (ext === "glb" || ext === "gltf") {
+            } else if (ext === "glb") {
                 glbData = buf;
             } else {
                 console.warn("CesiumTiles: unsupported tile format:", ext);
@@ -456,6 +761,7 @@ export class CesiumTiles extends ArrivalScript {
             // Entity gets position + uniform scale only — no rotation.
 
             const M = info.transform;
+            const ecefToLocal = this._ecefToLocal;
 
             // 3×3 rotation from ecefToLocal (column-major)
             const R = [
@@ -473,31 +779,27 @@ export class CesiumTiles extends ArrivalScript {
             // Combined rotation: R × Mrot
             const CR = CesiumTiles.mat3Mul(R, Mrot);
 
-            let ecefCenter;
+            let ecefAnchor;
             const vertexOffset = { x: 0, y: 0, z: 0 };
+            const tileOrigin = { x: M[12], y: M[13], z: M[14] };
 
             if (rtcCenter) {
                 // b3dm RTC: vertices are relative to rtcCenter
-                ecefCenter = CesiumTiles.xformPoint(
+                ecefAnchor = CesiumTiles.xformPoint(
                     M, rtcCenter[0], rtcCenter[1], rtcCenter[2]
                 );
-            } else if (info.ecefCenter) {
-                // Vertices are in local tile space (not absolute ECEF).
-                // Only rotation is needed — no translation offset.
-                ecefCenter = info.ecefCenter;
             } else {
-                // Fallback: use tile transform origin
-                ecefCenter = { x: M[12], y: M[13], z: M[14] };
+                ecefAnchor = tileOrigin;
             }
 
             // Entity position in local space (small values near origin)
             const entityPos = CesiumTiles.xformPoint(
-                ecefToLocal, ecefCenter.x, ecefCenter.y, ecefCenter.z
+                ecefToLocal, ecefAnchor.x, ecefAnchor.y, ecefAnchor.z
             );
             const s = this.tileScale;
 
             // Create container — position + scale only, NO rotation
-            const container = new pc.Entity(`CesiumTile_${this._containers.length}`);
+            container = new pc.Entity(`CesiumTile_${info.id}`);
             this.entity.addChild(container);
             container.setLocalPosition(entityPos.x * s, entityPos.y * s, entityPos.z * s);
             container.setLocalScale(s, s, s);
@@ -505,15 +807,15 @@ export class CesiumTiles extends ArrivalScript {
 
             // Load GLB from blob URL
             const blob = new Blob([glbData], { type: "model/gltf-binary" });
-            const blobUrl = URL.createObjectURL(blob);
-            this._blobUrls.push(blobUrl);
+            blobUrl = URL.createObjectURL(blob);
 
             const { entity: tileEntity } = await ArrivalSpace.loadGLB(blobUrl, {
                 parent: container,
-                name: `TileMesh_${this._containers.length}`,
+                name: `TileMesh_${info.id}`,
             });
+            if (session !== this._sessionId) return;
 
-            let renderAnchor = ecefCenter;
+            let renderAnchor = ecefAnchor;
             if (!rtcCenter && CesiumTiles.isIdentityLikeMat4(M)) {
                 const glbAnchor = this._extractGlbAnchor(tileEntity);
                 if (glbAnchor) {
@@ -534,11 +836,29 @@ export class CesiumTiles extends ArrivalScript {
             // Transform vertex positions + normals on CPU
             this._transformMeshVertices(tileEntity, CR, vertexOffset);
 
-            this._containers.push(container);
-            this._loadedCount++;
-            this._status(`Loading tiles: ${this._loadedCount}/${total}`);
+            if (!this._wantedTileIds.has(info.id)) {
+                return;
+            }
+
+            this._loadedTiles.set(info.id, {
+                container,
+                blobUrl,
+                lastWantedEpoch: this._selectionEpoch,
+            });
+            this._loadedCount = this._loadedTiles.size;
+            this._selectionDirty = true;
+            this._selectionTimer = this._selectionInterval;
+            container = null;
+            blobUrl = null;
         } catch (err) {
-            console.error("CesiumTiles: tile load failed:", info.uri, err);
+            throw err;
+        } finally {
+            if (container) {
+                try { ArrivalSpace.disposeEntity(container, { destroyAssets: true }); } catch (_) {}
+            }
+            if (blobUrl) {
+                try { URL.revokeObjectURL(blobUrl); } catch (_) {}
+            }
         }
     }
 
@@ -640,11 +960,11 @@ export class CesiumTiles extends ArrivalScript {
     /** Re-apply tileScale without re-downloading everything. */
     _rebuildTransforms() {
         const s = this.tileScale;
-        for (const c of this._containers) {
-            const d = c._cesiumTileData;
+        for (const { container } of this._loadedTiles.values()) {
+            const d = container._cesiumTileData;
             if (!d) continue;
-            c.setLocalPosition(d.pos.x * s, d.pos.y * s, d.pos.z * s);
-            c.setLocalScale(s, s, s);
+            container.setLocalPosition(d.pos.x * s, d.pos.y * s, d.pos.z * s);
+            container.setLocalScale(s, s, s);
         }
     }
 
@@ -821,6 +1141,64 @@ export class CesiumTiles extends ArrivalScript {
         return r;
     }
 
+    static xformVector(m, x, y, z) {
+        return {
+            x: m[0] * x + m[4] * y + m[8] * z,
+            y: m[1] * x + m[5] * y + m[9] * z,
+            z: m[2] * x + m[6] * y + m[10] * z,
+        };
+    }
+
+    static xformVectorLength(m, x, y, z) {
+        const v = CesiumTiles.xformVector(m, x, y, z);
+        return Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+    }
+
+    static maxLinearScale(m) {
+        return Math.max(
+            CesiumTiles.xformVectorLength(m, 1, 0, 0),
+            CesiumTiles.xformVectorLength(m, 0, 1, 0),
+            CesiumTiles.xformVectorLength(m, 0, 0, 1)
+        );
+    }
+
+    _heapPush(heap, item) {
+        heap.push(item);
+        let i = heap.length - 1;
+        while (i > 0) {
+            const parent = (i - 1) >> 1;
+            if (heap[parent].priority >= heap[i].priority) break;
+            [heap[parent], heap[i]] = [heap[i], heap[parent]];
+            i = parent;
+        }
+    }
+
+    _heapPop(heap) {
+        if (heap.length === 0) return null;
+        const top = heap[0];
+        const last = heap.pop();
+        if (heap.length > 0) {
+            heap[0] = last;
+            let i = 0;
+            while (true) {
+                const left = i * 2 + 1;
+                const right = left + 1;
+                let largest = i;
+
+                if (left < heap.length && heap[left].priority > heap[largest].priority) {
+                    largest = left;
+                }
+                if (right < heap.length && heap[right].priority > heap[largest].priority) {
+                    largest = right;
+                }
+                if (largest === i) break;
+                [heap[i], heap[largest]] = [heap[largest], heap[i]];
+                i = largest;
+            }
+        }
+        return top;
+    }
+
     /** Transform a 3D point by a 4x4 matrix (w=1). */
     static xformPoint(m, x, y, z) {
         return {
@@ -841,15 +1219,21 @@ export class CesiumTiles extends ArrivalScript {
     // ────────────────────────────────────────────
 
     _cleanup() {
-        for (const c of this._containers) {
-            try { ArrivalSpace.disposeEntity(c, { destroyAssets: true }); } catch (_) {}
+        for (const id of Array.from(this._loadedTiles.keys())) {
+            this._unloadTile(id);
         }
-        this._containers = [];
-
-        for (const url of this._blobUrls) {
-            try { URL.revokeObjectURL(url); } catch (_) {}
-        }
-        this._blobUrls = [];
+        this._loadedTiles.clear();
+        this._pendingTiles.clear();
+        this._loadQueue = [];
+        this._wantedTileIds = new Set();
+        this._externalTilesets.clear();
         this._loadedCount = 0;
+        this._activeLoads = 0;
+        this._selectionDirty = false;
+        this._selectionRunning = false;
+        this._selectionTimer = 0;
+        this._lastCameraLocal = null;
+        this._rootContext = null;
+        this._ecefToLocal = null;
     }
 }
