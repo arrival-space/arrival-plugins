@@ -378,7 +378,7 @@ export class ClothPhysics extends ArrivalScript {
                 continue;
             }
 
-            if(!collision?.entity?.rigidbody) {
+            if(!collision?.entity?.rigidbody || !collision?.entity.enabled) {
                 continue;
             }
 
@@ -409,27 +409,9 @@ export class ClothPhysics extends ArrivalScript {
 
         if (isPlayer) {
             shape = new Ammo.btCapsuleShape(this.playerProxyWidth, this.playerProxyHeight);
-        } else if (type === "box") {
-            const halfExtents = collision.halfExtents || new pc.Vec3(0.5, 0.5, 0.5);
-            const size = new Ammo.btVector3(
-                Math.max(0.01, halfExtents.x),
-                Math.max(0.01, halfExtents.y),
-                Math.max(0.01, halfExtents.z)
-            );
-            shape = new Ammo.btBoxShape(size);
-            Ammo.destroy(size);
-            usesScale = true;
+        } else{
             
-        } else if (type === "sphere") {
-            shape = new Ammo.btSphereShape(Math.max(0.01, (collision.radius || 0.5) * maxScale));
-            
-        } else if (type === "capsule" || type === "cylinder" || type === "cone") {
-            console.log("[ClothPhysics] Unsupported collider type:", type, "for entity", entity);
-
-            const radius = collision.radius || 0.25;
-            shape = new Ammo.btSphereShape(Math.max(0.01, radius * maxScale));
-        } else {
-            return null;
+            return null; // only support player proxy for now, can add more shapes later if needed
         }
 
         shape.setMargin(this.collisionMargin);
