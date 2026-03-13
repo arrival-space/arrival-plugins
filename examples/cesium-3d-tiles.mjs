@@ -59,6 +59,7 @@ export class CesiumTiles extends ArrivalScript {
     _selectionRunning = false;
     _selectionTimer = 0;
     _lastCameraLocal = null;
+    _lastFallbackDebugSignature = "";
     _rootContext = null;
     _ecefToLocal = null;
     _selectionInterval = 0.35;
@@ -371,9 +372,9 @@ export class CesiumTiles extends ArrivalScript {
         this._selectionDirty = false;
 
         try {
-            const { desired, visited, budget } = this._selectTilesForCamera(cameraLocal);
+            const { desired, visited, budget, fallbackDebug } = this._selectTilesForCamera(cameraLocal);
             if (session !== this._sessionId) return;
-            this._applySelection(desired, visited, budget);
+            this._applySelection(desired, visited, budget, fallbackDebug);
         } catch (err) {
             console.error("CesiumTiles: selection failed:", err);
         } finally {
@@ -417,13 +418,12 @@ export class CesiumTiles extends ArrivalScript {
                 current.depth < this.maxDepth &&
                 this._shouldRefineTile(tile, current.metric, current.depth)
             );
+            const activeDescendantId = this._findActiveDescendantTileId(current.id);
             const keepParentFallback = (
                 refine !== "ADD" &&
                 hasRenderableContent &&
                 shouldRefine &&
-                !children.some((child) =>
-                    this._loadedTiles.has(child.id) || this._pendingTiles.has(child.id)
-                )
+                !activeDescendantId
             );
             const descend = children.length > 0 && (!hasRenderableContent || shouldRefine);
 
@@ -437,7 +437,11 @@ export class CesiumTiles extends ArrivalScript {
                     depth: current.depth,
                     metric: current.metric,
                     priority: current.priority,
-                });
+                    isFallbackParent: keepParentFallback,
+                    fallbackReason: keepParentFallback
+                        ? "no active descendant content"
+                        : null,
+                    });
                 if (desired.size > desiredLimit) {
                     let lowestId = null;
                     let lowestPriority = Infinity;
@@ -458,17 +462,88 @@ export class CesiumTiles extends ArrivalScript {
             }
         }
 
+        const ranked = Array.from(desired.values()).sort((a, b) => b.priority - a.priority);
+        const excludedIds = new Set();
+        const selected = [];
+        const fallbackDebug = { kept: [], suppressed: [] };
+
+        const fillSelected = () => {
+            const selectedIds = new Set(selected.map((tile) => tile.id));
+            for (const tile of ranked) {
+                if (selected.length >= this.maxTiles) break;
+                if (excludedIds.has(tile.id) || selectedIds.has(tile.id)) continue;
+                selected.push(tile);
+                selectedIds.add(tile.id);
+            }
+        };
+
+        fillSelected();
+
+        let pruned = true;
+        while (pruned) {
+            pruned = false;
+            const kept = [];
+
+            for (const tile of selected) {
+                if (!tile.isFallbackParent) {
+                    kept.push(tile);
+                    continue;
+                }
+
+                const selectedDescendant = selected.find((other) =>
+                    other.id !== tile.id && this._isDescendantTileId(tile.id, other.id)
+                );
+                if (selectedDescendant) {
+                    excludedIds.add(tile.id);
+                    if (fallbackDebug.suppressed.length < 6) {
+                        fallbackDebug.suppressed.push(`${tile.id} -> ${selectedDescendant.id}`);
+                    }
+                    pruned = true;
+                    continue;
+                }
+
+                kept.push(tile);
+            }
+
+            selected.length = 0;
+            selected.push(...kept);
+            fillSelected();
+        }
+
+        for (const tile of selected) {
+            if (!tile.isFallbackParent) continue;
+            if (fallbackDebug.kept.length >= 6) break;
+            fallbackDebug.kept.push(`${tile.id} (${tile.fallbackReason})`);
+        }
+
         return {
-            desired: Array.from(desired.values())
-                .sort((a, b) => b.priority - a.priority)
-                .slice(0, this.maxTiles),
+            desired: selected,
             visited,
             budget: nodeBudget,
+            fallbackDebug,
         };
     }
 
     _selectionNodeBudget() {
         return Math.max(this._selectionNodeBudgetMin, this.maxTiles * 12);
+    }
+
+    _isDescendantTileId(ancestorId, tileId) {
+        if (!ancestorId || !tileId || ancestorId === tileId) return false;
+        return (
+            tileId.startsWith(`${ancestorId}/`) ||
+            tileId.startsWith(`${ancestorId}::ext`)
+        );
+    }
+
+    _findActiveDescendantTileId(ancestorId) {
+        for (const id of this._loadedTiles.keys()) {
+            if (this._isDescendantTileId(ancestorId, id)) return id;
+        }
+        for (const id of this._pendingTiles.keys()) {
+            if (this._isDescendantTileId(ancestorId, id)) return id;
+        }
+        return null;
     }
 
     _tileWithinActiveRange(metric, depth) {
@@ -553,9 +628,10 @@ export class CesiumTiles extends ArrivalScript {
         return null;
     }
 
-    _applySelection(desired, visited, budget) {
+    _applySelection(desired, visited, budget, fallbackDebug) {
         const epoch = ++this._selectionEpoch;
         this._wantedTileIds = new Set(desired.map((tile) => tile.id));
+        this._logFallbackParents(fallbackDebug);
 
         for (const tile of desired) {
             const loaded = this._loadedTiles.get(tile.id);
@@ -586,6 +662,25 @@ export class CesiumTiles extends ArrivalScript {
             `Streaming tiles: ${this._loadedTiles.size} loaded, ${this._pendingTiles.size} loading, ` +
             `${desired.length} wanted, ${visited}/${budget} checked`
         );
+    }
+
+    _logFallbackParents(fallbackDebug) {
+        const kept = fallbackDebug?.kept || [];
+        const suppressed = fallbackDebug?.suppressed || [];
+        const signature = JSON.stringify({ kept, suppressed });
+        if (signature === this._lastFallbackDebugSignature) return;
+        this._lastFallbackDebugSignature = signature;
+
+        if (suppressed.length) {
+            console.log(
+                `CesiumTiles: suppressed fallback parents (${suppressed.length}): ${suppressed.join(", ")}`
+            );
+        }
+        if (kept.length) {
+            console.log(
+                `CesiumTiles: kept fallback parents (${kept.length}): ${kept.join(", ")}`
+            );
+        }
     }
 
     _pumpLoadQueue() {
