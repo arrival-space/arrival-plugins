@@ -2,7 +2,7 @@
   "version": 1,
   "updated_at": "2026-03-03",
   "source": "curated",
-  "total_entries": 30,
+  "total_entries": 31,
   "entries": [
     {
       "path": "README.md",
@@ -229,6 +229,14 @@
       "summary": "Dense procedural grass field made from anisotropic GSplats, with blade height, width, lean, and spawn control.",
       "script_name": "Procedural Splats Grass",
       "keywords": ["splat", "splats", "procedural splats", "grass", "foliage", "gsplat", "field", "vegetation", "effect"]
+    },
+    {
+      "path": "examples/lamp.mjs",
+      "kind": "example",
+      "title": "Lamp",
+      "summary": "Physical lamp with a GLB model, rigidbody collision, configurable point or cone light, shadows, splat lighting, and electric flicker effect.",
+      "script_name": "Lamp",
+      "keywords": ["lamp", "light", "cone light", "point light", "flicker", "shadows", "glb model", "rigidbody", "physics", "splat lighting"]
     },
     {
       "path": "examples/vehicle-physics-model.mjs",
