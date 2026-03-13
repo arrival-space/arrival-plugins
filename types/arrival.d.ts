@@ -229,6 +229,12 @@ declare class ArrivalScript extends pc.Script {
     
     /** Find child entity by name */
     findChild(name: string): pc.Entity | null;
+
+    /** Override post-effect parameters. Only provided keys are changed; omitted keys keep room defaults. */
+    setPostEffects(params: ArrivalSpace.PostEffectsParams): boolean;
+
+    /** Return the current effective post-effect parameters. */
+    getPostEffects(): ArrivalSpace.PostEffectsParams | null;
 }
 
 /**
@@ -472,6 +478,32 @@ declare namespace ArrivalSpace {
      * }
      */
     function getCenterAsset(): CenterAssetInfo | null;
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // POST EFFECTS
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /** Post-effect parameters. Only provided keys override room defaults. */
+    interface PostEffectsParams {
+        hdrEnabled?: boolean;
+        /** Tone mapping algorithm (0–4) */
+        toneMapping?: number;
+        saturation?: number;
+        contrast?: number;
+        brightness?: number;
+        sharpness?: number;
+        bloomEnabled?: boolean;
+        bloomIntensity?: number;
+        bloomThreshold?: number;
+        bloomBlurLevel?: number;
+        gamma?: number;
+    }
+
+    /** Override post-effect parameters. Only provided keys are changed; omitted keys keep room defaults. */
+    function setPostEffects(params: PostEffectsParams): boolean;
+
+    /** Return the current effective post-effect parameters. */
+    function getPostEffects(): PostEffectsParams | null;
 
     // ═══════════════════════════════════════════════════════════════════════════
     // SCENE UTILITIES (available to all plugins)
