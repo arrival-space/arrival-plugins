@@ -89,7 +89,7 @@ export class MyPlugin extends ArrivalScript {
 
 ## High-Signal Examples
 
-- `examples/npc-character.mjs`: `createNPC`, avatar config, follow logic.
+- `examples/npc-character.mjs`: `createNPC`, avatar config, follow logic, and a simple NPC click callback example.
 - `examples/avatar-animation.mjs`: animation override + dynamic dropdown options.
 - `examples/hover-board.mjs`: standing-object hooks, avatar offset, animation triggers, and dynamic physics.
 - `examples/outfit-override.mjs`: avatar parts override + reset.

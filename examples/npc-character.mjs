@@ -87,6 +87,9 @@ export class NpcCharacter extends ArrivalScript {
             avatarConfig: this.avatarConfig,
             headLabel: this.headLabel,
             headLabelColor: this.headLabelColor,
+            onClick: () => {
+                alert('NPC clicked');
+            },
         });
 
         await this._applyAnimations();

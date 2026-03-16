@@ -23,6 +23,7 @@ export class DynamicLight extends ArrivalScript {
     shadowIntensity = 1;
     showHelper = false;
     rotateSpeed = 0;
+	affectSplats = true;
 
     static properties = {
         lightType: {
@@ -33,7 +34,7 @@ export class DynamicLight extends ArrivalScript {
             ],
         },
         color: { title: "Light Color" },
-        intensity: { title: "Intensity", min: 0, max: 10 },
+        intensity: { title: "Intensity", min: 0, max: 50 },
         range: { title: "Range", min: 1, max: 50 },
         innerConeAngle: { title: "Inner Cone Angle", min: 0, max: 90 },
         outerConeAngle: { title: "Outer Cone Angle", min: 0, max: 90 },
@@ -99,6 +100,13 @@ export class DynamicLight extends ArrivalScript {
         light.shadowIntensity = this.shadowIntensity;
         light.normalOffsetBias = 0.05;
         light.shadowType = pc.SHADOW_PCF3;
+
+		/// 1005 == splat layer
+		if(this.affectSplats)
+		{
+        	light.layers = [0, 1005];
+        	ArrivalSpace.enableSplatLightMaterial();
+		}
 
         if (this.lightType === "cone") {
             light.innerConeAngle = this.innerConeAngle;

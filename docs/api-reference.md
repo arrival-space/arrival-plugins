@@ -146,6 +146,8 @@ Get the current right virtual joystick input (camera stick on mobile).
 
 Convenience wrapper for `ArrivalSpace.createNPC(options?)`.
 
+Set `onClick` when you want the NPC to handle clicks with your own callback.
+
 #### `refreshParamSchema()`
 
 Force the host editor to re-read this plugin's parameter schema.
@@ -588,13 +590,18 @@ ArrivalSpace.setPlayerAnimSpeed('Forward', null);
 
 #### `ArrivalSpace.createNPC(options?)`
 
-Create a controllable NPC with avatar and animation helpers.
+Create a controllable NPC with avatar, animation, and optional interaction helpers.
 
 Supports:
 - spawn/transform options (`position`, `rotation`, `scale`, `parent`)
 - avatar setup (`avatarUrl`, `avatarConfig`, `avatarParts`, `avatarGender`)
 - movement tuning (`speed`, `turnSpeed`, `stopDistance`)
 - optional custom animation refs (`animations.idle`, `animations.walk`, `animations.jump`)
+- optional interaction callbacks (`onClick`, `onHoverEnter`, `onHoverLeave`)
+
+Interaction behavior:
+- Set `onClick` to add click functionality to the NPC.
+- `onHoverEnter` and `onHoverLeave` can be used for custom hover reactions.
 
 **Returns:** `Promise<npcController>`
 

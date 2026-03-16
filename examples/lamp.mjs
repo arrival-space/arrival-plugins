@@ -8,18 +8,18 @@ export class Lamp extends ArrivalScript {
     static scriptName = "Lamp";
 
     modelUrl =
-        "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/LightsPunctualLamp/glTF-Binary/LightsPunctualLamp.glb";
+        "https://dzrmwng2ae8bq.cloudfront.net/42485456/e5bb2219aebced6b7bd9d8557701393f79b82d5d54291e323401dba185b4ee59_floodlight.glb";
     modelScale = 1;
-    meshOffset = { x: 0, y: 0, z: 0 };
+    meshOffset = { x: 0, y: -0.298, z: 0 };
 
-    collisionHalfExtents = { x: 0.35, y: 0.9, z: 0.35 };
+    collisionHalfExtents = { x: 0.35, y: 0.29, z: 0.28 };
     mass = 2;
-    friction = 0.6;
+    friction = 1;
     restitution = 0.1;
 
-    lightType = "point";
-    lightColor = "#ffd79c";
-    intensity = 4;
+    lightType = "cone";
+    lightColor = "#fbe795";
+    intensity = 26.5;
     range = 8;
     innerConeAngle = 25;
     outerConeAngle = 45;
@@ -28,9 +28,14 @@ export class Lamp extends ArrivalScript {
     shadowBias = 0.2;
     shadowDistance = 16;
     shadowIntensity = 1;
-    bulbOffset = { x: 0, y: 1.15, z: 0 };
+    bulbOffset = { x: 0, y: 0.7, z: 0.05 };
     showHelper = false;
     affectSplats = true;
+    flickerEnabled = true;
+    flickerAmount = 0.04;
+    flickerSpeed = 7;
+    flickerPulseAmount = 0.08;
+    flickerPulseRate = 0.35;
     
     static properties = {
         modelUrl: { title: "Model URL", editor: "asset" },
@@ -59,14 +64,23 @@ export class Lamp extends ArrivalScript {
         shadowIntensity: { title: "Shadow Intensity", min: 0, max: 1 },
         bulbOffset: { title: "Bulb Offset", min: -5, max: 5, step: 0.01 },
         showHelper: { title: "Show Helper" },
+        flickerEnabled: { title: "Electric Flicker" },
+        flickerAmount: { title: "Flicker Amount", min: 0, max: 0.5, step: 0.005 },
+        flickerSpeed: { title: "Flicker Speed", min: 0, max: 30, step: 0.1 },
+        flickerPulseAmount: { title: "Pulse Amount", min: 0, max: 1, step: 0.01 },
+        flickerPulseRate: { title: "Pulse Rate", min: 0, max: 4, step: 0.05 },
     };
 
     _modelEntity = null;
     _lightEntity = null;
     _helperEntity = null;
     _helperMaterial = null;
+    _flickerTime = 0;
+    _flickerPulse = 0;
+    _flickerSeed = 0;
 
     initialize() {
+        this._flickerSeed = Math.random() * Math.PI * 2;
         this._rebuildPhysics();
         this._createLight();
         this._loadModel(this.modelUrl);
@@ -117,6 +131,8 @@ export class Lamp extends ArrivalScript {
             friction: this.friction,
             restitution: this.restitution,
         });
+
+        this._teleportRigidbodyToCurrentTransform();
     }
 
     _hexToRgb(hex) {
@@ -190,6 +206,8 @@ export class Lamp extends ArrivalScript {
         	ArrivalSpace.enableSplatLightMaterial();
 		}
 
+        this._applyFlickerToLight();
+
     }
 
     _createHelper() {
@@ -238,6 +256,62 @@ export class Lamp extends ArrivalScript {
         this._helperEntity.setLocalScale(diameter, diameter, diameter);
         this._helperEntity.setLocalPosition(0, 0, 0);
         this._helperEntity.setLocalEulerAngles(0, 0, 0);
+    }
+
+    _getFlickerMultiplier() {
+        if (!this.flickerEnabled) {
+            return 1;
+        }
+
+        const t = this._flickerTime;
+        const seed = this._flickerSeed;
+        const waveA = (Math.sin(t * 1.9 + seed) + 1) * 0.5;
+        const waveB = (Math.sin(t * 4.7 + seed * 1.7) + 1) * 0.5;
+        const waveC = (Math.sin(t * 9.3 + seed * 2.3) + 1) * 0.5;
+        const shimmer = waveA * 0.55 + waveB * 0.3 + waveC * 0.15;
+        const steadyDip = this.flickerAmount * (0.25 + shimmer * 0.75);
+        const pulseDip = this._flickerPulse * this.flickerPulseAmount;
+        return Math.max(0, 1 - steadyDip - pulseDip);
+    }
+
+    _applyFlickerToLight() {
+        const light = this._lightEntity?.light;
+        if (!light) return;
+
+        const multiplier = this._getFlickerMultiplier();
+        light.intensity = this.intensity * multiplier;
+
+        if (this._helperMaterial) {
+            const rgb = this._hexToRgb(this.lightColor);
+            const helperGlow = 0.25 + multiplier * 0.35;
+            this._helperMaterial.diffuse.set(rgb.r * 0.3, rgb.g * 0.3, rgb.b * 0.3);
+            this._helperMaterial.emissive.set(rgb.r * helperGlow, rgb.g * helperGlow, rgb.b * helperGlow);
+            this._helperMaterial.update();
+        }
+    }
+
+    _teleportRigidbodyToCurrentTransform() {
+        if (!this.entity.rigidbody) {
+            return;
+        }
+
+        const position = this.entity.getPosition();
+        const rotation = this.entity.getRotation();
+        this.entity.rigidbody.linearVelocity = pc.Vec3.ZERO;
+        this.entity.rigidbody.angularVelocity = pc.Vec3.ZERO;
+        this.entity.rigidbody.teleport(position, rotation);
+    }
+
+    onEntityMoved(position, rotation) {
+        if (position) {
+            this.entity.setPosition(position.x, position.y, position.z);
+        }
+
+        if (rotation) {
+            this.entity.setEulerAngles(rotation.x, rotation.y, rotation.z);
+        }
+
+        this._teleportRigidbodyToCurrentTransform();
     }
 
     onPropertyChanged(name, value) {
@@ -295,6 +369,10 @@ export class Lamp extends ArrivalScript {
             return;
         }
 
+        if (name === "flickerEnabled" && !value) {
+            this._flickerPulse = 0;
+        }
+
         this._applyLightSettings();
 
         if (name === "range" || name === "outerConeAngle") {
@@ -302,10 +380,24 @@ export class Lamp extends ArrivalScript {
         }
 
         if (name === "lightColor" && this._helperMaterial) {
-            const rgb = this._hexToRgb(this.lightColor);
-            this._helperMaterial.diffuse.set(rgb.r * 0.3, rgb.g * 0.3, rgb.b * 0.3);
-            this._helperMaterial.emissive.set(rgb.r * 0.6, rgb.g * 0.6, rgb.b * 0.6);
-            this._helperMaterial.update();
+            this._applyFlickerToLight();
+        }
+    }
+
+    update(dt) {
+        if (this._lightEntity?.light) {
+            if (!this.flickerEnabled) {
+                this._applyFlickerToLight();
+            } else {
+                this._flickerTime += dt * this.flickerSpeed;
+                this._flickerPulse = Math.max(0, this._flickerPulse - dt * 10);
+
+                if (this.flickerPulseRate > 0 && Math.random() < this.flickerPulseRate * dt) {
+                    this._flickerPulse = Math.min(1, this._flickerPulse + 1);
+                }
+
+                this._applyFlickerToLight();
+            }
         }
     }
 
