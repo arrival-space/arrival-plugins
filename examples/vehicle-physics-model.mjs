@@ -14,6 +14,7 @@
 export class VehiclePhysicsModel extends ArrivalScript {
     static scriptName = "Vehicle Physics Model";
     static version = "1.0.0";
+    static EXTRA_SYNC_RATE = 20; // Rate at which to sync extra data (steering, wheel rotation) for remote clients
 
     // ── Models ──────────────────────────────────────────────
     chassisModelUrl = "https://dzrmwng2ae8bq.cloudfront.net/42485456/bd0e1f5573012b6340b53b69e8bc121a21e75944d2cba4cc3b9c0e5499b4a69c_x-bow-no-wheels_emissive_gray_as_turk.glb";
@@ -158,10 +159,6 @@ export class VehiclePhysicsModel extends ArrivalScript {
     _unsubAttach = null;
     _wheelSpinAngle = 0;
 
-    // Seat back (small upright behind driver)
-    static SEAT_HE = [0.18, 0.14, 0.04];
-    static SEAT_POS = [0, 0.49, -0.35];
-
     _getWheels() {
         return [
             { x:  this.wheelFrontX, y: this.wheelY, z:  this.wheelFrontZ, front: true  },  // FL
@@ -196,14 +193,16 @@ export class VehiclePhysicsModel extends ArrivalScript {
                 console.log('[Vehicle] Remote driver mounted:', info.userId);
                 this._remoteInfo = info;
                 this._remoteExtra = null;
+                this._remoteExtraLast = null;
+                this._remoteExtraLastTime = null;
+
                 this._wheelSpinAngle = 0;
                 this.entity.rigidbody.type = pc.BODYTYPE_KINEMATIC;
-                info.onExtra((ex) => { this._remoteExtra = ex; });
+                info.onExtra((ex) => { this._remoteExtraLastTime = Date.now(); this._remoteExtraLast = this._remoteExtra; this._remoteExtra = ex; });
             } else {
                 console.log('[Vehicle] Remote driver dismounted');
                 this.entity.rigidbody.type = pc.BODYTYPE_DYNAMIC;
                 this._remoteInfo = null;
-                this._remoteExtra = null;
             }
         });
     }
@@ -226,15 +225,6 @@ export class VehiclePhysicsModel extends ArrivalScript {
         chassis.setLocalPosition(0, this.collisionY, 0);
         this.entity.addChild(chassis);
         this._shapeEntities.push(chassis);
-
-        const seat = new pc.Entity("SeatShape");
-        seat.addComponent("collision", {
-            type: "box",
-            halfExtents: new pc.Vec3(...VehiclePhysicsModel.SEAT_HE),
-        });
-        seat.setLocalPosition(...VehiclePhysicsModel.SEAT_POS);
-        this.entity.addChild(seat);
-        this._shapeEntities.push(seat);
 
         this.entity.addComponent("rigidbody", {
             type: pc.BODYTYPE_DYNAMIC,
@@ -453,12 +443,13 @@ export class VehiclePhysicsModel extends ArrivalScript {
 
     _updateWheelsRemote(dt) {
         const wheels = this._getWheels();
-        const steer = this._remoteExtra?.steer || 0;
-        const speed = this._remoteExtra?.spd || 0;
 
-        if (this.wheelRadius > 0) {
-            this._wheelSpinAngle += (speed * dt * 60) / this.wheelRadius;
-        }
+        const extraLerp = this._remoteExtraLastTime
+            ? Math.min(1, (Date.now() - this._remoteExtraLastTime) / (1000 / VehiclePhysicsModel.EXTRA_SYNC_RATE))
+            : 1;
+
+        const steer = pc.math.lerp(this._remoteExtraLast?.steer || 0, this._remoteExtra?.steer || 0, extraLerp);
+        const wheelRot = pc.math.lerp(this._remoteExtraLast?.wheelRot || 0, this._remoteExtra?.wheelRot || 0, extraLerp);
 
         const wt = this.entity.getWorldTransform();
 
@@ -467,13 +458,14 @@ export class VehiclePhysicsModel extends ArrivalScript {
             const we = this._wheelEntities[i];
             if (!we) continue;
 
-            const localPos = new pc.Vec3(def.x, def.y - this.suspensionRestLength, def.z);
+            const localPos = new pc.Vec3(def.x, def.y - this.suspensionRestLength*0.75, def.z);
             const worldPos = wt.transformPoint(localPos);
             we.setPosition(worldPos);
 
             const chassisRot = this.entity.getRotation().clone();
             const steerAngle = def.front ? (steer * 180 / Math.PI) : 0;
-            const spinQuat = new pc.Quat().setFromEulerAngles(this._wheelSpinAngle, steerAngle, 0);
+
+            const spinQuat = new pc.Quat().setFromEulerAngles(-wheelRot * 180 / Math.PI, steerAngle+180, 0);
             we.setRotation(chassisRot.clone().mul(spinQuat));
         }
     }
@@ -615,6 +607,7 @@ export class VehiclePhysicsModel extends ArrivalScript {
             animations.Idle = this.rideIdleUrl;
             animations.Forward = this.rideIdleUrl;
         }
+            
         this._attachHandle = ArrivalSpace.attachPlayerToEntity(this.entity, {
             offset: { x: this.seatOffsetX, y: this.seatOffsetY, z: this.seatOffsetZ },
             animations,
@@ -623,10 +616,10 @@ export class VehiclePhysicsModel extends ArrivalScript {
                 heightOffset: this.cameraTargetHeightOffset,
                 distance: this.cameraTargetDistance,
             },
-            rate: 20,
+            rate: VehiclePhysicsModel.EXTRA_SYNC_RATE,
             extra: () => ({
                 steer: this._currentSteering,
-                spd: this.entity.rigidbody ? this.entity.rigidbody.linearVelocity.length() : 0,
+                wheelRot: this._vehicle?.getWheelInfo?.(0)?.get_m_rotation?.() || 0,
             }),
         });
 
@@ -642,7 +635,6 @@ export class VehiclePhysicsModel extends ArrivalScript {
         if (this._speedEl) this._speedEl.classList.add("visible");
         if (this._versionEl) this._versionEl.classList.add("visible");
 
-        this._teleportPlayerToSeat();
     }
 
     _dismount() {
@@ -684,27 +676,6 @@ export class VehiclePhysicsModel extends ArrivalScript {
             player.rigidbody.teleport(exitPos);
         } else {
             player.setPosition(exitPos);
-        }
-    }
-
-    _teleportPlayerToSeat() {
-        const player = ArrivalSpace.getPlayer();
-        if (!player) return;
-
-        const seatLocal = new pc.Vec3(this.seatOffsetX, this.seatOffsetY, this.seatOffsetZ);
-        const seatWorld = this.entity.getWorldTransform().transformPoint(seatLocal);
-
-        if (player.rigidbody) {
-            player.rigidbody.teleport(seatWorld);
-        } else {
-            player.setPosition(seatWorld);
-        }
-
-        const mesh = ArrivalSpace.getPlayerMesh();
-        if (mesh) {
-            mesh.setRotation(this.entity.getRotation());
-            const fwd = mesh.forward;
-            console.log('[VehicleMesh postUpdate] eulerY:', mesh.getEulerAngles().y.toFixed(1), 'fwd:', fwd.x.toFixed(3), fwd.z.toFixed(3));
         }
     }
 
@@ -846,7 +817,6 @@ export class VehiclePhysicsModel extends ArrivalScript {
 
         if (!this._mounted) return;
 
-        this._teleportPlayerToSeat();
 
         // Rotate camera by the same yaw delta as the vehicle
         const fwd = this.entity.forward;
