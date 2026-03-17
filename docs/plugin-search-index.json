@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-03-03",
+  "updated_at": "2026-03-12",
   "source": "curated",
   "total_entries": 31,
   "entries": [
@@ -143,12 +143,20 @@
       "keywords": ["info panel", "iframe", "html panel", "world-space ui", "dashboard", "panel"]
     },
     {
+      "path": "examples/lamp.mjs",
+      "kind": "example",
+      "title": "Lamp",
+      "summary": "Combines a lamp GLB, simple rigidbody collision, and a configurable point or cone light.",
+      "script_name": "Lamp",
+      "keywords": ["lamp", "light", "glb", "model", "rigidbody", "collision", "spotlight", "point light", "physics"]
+    },
+    {
       "path": "examples/npc-character.mjs",
       "kind": "example",
       "title": "NPC Character",
-      "summary": "Spawns an NPC and makes it follow the local player, demonstrating createNPC and avatar setup.",
+      "summary": "Spawns an NPC and makes it follow the local player, demonstrating createNPC, avatar setup, and a simple click callback.",
       "script_name": "NPC Character",
-      "keywords": ["npc", "character", "createNPC", "follower", "avatar", "ai character", "companion"]
+      "keywords": ["npc", "character", "createNPC", "follower", "avatar", "ai character", "companion", "click", "interaction"]
     },
     {
       "path": "examples/outfit-override.mjs",

@@ -81,16 +81,9 @@ export class Lamp extends ArrivalScript {
 
     initialize() {
         this._flickerSeed = Math.random() * Math.PI * 2;
-        this._ensureHDR();
         this._rebuildPhysics();
         this._createLight();
         this._loadModel(this.modelUrl);
-    }
-
-    _ensureHDR() {
-        const current = this.getPostEffects();
-        if (current?.hdrEnabled) return;
-        this.setPostEffects({ hdrEnabled: true });
     }
 
     async _loadModel(url) {

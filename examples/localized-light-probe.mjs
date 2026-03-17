@@ -97,7 +97,10 @@ export class LocalizedLightProbePlugin extends ArrivalScript {
 
     _ensureProbe() {
         if (this._localizedProbe) return;
-
+		
+		if( !ArrivalSpace.createLocalizedLightProbe )
+			return;
+		
         this._localizedProbe = ArrivalSpace.createLocalizedLightProbe(
             this._buildConfig(),
             this.position,

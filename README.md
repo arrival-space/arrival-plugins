@@ -72,7 +72,7 @@ See [Multiplayer Documentation](docs/multiplayer.md) for details.
 | [Hello World](examples/hello-world.mjs) | Simplest possible plugin |
 | [Hover Board](examples/hover-board.mjs) | Rideable dynamic board with avatar animation, input, and physics tuning |
 | [Info Panel](examples/info-panel.mjs) | Dynamic world-space iframe/UI panel |
-| [Lamp](examples/lamp.mjs) | Physical lamp with GLB model, cone/point light, shadows, and flicker |
+| [Lamp](examples/lamp.mjs) | Lamp GLB with rigidbody collision and configurable light |
 | [NPC Character](examples/npc-character.mjs) | Spawn and control a follower NPC |
 | [Outfit Override](examples/outfit-override.mjs) | Temporarily override avatar outfit parts |
 | [Physics Box](examples/physics-box.mjs) | Basic rigidbody/collision example |

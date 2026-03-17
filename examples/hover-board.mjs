@@ -188,8 +188,6 @@ export class HoverBoard extends ArrivalScript {
             angularDamping: this.angularDamping
         });
 
-        ArrivalSpace.enableContinuousCollisionDetection(this.entity);
-
         this._lastSizeX = this.sizeX;
         this._lastSizeY = this.sizeY;
         this._lastSizeZ = this.sizeZ;
