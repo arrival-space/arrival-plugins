@@ -149,8 +149,6 @@ export class VehiclePhysicsModel extends ArrivalScript {
     _mounted = false;
     _currentSteering = 0;
     _dismountCooldown = 0;
-    _hintEl = null;
-    _savedCameraTargetHeightOffset = null;
 
     // Multiplayer
     _attachHandle = null;
@@ -158,6 +156,8 @@ export class VehiclePhysicsModel extends ArrivalScript {
     _remoteExtra = null;
     _unsubAttach = null;
     _wheelSpinAngle = 0;
+    _remotePrevPos = null;
+    _remotePrevRot = null;
 
     _getWheels() {
         return [
@@ -188,7 +188,7 @@ export class VehiclePhysicsModel extends ArrivalScript {
         this._createHint();
 
         // Listen for remote players mounting this vehicle
-        this._unsubAttach = ArrivalSpace.onEntityAttachChanged(this.entity, (info) => {
+        this._unsubAttach = ArrivalSpace.onEntityAttachChanged(this.entity, (info, dismountData) => {
             if (info) {
                 console.log('[Vehicle] Remote driver mounted:', info.userId);
                 this._remoteInfo = info;
@@ -199,9 +199,30 @@ export class VehiclePhysicsModel extends ArrivalScript {
                 this._wheelSpinAngle = 0;
                 this.entity.rigidbody.type = pc.BODYTYPE_KINEMATIC;
                 info.onExtra((ex) => { this._remoteExtraLastTime = Date.now(); this._remoteExtraLast = this._remoteExtra; this._remoteExtra = ex; });
+
+                this._destroyVehicle();
+
             } else {
                 console.log('[Vehicle] Remote driver dismounted');
+                this._destroyVehicle();
                 this.entity.rigidbody.type = pc.BODYTYPE_DYNAMIC;
+                this._createVehicle();
+
+                // Sync position and velocity from the driver's state at dismount
+                if (dismountData) {
+                    if (dismountData.pos) {
+                        const p = new pc.Vec3(dismountData.pos[0], dismountData.pos[1], dismountData.pos[2]);
+                        const r = dismountData.rot ? new pc.Quat(dismountData.rot[0], dismountData.rot[1], dismountData.rot[2], dismountData.rot[3]) : this.entity.getRotation();
+                        this.entity.rigidbody.teleport(p, r);
+                    }
+                    if (dismountData.lv) {
+                        this.entity.rigidbody.linearVelocity = new pc.Vec3(dismountData.lv[0], dismountData.lv[1], dismountData.lv[2]);
+                    }
+                    if (dismountData.av) {
+                        this.entity.rigidbody.angularVelocity = new pc.Vec3(dismountData.av[0], dismountData.av[1], dismountData.av[2]);
+                    }
+                }
+
                 this._remoteInfo = null;
             }
         });
@@ -353,6 +374,22 @@ export class VehiclePhysicsModel extends ArrivalScript {
     //  RAYCAST VEHICLE
     // ═════════════════════════════════════════════════════════
 
+    _destroyVehicle() {
+
+        if (this._vehicle) {
+            const world = this.app.systems.rigidbody?.dynamicsWorld;
+            if (world) world.removeAction(this._vehicle);
+
+            Ammo.destroy(this._vehicle);
+            this._vehicle = null;
+        }
+        if (this._raycaster) { Ammo.destroy(this._raycaster); this._raycaster = null; }
+        
+        /// crashes physic :/
+        //if (this._tuning) { Ammo.destroy(this._tuning); this._tuning = null; }
+
+    }
+
     _createVehicle() {
         const body = this.entity.rigidbody.body;
         const world = this.app.systems.rigidbody.dynamicsWorld;
@@ -433,15 +470,23 @@ export class VehiclePhysicsModel extends ArrivalScript {
         quat.transformVector(seatLocal, seatWorld);
         const vehiclePos = playerPos.clone().sub(seatWorld);
 
+        // Compute velocity for character controller platform-riding
+        if (this._remotePrevPos && dt > 0) {
+            this.entity._kinematicPosDelta = vehiclePos.clone().sub(this._remotePrevPos);
+            this.entity._kinematicRotDelta = this._remotePrevRot.clone().invert().mul(quat);
+        }
+        this._remotePrevPos = vehiclePos.clone();
+        this._remotePrevRot = quat.clone();
+
         // Apply vehicle transform
         this.entity.setPosition(vehiclePos);
         this.entity.setRotation(quat);
 
         // Update wheels at static offsets with steering + spin
-        this._updateWheelsRemote(dt);
+        this._updateWheelsRemote();
     }
 
-    _updateWheelsRemote(dt) {
+    _updateWheelsRemote() {
         const wheels = this._getWheels();
 
         const extraLerp = this._remoteExtraLastTime
@@ -491,33 +536,9 @@ export class VehiclePhysicsModel extends ArrivalScript {
         const ui = this.getUIContainer();
         ui.innerHTML = `
             <style>
-                .vehicle-hint {
-                    position: fixed;
-                    top: 20px;
-                    left: 50%;
-                    transform: translateX(-50%);
-                    background: rgba(0, 0, 0, 0.35);
-                    color: #fff;
-                    padding: 6px 16px;
-                    border-radius: 6px;
-                    font: 13px/1.4 sans-serif;
-                    pointer-events: none;
-                    opacity: 0;
-                    transition: opacity 0.25s;
-                    white-space: nowrap;
-                }
-                .vehicle-hint.visible { opacity: 1; }
-                .vehicle-hint kbd {
-                    background: rgba(255,255,255,0.15);
-                    border: 1px solid rgba(255,255,255,0.25);
-                    border-radius: 3px;
-                    padding: 1px 6px;
-                    margin: 0 2px;
-                    font-family: inherit;
-                }
                 .vehicle-speed {
                     position: fixed;
-                    top: 52px;
+                    top: 20px;
                     left: 50%;
                     transform: translateX(-50%);
                     background: rgba(0, 0, 0, 0.35);
@@ -530,64 +551,10 @@ export class VehiclePhysicsModel extends ArrivalScript {
                     transition: opacity 0.25s;
                 }
                 .vehicle-speed.visible { opacity: 1; }
-                .vehicle-exit-btn {
-                    position: fixed;
-                    top: 20px;
-                    right: 20px;
-                    background: rgba(0, 0, 0, 0.5);
-                    color: #fff;
-                    border: 1px solid rgba(255,255,255,0.3);
-                    border-radius: 8px;
-                    padding: 10px 18px;
-                    font: 15px/1.2 sans-serif;
-                    cursor: pointer;
-                    opacity: 0;
-                    pointer-events: none;
-                    transition: opacity 0.25s;
-                    z-index: 100;
-                    -webkit-tap-highlight-color: transparent;
-                }
-                .vehicle-exit-btn.visible { opacity: 1; pointer-events: auto; }
-                .vehicle-exit-btn:active { background: rgba(255,255,255,0.2); }
-                .vehicle-version {
-                    position: fixed;
-                    bottom: 8px;
-                    left: 8px;
-                    background: rgba(0, 0, 0, 0.3);
-                    color: rgba(255,255,255,0.5);
-                    padding: 2px 8px;
-                    border-radius: 4px;
-                    font: 11px/1.4 monospace;
-                    pointer-events: none;
-                    opacity: 0;
-                    transition: opacity 0.25s;
-                }
-                .vehicle-version.visible { opacity: 1; }
             </style>
             <div class="vehicle-speed"></div>
-            <div class="vehicle-hint"></div>
-            <button class="vehicle-exit-btn">Exit</button>
-            <div class="vehicle-version">v${VehiclePhysicsModel.version}</div>
         `;
-        this._hintEl = ui.querySelector(".vehicle-hint");
         this._speedEl = ui.querySelector(".vehicle-speed");
-        this._exitBtn = ui.querySelector(".vehicle-exit-btn");
-        this._versionEl = ui.querySelector(".vehicle-version");
-        this._exitBtn.addEventListener("pointerdown", (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            this._dismount();
-        });
-    }
-
-    _showHint(text) {
-        if (!this._hintEl) return;
-        if (text) {
-            this._hintEl.innerHTML = text;
-            this._hintEl.classList.add("visible");
-        } else {
-            this._hintEl.classList.remove("visible");
-        }
     }
 
     // ═════════════════════════════════════════════════════════
@@ -626,14 +593,7 @@ export class VehiclePhysicsModel extends ArrivalScript {
         const fwd = this.entity.forward;
         this._lastVehicleYaw = Math.atan2(-fwd.x, -fwd.z) * (180 / Math.PI);
 
-        if (this.isMobile) {
-            this._showHint("Stick to drive");
-            if (this._exitBtn) this._exitBtn.classList.add("visible");
-        } else {
-            this._showHint("<kbd>WASD</kbd> drive · <kbd>Space</kbd> brake · <kbd>R</kbd> flip · <kbd>Esc</kbd> exit");
-        }
         if (this._speedEl) this._speedEl.classList.add("visible");
-        if (this._versionEl) this._versionEl.classList.add("visible");
 
     }
 
@@ -648,10 +608,7 @@ export class VehiclePhysicsModel extends ArrivalScript {
 
         this.unlockKeyboard();
 
-        this._showHint(null);
         if (this._speedEl) this._speedEl.classList.remove("visible");
-        if (this._exitBtn) this._exitBtn.classList.remove("visible");
-        if (this._versionEl) this._versionEl.classList.remove("visible");
 
         // Detach player — restores collision, camera, animations, broadcasts dismount
         if (this._attachHandle) {
@@ -659,24 +616,23 @@ export class VehiclePhysicsModel extends ArrivalScript {
             this._attachHandle = null;
         }
 
-        // Restore camera height (attachPlayerToEntity handles this now, but
-        // keep the saved value pattern for cameraTargetHeightOffset property changes)
-        this._savedCameraTargetHeightOffset = null;
-
         // Teleport player to exit position
         const player = ArrivalSpace.getPlayer();
         if (!player) return;
 
         const pos = this.entity.getPosition();
-        const right = this.entity.right.clone().mulScalar(2.5);
+        const right = this.entity.right.clone().mulScalar(this.enterDistance + 0.5);
         const exitPos = pos.clone().add(right);
-        exitPos.y += 1;
+        exitPos.y += 0.3;
 
         if (player.rigidbody) {
             player.rigidbody.teleport(exitPos);
         } else {
             player.setPosition(exitPos);
         }
+
+        this._destroyVehicle();
+        this._createVehicle();
     }
 
     // ═════════════════════════════════════════════════════════
@@ -762,15 +718,15 @@ export class VehiclePhysicsModel extends ArrivalScript {
     // ═════════════════════════════════════════════════════════
 
     update(dt) {
-        if (!this._vehicle) return;
-
         if (this._dismountCooldown > 0) this._dismountCooldown -= dt;
 
-        // Remote mode: someone else is driving
+        // Remote mode: someone else is driving (doesn't need _vehicle)
         if (this._remoteInfo) {
             this._updateRemote(dt);
             return;
         }
+
+        if (!this._vehicle) return;
 
         if (this.entity.getPosition().y < -100) {
             this._resetToSpawn();
@@ -796,10 +752,10 @@ export class VehiclePhysicsModel extends ArrivalScript {
     }
 
     postUpdate() {
-        if (!this._vehicle) return;
-
         // Remote mode: wheels already placed in update()
         if (this._remoteInfo) return;
+
+        if (!this._vehicle) return;
 
         // Local mode: sync wheel visuals from Ammo.js
         const n = this._vehicle.getNumWheels();
@@ -971,14 +927,7 @@ export class VehiclePhysicsModel extends ArrivalScript {
             this._unsubAttach = null;
         }
 
-        if (this._vehicle) {
-            const world = this.app.systems.rigidbody?.dynamicsWorld;
-            if (world) world.removeAction(this._vehicle);
-            Ammo.destroy(this._vehicle);
-            this._vehicle = null;
-        }
-        if (this._raycaster) { Ammo.destroy(this._raycaster); this._raycaster = null; }
-        if (this._tuning)    { Ammo.destroy(this._tuning);    this._tuning = null; }
+        this._destroyVehicle();
 
         if (this._chassisModelEntity) {
             ArrivalSpace.disposeEntity(this._chassisModelEntity);
