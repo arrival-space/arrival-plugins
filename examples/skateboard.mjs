@@ -6,9 +6,14 @@
  * with WASD. Press Esc to dismount. On mobile, the left
  * virtual stick provides analog steering and throttle, with
  * a tap-to-exit button.
+ *
+ * Multiplayer: Uses ArrivalSpace.attachPlayerToEntity() to
+ * broadcast mount state and vehicle quaternion. Remote clients
+ * derive vehicle position from the already-synced player avatar.
  */
-export class VehiclePhysicsModel extends ArrivalScript {
-    static scriptName = "Vehicle Physics Model";
+export class SkateboardModel extends ArrivalScript {
+    static scriptName = "Skateboard";
+    static EXTRA_SYNC_RATE = 20;
 
     // ── Models ──────────────────────────────────────────────
     chassisModelUrl = "https://dzrmwng2ae8bq.cloudfront.net/42485456/bd0e1f5573012b6340b53b69e8bc121a21e75944d2cba4cc3b9c0e5499b4a69c_x-bow-no-wheels_emissive_gray_as_turk.glb";
@@ -63,16 +68,6 @@ export class VehiclePhysicsModel extends ArrivalScript {
     chassisFriction = 0.013;
     chassisRestitution = 0.1;
 
-    // ── Headlights ──────────────────────────────────────────
-    headlightX = 0.498;
-    headlightY = 0.163;
-    headlightZ = 1.265;
-    headlightColor = "#ffe8c8";
-    headlightIntensity = 9.653;
-    headlightAngle = 45;
-    headlightRange = 20;
-    headlightTilt = 38.571;
-
     // ── Mounting ─────────────────────────────────────────────
     enterDistance = 1;
     seatOffsetX = 0.224;
@@ -121,14 +116,6 @@ export class VehiclePhysicsModel extends ArrivalScript {
         collisionFrontOffset:  { title: "Collision Front Offset",   min: -3,   max: 3,   step: 0.01 },
         chassisFriction:       { title: "Chassis Friction",          min: 0,    max: 1,   step: 0.01 },
         chassisRestitution:    { title: "Chassis Restitution",       min: 0,    max: 1,   step: 0.01 },
-        headlightX:            { title: "Headlight Side",            min: 0,    max: 2,   step: 0.01 },
-        headlightY:            { title: "Headlight Height",          min: -1,   max: 2,   step: 0.01 },
-        headlightZ:            { title: "Headlight Forward",         min: -1,   max: 3,   step: 0.01 },
-        headlightColor:        { title: "Headlight Color",           editor: "color" },
-        headlightIntensity:    { title: "Headlight Intensity",       min: 0,    max: 20,  step: 0.1 },
-        headlightAngle:        { title: "Headlight Cone Angle",      min: 1,    max: 90,  step: 1 },
-        headlightRange:        { title: "Headlight Range",           min: 1,    max: 100, step: 1 },
-        headlightTilt:         { title: "Headlight Tilt",            min: -45,  max: 45,  step: 1 },
         enterDistance:         { title: "Enter Distance",         min: 1,    max: 10 },
         seatOffsetX:           { title: "Seat Side",              min: -1,   max: 1,   step: 0.05 },
         seatOffsetY:           { title: "Seat Height",            min: -1,   max: 3,   step: 0.05 },
@@ -144,17 +131,24 @@ export class VehiclePhysicsModel extends ArrivalScript {
     _wheelEntities = [];
     _chassisModelEntity = null;
     _wheelModelEntities = [];
-    _headlightEntities = [];
     _shapeEntities = [];
     _mounted = false;
     _currentSteering = 0;
     _dismountCooldown = 0;
-    _hintEl = null;
     _rideAccelActive = false;
 
     // Seat back (small upright behind driver)
     static SEAT_HE = [0.18, 0.14, 0.04];
     static SEAT_POS = [0, 0.49, -0.35];
+
+    // Multiplayer
+    _attachHandle = null;
+    _remoteInfo = null;
+    _remoteExtra = null;
+    _unsubAttach = null;
+    _wheelSpinAngle = 0;
+    _remotePrevPos = null;
+    _remotePrevRot = null;
 
     _getWheels() {
         return [
@@ -167,7 +161,7 @@ export class VehiclePhysicsModel extends ArrivalScript {
 
     async initialize() {
         if (typeof Ammo === "undefined") {
-            console.error("[VehiclePhysicsModel] Ammo.js not available");
+            console.error("[SkateboardModel] Ammo.js not available");
             return;
         }
         await this._syncAnimationOptions();
@@ -180,9 +174,48 @@ export class VehiclePhysicsModel extends ArrivalScript {
         this.setPhysicsStepRate(this.physicsHz, this.physicsSubSteps);
         this._buildPhysics();
         await this._buildVisuals();
-        this._createHeadlights();
         this._createVehicle();
         this._createHint();
+
+        // Listen for remote players mounting this vehicle
+        this._unsubAttach = ArrivalSpace.onEntityAttachChanged(this.entity, (info, dismountData) => {
+            if (info) {
+                console.log('[Vehicle] Remote driver mounted:', info.userId);
+                this._remoteInfo = info;
+                this._remoteExtra = null;
+                this._remoteExtraLast = null;
+                this._remoteExtraLastTime = null;
+
+                this._wheelSpinAngle = 0;
+                this.entity.rigidbody.type = pc.BODYTYPE_KINEMATIC;
+                info.onExtra((ex) => { this._remoteExtraLastTime = Date.now(); this._remoteExtraLast = this._remoteExtra; this._remoteExtra = ex; });
+
+                this._destroyVehicle();
+
+            } else {
+                console.log('[Vehicle] Remote driver dismounted');
+                this._destroyVehicle();
+                this.entity.rigidbody.type = pc.BODYTYPE_DYNAMIC;
+                this._createVehicle();
+
+                // Sync position and velocity from the driver's state at dismount
+                if (dismountData) {
+                    if (dismountData.pos) {
+                        const p = new pc.Vec3(dismountData.pos[0], dismountData.pos[1], dismountData.pos[2]);
+                        const r = dismountData.rot ? new pc.Quat(dismountData.rot[0], dismountData.rot[1], dismountData.rot[2], dismountData.rot[3]) : this.entity.getRotation();
+                        this.entity.rigidbody.teleport(p, r);
+                    }
+                    if (dismountData.lv) {
+                        this.entity.rigidbody.linearVelocity = new pc.Vec3(dismountData.lv[0], dismountData.lv[1], dismountData.lv[2]);
+                    }
+                    if (dismountData.av) {
+                        this.entity.rigidbody.angularVelocity = new pc.Vec3(dismountData.av[0], dismountData.av[1], dismountData.av[2]);
+                    }
+                }
+
+                this._remoteInfo = null;
+            }
+        });
     }
 
     // ═════════════════════════════════════════════════════════
@@ -203,15 +236,6 @@ export class VehiclePhysicsModel extends ArrivalScript {
         chassis.setLocalPosition(0, this.collisionY, this.collisionFrontOffset);
         this.entity.addChild(chassis);
         this._shapeEntities.push(chassis);
-
-        const seat = new pc.Entity("SeatShape");
-        seat.addComponent("collision", {
-            type: "box",
-            halfExtents: new pc.Vec3(...VehiclePhysicsModel.SEAT_HE),
-        });
-        seat.setLocalPosition(...VehiclePhysicsModel.SEAT_POS);
-        this.entity.addChild(seat);
-        this._shapeEntities.push(seat);
 
         this.entity.addComponent("rigidbody", {
             type: pc.BODYTYPE_DYNAMIC,
@@ -261,7 +285,7 @@ export class VehiclePhysicsModel extends ArrivalScript {
             this._chassisModelEntity = entity;
             this._applyChassisModelTransform();
         } catch (err) {
-            console.error("[VehiclePhysicsModel] Failed to load chassis model:", err);
+            console.error("[SkateboardModel] Failed to load chassis model:", err);
         }
     }
 
@@ -288,69 +312,25 @@ export class VehiclePhysicsModel extends ArrivalScript {
                 }
                 this._wheelModelEntities.push(entity);
             } catch (err) {
-                console.error("[VehiclePhysicsModel] Failed to load wheel model:", err);
+                console.error("[SkateboardModel] Failed to load wheel model:", err);
                 this._wheelModelEntities.push(null);
             }
         }
     }
 
     // ═════════════════════════════════════════════════════════
-    //  HEADLIGHTS
-    // ═════════════════════════════════════════════════════════
-
-    _hexToColor(hex) {
-        const h = hex.replace("#", "");
-        const r = parseInt(h.substring(0, 2), 16) / 255;
-        const g = parseInt(h.substring(2, 4), 16) / 255;
-        const b = parseInt(h.substring(4, 6), 16) / 255;
-        return new pc.Color(r, g, b);
-    }
-
-    _createHeadlights() {
-        for (const l of this._headlightEntities) {
-            if (l && !l._destroyed) l.destroy();
-        }
-        this._headlightEntities = [];
-
-        const color = this._hexToColor(this.headlightColor);
-
-        for (let side = -1; side <= 1; side += 2) {
-            const light = new pc.Entity(`Headlight_${side > 0 ? "R" : "L"}`);
-            light.addComponent("light", {
-                type: "spot",
-                color: color,
-                intensity: this.headlightIntensity,
-                innerConeAngle: this.headlightAngle * 0.5,
-                outerConeAngle: this.headlightAngle,
-                range: this.headlightRange,
-                castShadows: false,
-            });
-            light.setLocalPosition(this.headlightX * side, this.headlightY, this.headlightZ);
-            light.setLocalEulerAngles(-90 + this.headlightTilt, 0, 0);
-            this.entity.addChild(light);
-            this._headlightEntities.push(light);
-        }
-    }
-
-    _updateHeadlights() {
-        const color = this._hexToColor(this.headlightColor);
-        for (let i = 0; i < this._headlightEntities.length; i++) {
-            const light = this._headlightEntities[i];
-            if (!light || light._destroyed) continue;
-            const side = i === 0 ? -1 : 1;
-            light.setLocalPosition(this.headlightX * side, this.headlightY, this.headlightZ);
-            light.setLocalEulerAngles(-90 + this.headlightTilt, 0, 0);
-            light.light.color = color;
-            light.light.intensity = this.headlightIntensity;
-            light.light.innerConeAngle = this.headlightAngle * 0.5;
-            light.light.outerConeAngle = this.headlightAngle;
-            light.light.range = this.headlightRange;
-        }
-    }
-
-    // ═════════════════════════════════════════════════════════
     //  RAYCAST VEHICLE
     // ═════════════════════════════════════════════════════════
+
+    _destroyVehicle() {
+        if (this._vehicle) {
+            const world = this.app.systems.rigidbody?.dynamicsWorld;
+            if (world) world.removeAction(this._vehicle);
+            Ammo.destroy(this._vehicle);
+            this._vehicle = null;
+        }
+        if (this._raycaster) { Ammo.destroy(this._raycaster); this._raycaster = null; }
+    }
 
     _createVehicle() {
         const body = this.entity.rigidbody.body;
@@ -404,6 +384,81 @@ export class VehiclePhysicsModel extends ArrivalScript {
     }
 
     // ═════════════════════════════════════════════════════════
+    //  REMOTE MODE: derive vehicle from player position
+    // ═════════════════════════════════════════════════════════
+
+    _updateRemote(dt) {
+        if (!this._remoteInfo) return;
+
+        // Find the remote driver's avatar entity
+        const players = ArrivalSpace.net.getPlayers();
+        const driver = players.find(p => p.userID == this._remoteInfo.userId);
+        const driverEntity = driver?.entity;
+        if (!driverEntity) {
+            if (!this._remoteLoggedNoDriver) {
+                console.warn('[Vehicle] Remote mode: driver entity not found for userId:', this._remoteInfo.userId, 'players:', players.map(p => p.userID));
+                this._remoteLoggedNoDriver = true;
+            }
+            return;
+        }
+        this._remoteLoggedNoDriver = false;
+
+        const off = this._remoteInfo.offset;
+        const quat = this._remoteInfo.quaternion;
+
+        // Derive vehicle position: playerPos - quat * seatOffset
+        const playerPos = driverEntity.getPosition();
+        const seatLocal = new pc.Vec3(off.x, off.y, off.z);
+        const seatWorld = new pc.Vec3();
+        quat.transformVector(seatLocal, seatWorld);
+        const vehiclePos = playerPos.clone().sub(seatWorld);
+
+        // Compute delta for character controller platform-riding
+        if (this._remotePrevPos && dt > 0) {
+            this.entity._kinematicPosDelta = vehiclePos.clone().sub(this._remotePrevPos);
+            this.entity._kinematicRotDelta = this._remotePrevRot.clone().invert().mul(quat);
+        }
+        this._remotePrevPos = vehiclePos.clone();
+        this._remotePrevRot = quat.clone();
+
+        // Apply vehicle transform
+        this.entity.setPosition(vehiclePos);
+        this.entity.setRotation(quat);
+
+        // Update wheels at static offsets with steering + spin
+        this._updateWheelsRemote();
+    }
+
+    _updateWheelsRemote() {
+        const wheels = this._getWheels();
+
+        const extraLerp = this._remoteExtraLastTime
+            ? Math.min(1, (Date.now() - this._remoteExtraLastTime) / (1000 / SkateboardModel.EXTRA_SYNC_RATE))
+            : 1;
+
+        const steer = pc.math.lerp(this._remoteExtraLast?.steer || 0, this._remoteExtra?.steer || 0, extraLerp);
+        const wheelRot = pc.math.lerp(this._remoteExtraLast?.wheelRot || 0, this._remoteExtra?.wheelRot || 0, extraLerp);
+
+        const wt = this.entity.getWorldTransform();
+
+        for (let i = 0; i < wheels.length; i++) {
+            const def = wheels[i];
+            const we = this._wheelEntities[i];
+            if (!we) continue;
+
+            const localPos = new pc.Vec3(def.x, def.y - this.suspensionRestLength*0.75, def.z);
+            const worldPos = wt.transformPoint(localPos);
+            we.setPosition(worldPos);
+
+            const chassisRot = this.entity.getRotation().clone();
+            const steerAngle = def.front ? (steer * 180 / Math.PI) : 0;
+
+            const spinQuat = new pc.Quat().setFromEulerAngles(-wheelRot * 180 / Math.PI, steerAngle+180, 0);
+            we.setRotation(chassisRot.clone().mul(spinQuat));
+        }
+    }
+
+    // ═════════════════════════════════════════════════════════
     //  ANIMATION OPTIONS
     // ═════════════════════════════════════════════════════════
 
@@ -437,33 +492,9 @@ export class VehiclePhysicsModel extends ArrivalScript {
         const ui = this.getUIContainer();
         ui.innerHTML = `
             <style>
-                .vehicle-hint {
-                    position: fixed;
-                    top: 20px;
-                    left: 50%;
-                    transform: translateX(-50%);
-                    background: rgba(0, 0, 0, 0.35);
-                    color: #fff;
-                    padding: 6px 16px;
-                    border-radius: 6px;
-                    font: 13px/1.4 sans-serif;
-                    pointer-events: none;
-                    opacity: 0;
-                    transition: opacity 0.25s;
-                    white-space: nowrap;
-                }
-                .vehicle-hint.visible { opacity: 1; }
-                .vehicle-hint kbd {
-                    background: rgba(255,255,255,0.15);
-                    border: 1px solid rgba(255,255,255,0.25);
-                    border-radius: 3px;
-                    padding: 1px 6px;
-                    margin: 0 2px;
-                    font-family: inherit;
-                }
                 .vehicle-speed {
                     position: fixed;
-                    top: 52px;
+                    top: 20px;
                     left: 50%;
                     transform: translateX(-50%);
                     background: rgba(0, 0, 0, 0.35);
@@ -476,48 +507,10 @@ export class VehiclePhysicsModel extends ArrivalScript {
                     transition: opacity 0.25s;
                 }
                 .vehicle-speed.visible { opacity: 1; }
-                .vehicle-exit-btn {
-                    position: fixed;
-                    top: 20px;
-                    right: 20px;
-                    background: rgba(0, 0, 0, 0.5);
-                    color: #fff;
-                    border: 1px solid rgba(255,255,255,0.3);
-                    border-radius: 8px;
-                    padding: 10px 18px;
-                    font: 15px/1.2 sans-serif;
-                    cursor: pointer;
-                    opacity: 0;
-                    pointer-events: none;
-                    transition: opacity 0.25s;
-                    z-index: 100;
-                    -webkit-tap-highlight-color: transparent;
-                }
-                .vehicle-exit-btn.visible { opacity: 1; pointer-events: auto; }
-                .vehicle-exit-btn:active { background: rgba(255,255,255,0.2); }
             </style>
             <div class="vehicle-speed"></div>
-            <div class="vehicle-hint"></div>
-            <button class="vehicle-exit-btn">Exit</button>
         `;
-        this._hintEl = ui.querySelector(".vehicle-hint");
         this._speedEl = ui.querySelector(".vehicle-speed");
-        this._exitBtn = ui.querySelector(".vehicle-exit-btn");
-        this._exitBtn.addEventListener("pointerdown", (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            this._dismount();
-        });
-    }
-
-    _showHint(text) {
-        if (!this._hintEl) return;
-        if (text) {
-            this._hintEl.innerHTML = text;
-            this._hintEl.classList.add("visible");
-        } else {
-            this._hintEl.classList.remove("visible");
-        }
     }
 
     // ═════════════════════════════════════════════════════════
@@ -525,104 +518,80 @@ export class VehiclePhysicsModel extends ArrivalScript {
     // ═════════════════════════════════════════════════════════
 
     _mount() {
-        if (this._mounted) return;
+        if (this._mounted || this._remoteInfo) return;
         this._mounted = true;
         this._currentSteering = 0;
         this._rideAccelActive = false;
 
-        // Lock character movement so WASD goes to vehicle instead
         this.lockKeyboard();
 
-        // Disable player collision capsule so it doesn't interfere with the vehicle
-        ArrivalSpace.setPlayerCollision(false);
-
-        // Track vehicle yaw for camera sync (atan2 on forward, avoids Euler flips)
-        const fwd = this.entity.forward;
-        this._lastVehicleYaw = Math.atan2(-fwd.x, -fwd.z) * (180 / Math.PI);
-
-        // Apply ride idle animation
+        // Attach player — handles collision, camera, animations, network broadcast
+        const animations = {};
         if (this.rideIdleUrl) {
-            ArrivalSpace.setPlayerAnimation("Idle", this.rideIdleUrl);
-            ArrivalSpace.setPlayerAnimation("Forward", this.rideIdleUrl);
+            animations.Idle = this.rideIdleUrl;
+            animations.Forward = this.rideIdleUrl;
         }
+
+        this._attachHandle = ArrivalSpace.attachPlayerToEntity(this.entity, {
+            offset: { x: this.seatOffsetX, y: this.seatOffsetY, z: this.seatOffsetZ },
+            animations,
+            disableCollision: true,
+            rate:  SkateboardModel.EXTRA_SYNC_RATE,
+            extra: () => ({
+                steer: this._currentSteering,
+                wheelRot: this._vehicle?.getWheelInfo?.(0)?.get_m_rotation?.() || 0,
+            }),
+        });
+
         if (this.rideAccelUrl) {
             this._applyRideAccelAnimation();
         }
 
-        if (this.isMobile) {
-            this._showHint("Stick to drive");
-            if (this._exitBtn) this._exitBtn.classList.add("visible");
-        } else {
-            this._showHint("<kbd>WASD</kbd> drive · <kbd>Space</kbd> brake · <kbd>R</kbd> flip · <kbd>Esc</kbd> exit");
-        }
-        if (this._speedEl) this._speedEl.classList.add("visible");
+        const fwd = this.entity.forward;
+        this._lastVehicleYaw = Math.atan2(-fwd.x, -fwd.z) * (180 / Math.PI);
 
-        // Snap player onto seat immediately
-        this._teleportPlayerToSeat();
+        if (this._speedEl) this._speedEl.classList.add("visible");
     }
 
     _dismount() {
         if (!this._mounted) return;
         this._mounted = false;
-        this._dismountCooldown = 1.0; // prevent immediate re-mount
+        this._dismountCooldown = 1.0;
 
-        // Release vehicle controls
         this.applyEngineForce(0);
         this.setBrake(0);
         this.setSteering(0);
 
-        // Unlock character movement
         this.unlockKeyboard();
 
-        // Reset animations
-        ArrivalSpace.setPlayerAnimation("Idle", null);
-        ArrivalSpace.setPlayerAnimation("Forward", null);
         ArrivalSpace.setPlayerAnimation("Signature1", null);
         this._setRideAccelActive(false);
 
-        this._showHint(null);
         if (this._speedEl) this._speedEl.classList.remove("visible");
-        if (this._exitBtn) this._exitBtn.classList.remove("visible");
 
-        // Re-enable player collision capsule
-        ArrivalSpace.setPlayerCollision(true);
+        // Detach player — restores collision, camera, animations, broadcasts dismount
+        if (this._attachHandle) {
+            this._attachHandle.detach();
+            this._attachHandle = null;
+        }
 
-        // Teleport player to the right side of the vehicle
+        // Teleport player to exit position
         const player = ArrivalSpace.getPlayer();
         if (!player) return;
 
         const pos = this.entity.getPosition();
-        const right = this.entity.right.clone().mulScalar(2.5);
+        const right = this.entity.right.clone().mulScalar(this.enterDistance + 0.5);
         const exitPos = pos.clone().add(right);
-        exitPos.y += 1;
+        exitPos.y += 0.3;
 
         if (player.rigidbody) {
             player.rigidbody.teleport(exitPos);
         } else {
             player.setPosition(exitPos);
         }
-    }
 
-    _teleportPlayerToSeat() {
-        const player = ArrivalSpace.getPlayer();
-        if (!player) return;
-
-        // Seat position in vehicle local space → world
-        const seatLocal = new pc.Vec3(this.seatOffsetX, this.seatOffsetY, this.seatOffsetZ);
-        const seatWorld = this.entity.getWorldTransform().transformPoint(seatLocal);
-
-        if (player.rigidbody) {
-            player.rigidbody.teleport(seatWorld);
-        } else {
-            player.setPosition(seatWorld);
-        }
-
-        // Match player mesh rotation to vehicle chassis (including tilt)
-        const mesh = ArrivalSpace.getPlayerMesh();
-        if (mesh) {
-            const rot = this.entity.getRotation();
-            mesh.setRotation(rot);
-        }
+        this._destroyVehicle();
+        this._createVehicle();
     }
 
     // ═════════════════════════════════════════════════════════
@@ -631,6 +600,7 @@ export class VehiclePhysicsModel extends ArrivalScript {
 
     _checkProximity() {
         if (this._dismountCooldown > 0) return;
+        if (this._remoteInfo) return;
 
         const player = ArrivalSpace.getPlayer();
         if (!player) return;
@@ -668,7 +638,7 @@ export class VehiclePhysicsModel extends ArrivalScript {
 
         // Speed
         const speed = this.entity.rigidbody.linearVelocity.length();
-        if (this._speedEl) this._speedEl.textContent = `${speed.toFixed(1)} m/s`;
+        if (this._speedEl) this._speedEl.textContent = `Skateboard`;
 
         // Steering (decays with speed)
         const steerLimit = pc.math.lerp(this.maxSteering, this.minSteering,
@@ -716,15 +686,20 @@ export class VehiclePhysicsModel extends ArrivalScript {
     // ═════════════════════════════════════════════════════════
 
     update(dt) {
-        if (!this._vehicle) return;
-
         if (this._dismountCooldown > 0) this._dismountCooldown -= dt;
+
+        // Remote mode: someone else is driving (doesn't need _vehicle)
+        if (this._remoteInfo) {
+            this._updateRemote(dt);
+            return;
+        }
+
+        if (!this._vehicle) return;
 
         // Reset if fallen off the world
         if (this.entity.getPosition().y < -100) {
             this._resetToSpawn();
         }
-
 
         // Flip upright if tipped on its side
         const up = this.entity.up;
@@ -745,10 +720,12 @@ export class VehiclePhysicsModel extends ArrivalScript {
             this.setBrake(this.idleBrake);
             this._setRideAccelActive(false);
         }
-
     }
 
     postUpdate() {
+        // Remote mode: wheels already placed in update()
+        if (this._remoteInfo) return;
+
         if (!this._vehicle) return;
 
         // Sync wheel visuals (after physics step)
@@ -766,8 +743,6 @@ export class VehiclePhysicsModel extends ArrivalScript {
         }
 
         if (!this._mounted) return;
-
-        this._teleportPlayerToSeat();
 
         // Rotate camera by the same yaw delta as the vehicle
         const fwd = this.entity.forward;
@@ -834,11 +809,6 @@ export class VehiclePhysicsModel extends ArrivalScript {
                 ArrivalSpace.setPlayerAnimation("Signature1", null);
                 this._setRideAccelActive(false);
             }
-            return;
-        }
-        // Headlight properties
-        if (name.startsWith("headlight")) {
-            this._updateHeadlights();
             return;
         }
         if (name === "chassisModelUrl") {
@@ -909,15 +879,12 @@ export class VehiclePhysicsModel extends ArrivalScript {
         // Dismount player first (while vehicle still exists)
         if (this._mounted) this._dismount();
 
-        // Remove vehicle action before touching rigidbody
-        if (this._vehicle) {
-            const world = this.app.systems.rigidbody?.dynamicsWorld;
-            if (world) world.removeAction(this._vehicle);
-            Ammo.destroy(this._vehicle);
-            this._vehicle = null;
+        if (this._unsubAttach) {
+            this._unsubAttach();
+            this._unsubAttach = null;
         }
-        if (this._raycaster) { Ammo.destroy(this._raycaster); this._raycaster = null; }
-        if (this._tuning)    { Ammo.destroy(this._tuning);    this._tuning = null; }
+
+        this._destroyVehicle();
 
         // Dispose GLB models
         if (this._chassisModelEntity) {
@@ -935,11 +902,6 @@ export class VehiclePhysicsModel extends ArrivalScript {
             if (s && !s._destroyed) s.destroy();
         }
         this._shapeEntities = [];
-
-        for (const l of this._headlightEntities) {
-            if (l && !l._destroyed) l.destroy();
-        }
-        this._headlightEntities = [];
 
         if (this.entity.rigidbody) this.entity.removeComponent("rigidbody");
         if (this.entity.collision) this.entity.removeComponent("collision");
