@@ -87,6 +87,14 @@ export class SkateboardModel extends ArrivalScript {
     rideJumpDuration = 0.35;
     rideAccelInPlaceY = 0;
     rideAccelInPlaceZ = 0;
+    rollingSoundUrl = "";
+    rollingSoundVolume = 0.2;
+    rollingSoundMinSpeed = 1.2;
+    rollingSoundMaxSpeed = 8;
+    rollingSoundMinPitch = 0.85;
+    rollingSoundMinPitchSpeed = 1.2;
+    rollingSoundPitch = 1;
+    rollingSoundPitchSpeed = 8;
 
     static properties = {
         chassisModelUrl:       { title: "Chassis Model (GLB)", editor: "asset" },
@@ -146,6 +154,14 @@ export class SkateboardModel extends ArrivalScript {
         rideJumpDuration:      { title: "Ride Jump Duration",     min: 0.05, max: 2,   step: 0.01 },
         rideAccelInPlaceY:     { title: "Ride Accel InPlace Y",   min: -2,   max: 2,   step: 0.001 },
         rideAccelInPlaceZ:     { title: "Ride Accel InPlace Z",   min: -2,   max: 2,   step: 0.001 },
+        rollingSoundUrl:       { title: "Rolling Sound", editor: "asset" },
+        rollingSoundVolume:         { title: "Rolling Sound Volume",          min: 0,    max: 10,  step: 0.01 },
+        rollingSoundMinSpeed:       { title: "Rolling Sound Min Speed",       min: 0,    max: 20,  step: 0.1 },
+        rollingSoundMaxSpeed:       { title: "Rolling Sound Max Speed",       min: 0.1,  max: 50,  step: 0.1 },
+        rollingSoundMinPitch:       { title: "Pitch Value Min", min: 0.25, max: 3, step: 0.01 },
+        rollingSoundMinPitchSpeed:  { title: "Pitch Speed Min", min: 0, max: 50, step: 0.1 },
+        rollingSoundPitch:          { title: "Pitch Value Max", min: 0.25, max: 4, step: 0.01 },
+        rollingSoundPitchSpeed:     { title: "Pitch Speed Max", min: 0.1, max: 50, step: 0.1 },
     };
 
     // ── Private state ────────────────────────────────────────
@@ -167,6 +183,10 @@ export class SkateboardModel extends ArrivalScript {
     _rideJumpTimer = null;
     _currentSpeed = 0;
     _wasOnAir = null;
+    _rollingSoundEntity = null;
+    _rollingSoundSlot = null;
+    _rollingSoundPending = false;
+    _rollingSoundRequestId = 0;
 
     // Seat back (small upright behind driver)
     static SEAT_HE = [0.18, 0.14, 0.04];
@@ -181,6 +201,7 @@ export class SkateboardModel extends ArrivalScript {
     _remotePrevPos = null;
     _remotePrevRot = null;
     _remoteRiderRotation = null;
+    _remoteOnAir = false;
 
     _getWheels() {
         return [
@@ -218,6 +239,7 @@ export class SkateboardModel extends ArrivalScript {
                 this._remoteExtraLast = null;
                 this._remoteExtraLastTime = null;
                 this._remoteRiderRotation = null;
+                this._remoteOnAir = false;
 
                 this._wheelSpinAngle = 0;
                 this.entity.rigidbody.type = pc.BODYTYPE_KINEMATIC;
@@ -250,6 +272,7 @@ export class SkateboardModel extends ArrivalScript {
 
                 this._remoteInfo = null;
                 this._remoteRiderRotation = null;
+                this._remoteOnAir = false;
             }
         });
     }
@@ -506,6 +529,9 @@ export class SkateboardModel extends ArrivalScript {
                 console.warn('[Vehicle] Remote mode: driver entity not found for userId:', this._remoteInfo.userId, 'players:', players.map(p => p.userID));
                 this._remoteLoggedNoDriver = true;
             }
+            this._currentSpeed = 0;
+            this._remoteOnAir = false;
+            this._updateRollingSound();
             return;
         }
         this._remoteLoggedNoDriver = false;
@@ -524,9 +550,12 @@ export class SkateboardModel extends ArrivalScript {
         if (this._remotePrevPos && dt > 0) {
             this.entity._kinematicPosDelta = vehiclePos.clone().sub(this._remotePrevPos);
             this.entity._kinematicRotDelta = this._remotePrevRot.clone().invert().mul(quat);
+        } else {
+            this.entity._kinematicPosDelta = new pc.Vec3();
         }
         this._remotePrevPos = vehiclePos.clone();
         this._remotePrevRot = quat.clone();
+        this._currentSpeed = dt > 0 ? this.entity._kinematicPosDelta.length() / dt : 0;
 
         // Apply vehicle transform
         this.entity.setPosition(vehiclePos);
@@ -537,9 +566,11 @@ export class SkateboardModel extends ArrivalScript {
             : 1;
         const steerInput = pc.math.lerp(this._remoteExtraLast?.steerInput || 0, this._remoteExtra?.steerInput || 0, extraLerp);
         const riderLean = pc.math.lerp(this._remoteExtraLast?.riderLean || 0, this._remoteExtra?.riderLean || 0, extraLerp);
+        this._remoteOnAir = !!(this._remoteExtra?.onAir ?? this._remoteExtraLast?.onAir ?? false);
         this._currentSteerInput = steerInput;
         this._applyChassisModelTransform();
         this._applyRemoteRiderLean(driverEntity, quat, riderLean, dt);
+        this._updateRollingSound();
 
         // Update wheels at static offsets with steering + spin
         this._updateWheelsRemote();
@@ -851,6 +882,100 @@ export class SkateboardModel extends ArrivalScript {
     //  HINT UI
     // ═════════════════════════════════════════════════════════
 
+    _shouldPlayRollingSound() {
+        const onAir = this._remoteInfo ? this._remoteOnAir : this._isOnAir();
+        return !!this.rollingSoundUrl && this._currentSpeed >= this.rollingSoundMinSpeed && !onAir;
+    }
+
+    _getRollingSoundVolume() {
+        const maxSpeed = Math.max(this.rollingSoundMaxSpeed, this.rollingSoundMinSpeed + 0.01);
+        const speedT = pc.math.clamp((this._currentSpeed - this.rollingSoundMinSpeed) / (maxSpeed - this.rollingSoundMinSpeed), 0, 1);
+        return pc.math.lerp(0, this.rollingSoundVolume, speedT);
+    }
+
+    _getRollingSoundPitch() {
+        const minPitchSpeed = this.rollingSoundMinPitchSpeed;
+        const targetPitchSpeed = Math.max(this.rollingSoundPitchSpeed, minPitchSpeed + 0.01);
+
+        if (this._currentSpeed <= minPitchSpeed) {
+            return this.rollingSoundMinPitch;
+        }
+
+        const pitchSlope = (this.rollingSoundPitch - this.rollingSoundMinPitch) / (targetPitchSpeed - minPitchSpeed);
+        return this.rollingSoundMinPitch + (this._currentSpeed - minPitchSpeed) * pitchSlope;
+    }
+
+    async _startRollingSound() {
+        if (!this.rollingSoundUrl || this._rollingSoundSlot || this._rollingSoundPending) return;
+
+        const requestId = ++this._rollingSoundRequestId;
+        const soundUrl = this.rollingSoundUrl;
+        this._rollingSoundPending = true;
+
+        try {
+            const { entity, slot } = await ArrivalSpace.playSound(soundUrl, {
+                entity: this.entity,
+                loop: true,
+                volume: this._getRollingSoundVolume(),
+                pitch: this._getRollingSoundPitch(),
+            });
+
+            if (requestId !== this._rollingSoundRequestId || soundUrl !== this.rollingSoundUrl || !this._shouldPlayRollingSound()) {
+                slot.stop();
+                if (entity && entity !== this.entity && !entity._destroyed) {
+                    ArrivalSpace.disposeEntity(entity);
+                }
+                return;
+            }
+
+            this._rollingSoundEntity = entity;
+            this._rollingSoundSlot = slot;
+            this._updateRollingSoundAudio();
+        } catch (err) {
+            console.error('[SkateboardModel] Failed to start rolling sound:', err);
+        } finally {
+            if (requestId === this._rollingSoundRequestId) {
+                this._rollingSoundPending = false;
+            }
+        }
+    }
+
+    _stopRollingSound() {
+        this._rollingSoundRequestId++;
+        this._rollingSoundPending = false;
+
+        if (this._rollingSoundSlot) {
+            this._rollingSoundSlot.stop();
+            this._rollingSoundSlot = null;
+        }
+        if (this._rollingSoundEntity && this._rollingSoundEntity !== this.entity && !this._rollingSoundEntity._destroyed) {
+            ArrivalSpace.disposeEntity(this._rollingSoundEntity);
+        }
+        this._rollingSoundEntity = null;
+    }
+
+    _updateRollingSoundAudio() {
+        if (!this._rollingSoundSlot) return;
+        if (typeof this._rollingSoundSlot.volume === 'number') {
+            this._rollingSoundSlot.volume = this._getRollingSoundVolume();
+        }
+        if (typeof this._rollingSoundSlot.pitch === 'number') {
+            this._rollingSoundSlot.pitch = this._getRollingSoundPitch();
+        }
+    }
+
+    _updateRollingSound() {
+        if (!this._shouldPlayRollingSound()) {
+            this._stopRollingSound();
+            return;
+        }
+        if (!this._rollingSoundSlot) {
+            this._startRollingSound();
+            return;
+        }
+        this._updateRollingSoundAudio();
+    }
+
     _createHint() {
         const ui = this.getUIContainer();
         ui.innerHTML = `
@@ -923,6 +1048,7 @@ export class SkateboardModel extends ArrivalScript {
                 steerInput: this._currentSteerInput,
                 wheelRot: this._vehicle?.getWheelInfo?.(0)?.get_m_rotation?.() || 0,
                 riderLean: this._getRiderLeanAngle(),
+                onAir: this._isOnAir(),
             }),
         });
 
@@ -1107,7 +1233,12 @@ export class SkateboardModel extends ArrivalScript {
             return;
         }
 
-        if (!this._vehicle) return;
+        if (!this._vehicle) {
+            this._currentSpeed = 0;
+            this._remoteOnAir = false;
+            this._updateRollingSound();
+            return;
+        }
 
         // Reset if fallen off the world
         if (this.entity.getPosition().y < -100) {
@@ -1128,6 +1259,9 @@ export class SkateboardModel extends ArrivalScript {
             //this.entity.rigidbody.linearVelocity = pc.Vec3.ZERO;
             //this.entity.rigidbody.angularVelocity = pc.Vec3.ZERO;
         }
+
+        this._currentSpeed = this.entity.rigidbody ? this.entity.rigidbody.linearVelocity.length() : 0;
+        this._updateRollingSound();
 
         if (this._mounted) {
             this._handleInput(dt);
@@ -1236,6 +1370,15 @@ export class SkateboardModel extends ArrivalScript {
     // ═════════════════════════════════════════════════════════
 
     onPropertyChanged(name) {
+        if (name === "rollingSoundUrl" || name === "rollingSoundMinPitch" || name === "rollingSoundMinPitchSpeed" || name === "rollingSoundPitch" || name === "rollingSoundPitchSpeed") {
+            this._stopRollingSound();
+            this._updateRollingSound();
+            return;
+        }
+        if (name === "rollingSoundVolume" || name === "rollingSoundMinSpeed" || name === "rollingSoundMaxSpeed") {
+            this._updateRollingSound();
+            return;
+        }
         if (name === "rideIdleUrl") {
             if (this._mounted) {
                 this._applyRideIdleAnimation();
@@ -1353,6 +1496,7 @@ export class SkateboardModel extends ArrivalScript {
             this._unsubAttach = null;
         }
 
+        this._stopRollingSound();
         this._destroyVehicle();
 
         // Dispose GLB models
@@ -1376,3 +1520,7 @@ export class SkateboardModel extends ArrivalScript {
         if (this.entity.collision) this.entity.removeComponent("collision");
     }
 }
+
+
+
+
