@@ -16,24 +16,31 @@ export class SkateboardModel extends ArrivalScript {
     static EXTRA_SYNC_RATE = 20;
 
     // ── Models ──────────────────────────────────────────────
-    chassisModelUrl = "https://dzrmwng2ae8bq.cloudfront.net/42485456/bd0e1f5573012b6340b53b69e8bc121a21e75944d2cba4cc3b9c0e5499b4a69c_x-bow-no-wheels_emissive_gray_as_turk.glb";
-    chassisScale = 0.7;
+    chassisModelUrl = "https://dzrmwng2ae8bq.cloudfront.net/42485456/a6694ca53596284ccc4b8ecc8d9cc9838a8b71a8f61f831e4201c5d09f9d74c9_skateboard.glb";
+    chassisScale = 0.5;
+    chassisOffsetY = 0;
     chassisRotationX = 0;
-    chassisRotationY = 0;
+    chassisRotationY = 90;
     chassisRotationZ = 0;
-    wheelModelUrl = "https://dzrmwng2ae8bq.cloudfront.net/42485456/e8d19a16b3c10ab03f5ab01749f4487975f70e4e1a997d92e107aa48164fdbf5_x-bow-wheel_turk.glb";
-    wheelScale = 0.7;
+    boardLean = 0;
+    riderLean = 0;
+    riderLag = 0.12;
+    wheelModelUrl = "https://dzrmwng2ae8bq.cloudfront.net/42485456/a9d3253bbded709a96819158b9f58d63d6a0a6c964ca2b09ab9c1df6f5400c0c_kart_wheels.glb";
+    wheelScale = 0.01;
+    wheelOffsetX = 0;
+    wheelOffsetY = 0;
+    debugWheels = false;
 
     // ── Chassis ──────────────────────────────────────────────
-    chassisMass = 200;
+    chassisMass = 100;
 
     // ── Wheels ───────────────────────────────────────────────
-    wheelRadius = 0.20;
-    wheelFrontX = 0.566;
-    wheelRearX = 0.588;
-    wheelY = 0.42;
-    wheelFrontZ = 0.883;
-    wheelRearZ = -0.807;
+    wheelRadius = 0.1;
+    wheelFrontX = 0.356;
+    wheelRearX = 0.407;
+    wheelY = 0.432;
+    wheelFrontZ = 0.298;
+    wheelRearZ = -0.42;
 
     // ── Suspension ───────────────────────────────────────────
     suspensionStiffness = 18;
@@ -43,7 +50,7 @@ export class SkateboardModel extends ArrivalScript {
 
     // ── Grip ─────────────────────────────────────────────────
     frictionSlipFront = 1.5;
-    frictionSlipRear = 1.4;
+    frictionSlipRear = 1.46;
     rollInfluence = 0.7;
     linearDamping = 0.1;
     angularDamping = 0.1;
@@ -51,48 +58,60 @@ export class SkateboardModel extends ArrivalScript {
     physicsSubSteps = 30;
 
     // ── Motor ────────────────────────────────────────────────
-    maxEngineForce = 300;
+    maxEngineForce = 200;
     maxBrakingForce = 4;
-    idleBrake = 0.4;
-    maxSteering = 0.5;
-    minSteering = 0.17;
+    idleBrake = 0.0;
+    maxSteering = 0.7;
+    minSteering = 0.1;
     steeringFalloffSpeed = 12;
-    steeringSpeed = 4;
+    steeringSpeed = 3.5;
+    jumpImpulse = 180;
 
     // ── Collision Box ──────────────────────────────────────────
-    collisionWidth = 0.607;
-    collisionHeight = 0.207;
-    collisionLength = 1.231;
+    collisionWidth = 0.421;
+    collisionHeight = 0.167;
+    collisionLength = 0.563;
     collisionY = 0.277;
-    collisionFrontOffset = 0;
+    collisionFrontOffset = -0.031;
     chassisFriction = 0.013;
     chassisRestitution = 0.1;
 
     // ── Mounting ─────────────────────────────────────────────
     enterDistance = 1;
-    seatOffsetX = 0.224;
-    seatOffsetY = -0.184;
-    seatOffsetZ = -0.016;
-    rideIdleUrl = "driving.glb";
-    rideAccelUrl = "";
+    seatOffsetX = 0.036;
+    seatOffsetY = 0.074;
+    seatOffsetZ = -0.063;
+    rideIdleUrl = "skate_idle.glb";
+    rideAccelUrl = "skate_accelerating.glb";
+    rideJumpUrl = "";
+    rideJumpDuration = 0.35;
+    rideAccelInPlaceY = 0;
+    rideAccelInPlaceZ = 0;
 
     static properties = {
         chassisModelUrl:       { title: "Chassis Model (GLB)", editor: "asset" },
-        chassisScale:          { title: "Chassis Scale",          min: 0.01, max: 10,  step: 0.01 },
+        chassisScale:          { title: "Chassis Scale",          min: 0.01, max: 10,  step: 0.001 },
+        chassisOffsetY:        { title: "Chassis Offset Y",       min: -1,   max: 1,   step: 0.001 },
         chassisRotationX:      { title: "Chassis Rotation X",     min: -180, max: 180, step: 1 },
         chassisRotationY:      { title: "Chassis Rotation Y",     min: -180, max: 180, step: 1 },
         chassisRotationZ:      { title: "Chassis Rotation Z",     min: -180, max: 180, step: 1 },
+        boardLean:             { title: "Board Lean",             min: -45,  max: 45,  step: 0.1 },
+        riderLean:             { title: "Rider Lean",             min: -10,  max: 10,  step: 0.01 },
+        riderLag:              { title: "Rider Lag",              min: 0,    max: 1,   step: 0.01 },
         wheelModelUrl:         { title: "Wheel Model (GLB)", editor: "asset" },
-        wheelScale:            { title: "Wheel Scale",            min: 0.01, max: 10,  step: 0.01 },
-        chassisMass:           { title: "Chassis Mass",           min: 100,  max: 5000 },
-        wheelRadius:           { title: "Wheel Radius",           min: 0.1,  max: 1 },
-        wheelFrontX:           { title: "Front Wheel X",           min: 0.1,  max: 3,   step: 0.01 },
-        wheelRearX:            { title: "Rear Wheel X",            min: 0.1,  max: 3,   step: 0.01 },
-        wheelY:                { title: "Wheel Height",           min: 0.1,  max: 3,   step: 0.01 },
-        wheelFrontZ:           { title: "Wheel Front Z",          min: 0,    max: 3,   step: 0.01 },
-        wheelRearZ:            { title: "Wheel Rear Z",           min: -3,   max: 0,   step: 0.01 },
-        suspensionStiffness:   { title: "Suspension Stiffness",   min: 1,    max: 100 },
-        suspensionDamping:     { title: "Suspension Damping",     min: 0.1,  max: 10 },
+        wheelScale:            { title: "Wheel Scale",            min: 0.01, max: 10,  step: 0.001 },
+        wheelOffsetX:          { title: "Wheel Visual Offset X",  min: -0.4,   max: 0.4,   step: 0.001 },
+        wheelOffsetY:          { title: "Wheel Visual Offset Y",  min: -0.4,   max: 0.4,   step: 0.001 },
+        debugWheels:           { title: "Debug Wheels" },
+        chassisMass:           { title: "Chassis Mass",           min: 0.1,  max: 200 },
+        wheelRadius:           { title: "Wheel Radius",           min: 0.01,  max: 1 },
+        wheelFrontX:           { title: "Front Wheel X",           min: 0.01,  max: 1,   step: 0.001 },
+        wheelRearX:            { title: "Rear Wheel X",            min: 0.01,  max: 1,   step: 0.001 },
+        wheelY:                { title: "Wheel Height",           min: 0.01,  max: 1,   step: 0.001 },
+        wheelFrontZ:           { title: "Wheel Front Z",          min: 0,    max: 1,   step: 0.001 },
+        wheelRearZ:            { title: "Wheel Rear Z",           min: -1,   max: 0,   step: 0.001 },
+        suspensionStiffness:   { title: "Suspension Stiffness",   min: 1,    max: 1000 },
+        suspensionDamping:     { title: "Suspension Damping",     min: 0.1,  max: 100 },
         suspensionCompression: { title: "Suspension Compression", min: 0.1,  max: 10 },
         suspensionRestLength:  { title: "Suspension Rest",        min: 0.05, max: 1 },
         frictionSlipFront:     { title: "Front Friction Slip",    min: 0,    max: 5,   step: 0.01 },
@@ -109,6 +128,7 @@ export class SkateboardModel extends ArrivalScript {
         minSteering:           { title: "Min Steering (at speed)", min: 0,    max: 0.5, step: 0.01 },
         steeringFalloffSpeed:  { title: "Steering Falloff Speed",  min: 1,    max: 50,  step: 1 },
         steeringSpeed:         { title: "Steering Speed",          min: 1,    max: 30,  step: 1 },
+        jumpImpulse:           { title: "Jump Impulse",           min: 0,    max: 1000, step: 1 },
         collisionWidth:        { title: "Collision Width",          min: 0.05, max: 5,   step: 0.01 },
         collisionHeight:       { title: "Collision Height",         min: 0.01, max: 2,   step: 0.01 },
         collisionLength:       { title: "Collision Length",         min: 0.05, max: 5,   step: 0.01 },
@@ -116,12 +136,16 @@ export class SkateboardModel extends ArrivalScript {
         collisionFrontOffset:  { title: "Collision Front Offset",   min: -3,   max: 3,   step: 0.01 },
         chassisFriction:       { title: "Chassis Friction",          min: 0,    max: 1,   step: 0.01 },
         chassisRestitution:    { title: "Chassis Restitution",       min: 0,    max: 1,   step: 0.01 },
-        enterDistance:         { title: "Enter Distance",         min: 1,    max: 10 },
+        enterDistance:         { title: "Enter Distance",         min: 0,    max: 10 },
         seatOffsetX:           { title: "Seat Side",              min: -1,   max: 1,   step: 0.05 },
         seatOffsetY:           { title: "Seat Height",            min: -1,   max: 3,   step: 0.05 },
         seatOffsetZ:           { title: "Seat Forward",           min: -1,   max: 1,   step: 0.05 },
         rideIdleUrl:           { title: "Ride Idle Animation" },
         rideAccelUrl:          { title: "Ride Accelerate Animation" },
+        rideJumpUrl:           { title: "Ride Jump Animation" },
+        rideJumpDuration:      { title: "Ride Jump Duration",     min: 0.05, max: 2,   step: 0.01 },
+        rideAccelInPlaceY:     { title: "Ride Accel InPlace Y",   min: -2,   max: 2,   step: 0.001 },
+        rideAccelInPlaceZ:     { title: "Ride Accel InPlace Z",   min: -2,   max: 2,   step: 0.001 },
     };
 
     // ── Private state ────────────────────────────────────────
@@ -129,13 +153,20 @@ export class SkateboardModel extends ArrivalScript {
     _raycaster = null;
     _tuning = null;
     _wheelEntities = [];
+    _wheelPivotEntities = [];
     _chassisModelEntity = null;
     _wheelModelEntities = [];
     _shapeEntities = [];
     _mounted = false;
     _currentSteering = 0;
+    _currentSteerInput = 0;
     _dismountCooldown = 0;
+    _jumpCooldown = 0;
     _rideAccelActive = false;
+    _rideAccelPrimed = false;
+    _rideJumpTimer = null;
+    _currentSpeed = 0;
+    _wasOnAir = null;
 
     // Seat back (small upright behind driver)
     static SEAT_HE = [0.18, 0.14, 0.04];
@@ -149,6 +180,7 @@ export class SkateboardModel extends ArrivalScript {
     _wheelSpinAngle = 0;
     _remotePrevPos = null;
     _remotePrevRot = null;
+    _remoteRiderRotation = null;
 
     _getWheels() {
         return [
@@ -185,6 +217,7 @@ export class SkateboardModel extends ArrivalScript {
                 this._remoteExtra = null;
                 this._remoteExtraLast = null;
                 this._remoteExtraLastTime = null;
+                this._remoteRiderRotation = null;
 
                 this._wheelSpinAngle = 0;
                 this.entity.rigidbody.type = pc.BODYTYPE_KINEMATIC;
@@ -197,6 +230,8 @@ export class SkateboardModel extends ArrivalScript {
                 this._destroyVehicle();
                 this.entity.rigidbody.type = pc.BODYTYPE_DYNAMIC;
                 this._createVehicle();
+                this._currentSteerInput = 0;
+                this._applyChassisModelTransform();
 
                 // Sync position and velocity from the driver's state at dismount
                 if (dismountData) {
@@ -214,6 +249,7 @@ export class SkateboardModel extends ArrivalScript {
                 }
 
                 this._remoteInfo = null;
+                this._remoteRiderRotation = null;
             }
         });
     }
@@ -230,8 +266,10 @@ export class SkateboardModel extends ArrivalScript {
 
         const chassis = new pc.Entity("ChassisShape");
         chassis.addComponent("collision", {
-            type: "box",
-            halfExtents: new pc.Vec3(this.collisionWidth, this.collisionHeight, this.collisionLength),
+            type: "capsule",
+            radius: this.collisionWidth,
+            height: this.collisionLength * 2,
+            axis: 2,
         });
         chassis.setLocalPosition(0, this.collisionY, this.collisionFrontOffset);
         this.entity.addChild(chassis);
@@ -256,8 +294,11 @@ export class SkateboardModel extends ArrivalScript {
         // Wheel containers (positioned by physics each frame)
         for (let i = 0; i < 4; i++) {
             const container = new pc.Entity(`Wheel_${i}`);
+            const pivot = new pc.Entity(`WheelPivot_${i}`);
+            container.addChild(pivot);
             this.entity.addChild(container);
             this._wheelEntities.push(container);
+            this._wheelPivotEntities.push(pivot);
         }
 
         await this._loadWheelModels();
@@ -266,8 +307,34 @@ export class SkateboardModel extends ArrivalScript {
     _applyChassisModelTransform() {
         if (!this._chassisModelEntity || this._chassisModelEntity._destroyed) return;
         const s = this.chassisScale;
+        const steerRatio = pc.math.clamp(this._currentSteerInput, -1, 1);
+        const visualLeanZ = -steerRatio * this.boardLean;
         this._chassisModelEntity.setLocalScale(s, s, s);
-        this._chassisModelEntity.setLocalEulerAngles(this.chassisRotationX, this.chassisRotationY, this.chassisRotationZ);
+        this._chassisModelEntity.setLocalPosition(0, this.chassisOffsetY, 0);
+        this._chassisModelEntity.setLocalEulerAngles(this.chassisRotationX, this.chassisRotationY, this.chassisRotationZ + visualLeanZ);
+    }
+
+    _getRiderLeanAngle(speed = this._currentSpeed, steer = this._currentSteering) {
+        return this.riderLean * steer * speed;
+    }
+
+    _applyRemoteRiderLean(driverEntity, baseRotation, leanAngle, dt) {
+        const riderMesh = driverEntity.findByName("ReadyPlayerMe");
+        if (!riderMesh) return;
+        const targetRotation = baseRotation.clone().mul(new pc.Quat().setFromEulerAngles(0, 0, leanAngle));
+        if (this.riderLag > 0) {
+            if (!this._remoteRiderRotation) {
+                this._remoteRiderRotation = targetRotation.clone();
+            } else {
+                const alpha = 1 - Math.exp(-dt / this.riderLag);
+                this._remoteRiderRotation.slerp(this._remoteRiderRotation.clone(), targetRotation, alpha);
+            }
+            riderMesh.setRotation(this._remoteRiderRotation);
+            return;
+        }
+
+        this._remoteRiderRotation = null;
+        riderMesh.setRotation(targetRotation);
     }
 
     async _loadChassisModel() {
@@ -299,7 +366,7 @@ export class SkateboardModel extends ArrivalScript {
         if (!this.wheelModelUrl) return;
 
         for (let i = 0; i < this._wheelEntities.length; i++) {
-            const container = this._wheelEntities[i];
+            const container = this._wheelPivotEntities[i];
             try {
                 const { entity } = await this.createModel(this.wheelModelUrl, {
                     parent: container,
@@ -316,6 +383,19 @@ export class SkateboardModel extends ArrivalScript {
                 this._wheelModelEntities.push(null);
             }
         }
+
+        this._applyWheelModelOffsets();
+    }
+
+    _applyWheelModelOffsets() {
+        // Wheel visual offset is applied on the wheel container position so steering
+        // and spin still happen around the visual wheel center.
+    }
+
+    _getWheelVisualOffset(i) {
+        const isLeftWheel = i === 0 || i === 2;
+        return this.entity.right.clone().mulScalar(isLeftWheel ? this.wheelOffsetX : -this.wheelOffsetX)
+            .add(this.entity.up.clone().mulScalar(this.wheelOffsetY));
     }
 
     // ═════════════════════════════════════════════════════════
@@ -383,6 +463,33 @@ export class SkateboardModel extends ArrivalScript {
         }
     }
 
+    _isOnAir() {
+        if (!this._vehicle) return false;
+
+        const wheelCount = this._vehicle.getNumWheels();
+        for (let i = 0; i < wheelCount; i++) {
+            const wheelInfo = this._vehicle.getWheelInfo(i);
+            const raycastInfo = wheelInfo?.get_m_raycastInfo?.();
+            const groundObject = raycastInfo?.get_m_groundObject?.() ?? raycastInfo?.m_groundObject;
+            if (groundObject) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    _procOnAirState(onAir = this._isOnAir()) {
+        if (this._wasOnAir === onAir) return;
+
+        this._wasOnAir = onAir;
+        console.log("[Skateboard] onAir:", onAir);
+
+        if (onAir) {
+            this.entity.rigidbody.angularVelocity = pc.Vec3.ZERO;
+        }
+    }
+
     // ═════════════════════════════════════════════════════════
     //  REMOTE MODE: derive vehicle from player position
     // ═════════════════════════════════════════════════════════
@@ -425,6 +532,15 @@ export class SkateboardModel extends ArrivalScript {
         this.entity.setPosition(vehiclePos);
         this.entity.setRotation(quat);
 
+        const extraLerp = this._remoteExtraLastTime
+            ? Math.min(1, (Date.now() - this._remoteExtraLastTime) / (1000 / SkateboardModel.EXTRA_SYNC_RATE))
+            : 1;
+        const steerInput = pc.math.lerp(this._remoteExtraLast?.steerInput || 0, this._remoteExtra?.steerInput || 0, extraLerp);
+        const riderLean = pc.math.lerp(this._remoteExtraLast?.riderLean || 0, this._remoteExtra?.riderLean || 0, extraLerp);
+        this._currentSteerInput = steerInput;
+        this._applyChassisModelTransform();
+        this._applyRemoteRiderLean(driverEntity, quat, riderLean, dt);
+
         // Update wheels at static offsets with steering + spin
         this._updateWheelsRemote();
     }
@@ -444,23 +560,205 @@ export class SkateboardModel extends ArrivalScript {
         for (let i = 0; i < wheels.length; i++) {
             const def = wheels[i];
             const we = this._wheelEntities[i];
+            const pivot = this._wheelPivotEntities[i];
             if (!we) continue;
 
             const localPos = new pc.Vec3(def.x, def.y - this.suspensionRestLength*0.75, def.z);
-            const worldPos = wt.transformPoint(localPos);
+            const worldPos = wt.transformPoint(localPos).add(this._getWheelVisualOffset(i));
             we.setPosition(worldPos);
 
             const chassisRot = this.entity.getRotation().clone();
             const steerAngle = def.front ? (steer * 180 / Math.PI) : 0;
 
             const spinQuat = new pc.Quat().setFromEulerAngles(-wheelRot * 180 / Math.PI, steerAngle+180, 0);
-            we.setRotation(chassisRot.clone().mul(spinQuat));
+            if (pivot) pivot.setRotation(chassisRot.clone().mul(spinQuat));
         }
+    }
+
+    _drawWheelDebug() {
+        if (!this.debugWheels) return;
+
+        this._drawChassisDebugShape();
+        this._drawWheelRayDebug();
+        this._drawPlayerDebugCross();
+
+        if (this._remoteInfo) {
+            const wheels = this._getWheels();
+            const wt = this.entity.getWorldTransform();
+
+            for (let i = 0; i < wheels.length; i++) {
+                const def = wheels[i];
+                const pivot = this._wheelPivotEntities[i];
+                const debugCenter = wt.transformPoint(new pc.Vec3(def.x, def.y - this.suspensionRestLength * 0.75, def.z));
+                this._drawWheelDebugShape(debugCenter, pivot ? pivot.getRotation() : this.entity.getRotation(), i < 2);
+            }
+            return;
+        }
+
+        if (!this._vehicle) return;
+
+        for (let i = 0; i < this._vehicle.getNumWheels(); i++) {
+            const pivot = this._wheelPivotEntities[i];
+            this._vehicle.updateWheelTransform(i, true);
+            const tm = this._vehicle.getWheelTransformWS(i);
+            const p = tm.getOrigin();
+            const debugCenter = new pc.Vec3(p.x(), p.y(), p.z());
+            this._drawWheelDebugShape(debugCenter, pivot ? pivot.getRotation() : this.entity.getRotation(), i < 2);
+        }
+    }
+
+    _drawWheelRayDebug() {
+        const wt = this.entity.getWorldTransform();
+        const rayLength = this.suspensionRestLength + this.wheelRadius;
+        const positions = [];
+
+        for (const wheel of this._getWheels()) {
+            const start = wt.transformPoint(new pc.Vec3(wheel.x, wheel.y, wheel.z));
+            const end = wt.transformPoint(new pc.Vec3(wheel.x, wheel.y - rayLength, wheel.z));
+            positions.push(start.x, start.y, start.z, end.x, end.y, end.z);
+        }
+
+        this.app.drawLineArrays(positions, new pc.Color(0.45, 1, 0.45), false);
+    }
+
+    _drawWheelDebugShape(center, rotation, isFrontWheel) {
+        const radius = this.wheelRadius;
+        const rimSegments = 20;
+        const spokeCount = 4;
+        const color = isFrontWheel ? new pc.Color(0.15, 0.85, 1) : new pc.Color(1, 0.65, 0.2);
+        const up = rotation.transformVector(pc.Vec3.UP.clone());
+        const forward = rotation.transformVector(pc.Vec3.FORWARD.clone());
+        const positions = [];
+
+        const appendLine = (from, to) => {
+            positions.push(from.x, from.y, from.z, to.x, to.y, to.z);
+        };
+
+        const getRimPoint = (angle) => {
+            const radial = up.clone().mulScalar(Math.cos(angle)).add(forward.clone().mulScalar(Math.sin(angle)));
+            return center.clone().add(radial.mulScalar(radius));
+        };
+
+        for (let i = 0; i < rimSegments; i++) {
+            const a0 = (i / rimSegments) * Math.PI * 2;
+            const a1 = ((i + 1) / rimSegments) * Math.PI * 2;
+            appendLine(getRimPoint(a0), getRimPoint(a1));
+        }
+
+        for (let i = 0; i < spokeCount; i++) {
+            const angle = (i / spokeCount) * Math.PI * 2;
+            appendLine(center, getRimPoint(angle));
+        }
+
+        this.app.drawLineArrays(positions, color, false);
+    }
+
+    _drawChassisDebugShape() {
+        const chassisShape = this._shapeEntities[0];
+        const collision = chassisShape?.collision;
+        if (!collision) return;
+
+        const wt = chassisShape.getWorldTransform();
+        const color = new pc.Color(1, 1, 1);
+        const positions = [];
+        const appendLineLocal = (from, to) => {
+            const worldFrom = wt.transformPoint(from);
+            const worldTo = wt.transformPoint(to);
+            positions.push(worldFrom.x, worldFrom.y, worldFrom.z, worldTo.x, worldTo.y, worldTo.z);
+        };
+
+        if (collision.type === "box" && collision.halfExtents) {
+            const he = collision.halfExtents;
+            const localCorners = [
+                new pc.Vec3(-he.x, -he.y, -he.z),
+                new pc.Vec3( he.x, -he.y, -he.z),
+                new pc.Vec3( he.x, -he.y,  he.z),
+                new pc.Vec3(-he.x, -he.y,  he.z),
+                new pc.Vec3(-he.x,  he.y, -he.z),
+                new pc.Vec3( he.x,  he.y, -he.z),
+                new pc.Vec3( he.x,  he.y,  he.z),
+                new pc.Vec3(-he.x,  he.y,  he.z),
+            ];
+            const edges = [
+                [0, 1], [1, 2], [2, 3], [3, 0],
+                [4, 5], [5, 6], [6, 7], [7, 4],
+                [0, 4], [1, 5], [2, 6], [3, 7],
+            ];
+
+            for (const [start, end] of edges) {
+                appendLineLocal(localCorners[start], localCorners[end]);
+            }
+        } else if (collision.type === "capsule") {
+            const radius = collision.radius || 0.01;
+            const height = collision.height || radius * 2;
+            const axis = collision.axis ?? 1;
+            const axisVec = axis === 0 ? pc.Vec3.RIGHT.clone() : axis === 2 ? pc.Vec3.FORWARD.clone() : pc.Vec3.UP.clone();
+            const radialA = axis === 0 ? pc.Vec3.UP.clone() : pc.Vec3.RIGHT.clone();
+            const radialB = axis === 2 ? pc.Vec3.UP.clone() : pc.Vec3.FORWARD.clone();
+            const cylinderHalf = Math.max(0, height * 0.5 - radius);
+            const capBack = axisVec.clone().mulScalar(-cylinderHalf);
+            const capFront = axisVec.clone().mulScalar(cylinderHalf);
+            const circleSegments = 16;
+
+            const appendCircle = (center, basisA, basisB) => {
+                let prev = null;
+                for (let i = 0; i <= circleSegments; i++) {
+                    const angle = (i / circleSegments) * Math.PI * 2;
+                    const point = center.clone()
+                        .add(basisA.clone().mulScalar(Math.cos(angle) * radius))
+                        .add(basisB.clone().mulScalar(Math.sin(angle) * radius));
+                    if (prev) appendLineLocal(prev, point);
+                    prev = point;
+                }
+            };
+
+            const appendSemiArc = (center, radial, axisSign) => {
+                let prev = null;
+                for (let i = 0; i <= circleSegments; i++) {
+                    const angle = -Math.PI * 0.5 + (i / circleSegments) * Math.PI;
+                    const point = center.clone()
+                        .add(radial.clone().mulScalar(Math.sin(angle) * radius))
+                        .add(axisVec.clone().mulScalar(axisSign * Math.cos(angle) * radius));
+                    if (prev) appendLineLocal(prev, point);
+                    prev = point;
+                }
+            };
+
+            appendCircle(capBack, radialA, radialB);
+            appendCircle(capFront, radialA, radialB);
+
+            appendLineLocal(capBack.clone().add(radialA.clone().mulScalar(radius)), capFront.clone().add(radialA.clone().mulScalar(radius)));
+            appendLineLocal(capBack.clone().add(radialA.clone().mulScalar(-radius)), capFront.clone().add(radialA.clone().mulScalar(-radius)));
+            appendLineLocal(capBack.clone().add(radialB.clone().mulScalar(radius)), capFront.clone().add(radialB.clone().mulScalar(radius)));
+            appendLineLocal(capBack.clone().add(radialB.clone().mulScalar(-radius)), capFront.clone().add(radialB.clone().mulScalar(-radius)));
+
+            appendSemiArc(capFront, radialA, 1);
+            appendSemiArc(capBack, radialA, -1);
+            appendSemiArc(capFront, radialB, 1);
+            appendSemiArc(capBack, radialB, -1);
+        }
+
+        this.app.drawLineArrays(positions, color, false);
     }
 
     // ═════════════════════════════════════════════════════════
     //  ANIMATION OPTIONS
     // ═════════════════════════════════════════════════════════
+
+    _drawPlayerDebugCross() {
+        const player = ArrivalSpace.getPlayer();
+        if (!player) return;
+
+        const center = player.getPosition();
+        const size = 0.15;
+        const positions = [
+            center.x - size, center.y, center.z, center.x + size, center.y, center.z,
+            center.x, center.y - size, center.z, center.x, center.y + size, center.z,
+            center.x, center.y, center.z - size, center.x, center.y, center.z + size,
+        ];
+
+        this.app.drawLineArrays(positions, new pc.Color(1, 0.2, 0.85), false);
+    }
 
     async _syncAnimationOptions() {
         const avatarConfig = await ArrivalSpace.getAvatarConfig();
@@ -470,18 +768,83 @@ export class SkateboardModel extends ArrivalScript {
         const opts = ["", ...animations];
         this.setParamOptions("rideIdleUrl", opts, false);
         this.setParamOptions("rideAccelUrl", opts, false);
+        this.setParamOptions("rideJumpUrl", opts, false);
         this.refreshParamSchema();
     }
 
     _applyRideAccelAnimation() {
         if (!this._mounted) return;
-        ArrivalSpace.setPlayerAnimation("Signature1", this.rideAccelUrl || null);
+        ArrivalSpace.setPlayerAnimation("Signature1", this.rideAccelUrl || null, {
+            inPlaceBoneName: "LeftToeBase",
+            inPlaceBoneTargetLocalPosition: { x: 0, y: this.rideAccelInPlaceY, z: this.rideAccelInPlaceZ }
+        });
+    }
+
+    _applyRideIdleAnimation() {
+        if (!this._mounted) return;
+        const options = this.rideIdleUrl ? {
+            inPlaceBoneName: "LeftToeBase",
+            inPlaceBoneTargetLocalPosition: { x: 0, y: this.rideAccelInPlaceY, z: this.rideAccelInPlaceZ }
+        } : undefined;
+        ArrivalSpace.setPlayerAnimation("Idle", this.rideIdleUrl || null, options);
+        ArrivalSpace.setPlayerAnimation("Forward", this.rideIdleUrl || null, options);
+    }
+
+    _applyRideJumpAnimation() {
+        if (!this._mounted) return;
+        ArrivalSpace.setPlayerAnimation("Signature2", this.rideJumpUrl || null, {
+            inPlaceBoneName: "LeftToeBase",
+            inPlaceBoneTargetLocalPosition: { x: 0, y: this.rideAccelInPlaceY, z: this.rideAccelInPlaceZ }
+        });
+    }
+
+    _clearRideSignatures() {
+        const player = ArrivalSpace.getPlayer();
+        const playerMesh = player?.findByName("ReadyPlayerMe");
+        if (playerMesh?.anim) {
+            playerMesh.anim.setInteger("signatureNumber", -1);
+        }
+
+        const firstPersonView = player?.script?.firstPersonView;
+        if (firstPersonView) {
+            firstPersonView.signatureReset = true;
+            firstPersonView.signature = 0;
+        }
+
+        this.app.fire("firstperson:signature", false, 1);
+        this.app.fire("firstperson:signature", false, 2);
     }
 
     _setRideAccelActive(active) {
         if (this._rideAccelActive === active) return;
+        if (active && !this._rideAccelPrimed && this.rideAccelUrl) {
+            this._applyRideAccelAnimation();
+            this._rideAccelPrimed = true;
+        }
         this._rideAccelActive = active;
+        if (!active) {
+            this._clearRideSignatures();
+        }
         this.app.fire("firstperson:signature", active, 1);
+    }
+
+    _playRideJumpAnimation() {
+        if (!this._mounted || !this.rideJumpUrl) return;
+
+        if (this._rideJumpTimer) {
+            clearTimeout(this._rideJumpTimer);
+            this._rideJumpTimer = null;
+        }
+
+        this._clearRideSignatures();
+        this.app.fire("firstperson:signature", true, 2);
+
+        this._rideJumpTimer = setTimeout(() => {
+            this._rideJumpTimer = null;
+            if (!this._mounted) return;
+
+            this._clearRideSignatures();
+        }, Math.max(50, this.rideJumpDuration * 1000));
     }
 
     // ═════════════════════════════════════════════════════════
@@ -521,31 +884,16 @@ export class SkateboardModel extends ArrivalScript {
         if (this._mounted || this._remoteInfo) return;
         this._mounted = true;
         this._currentSteering = 0;
+        this._currentSteerInput = 0;
+        this._jumpCooldown = 0;
         this._rideAccelActive = false;
+        this._rideAccelPrimed = false;
+        this._wasOnAir = null;
 
         this.lockKeyboard();
 
         // Attach player — handles collision, camera, animations, network broadcast
-        const animations = {};
-        if (this.rideIdleUrl) {
-            animations.Idle = this.rideIdleUrl;
-            animations.Forward = this.rideIdleUrl;
-        }
-
-        this._attachHandle = ArrivalSpace.attachPlayerToEntity(this.entity, {
-            offset: { x: this.seatOffsetX, y: this.seatOffsetY, z: this.seatOffsetZ },
-            animations,
-            disableCollision: true,
-            rate:  SkateboardModel.EXTRA_SYNC_RATE,
-            extra: () => ({
-                steer: this._currentSteering,
-                wheelRot: this._vehicle?.getWheelInfo?.(0)?.get_m_rotation?.() || 0,
-            }),
-        });
-
-        if (this.rideAccelUrl) {
-            this._applyRideAccelAnimation();
-        }
+        this._attachHandle = this._buildMountAttachment();
 
         const fwd = this.entity.forward;
         this._lastVehicleYaw = Math.atan2(-fwd.x, -fwd.z) * (180 / Math.PI);
@@ -553,10 +901,58 @@ export class SkateboardModel extends ArrivalScript {
         if (this._speedEl) this._speedEl.classList.add("visible");
     }
 
+    _buildMountAttachment() {
+        const animations = {};
+        if (this.rideIdleUrl) {
+            animations.Idle = this.rideIdleUrl;
+            animations.Forward = this.rideIdleUrl;
+        }
+
+        const attachHandle = ArrivalSpace.attachPlayerToEntity(this.entity, {
+            offset: { x: this.seatOffsetX, y: this.seatOffsetY, z: this.seatOffsetZ },
+            animations,
+            disableCollision: true,
+            camera: {
+                heightOffset: -0.4,
+            },
+            rate:  SkateboardModel.EXTRA_SYNC_RATE,
+            meshEuler: () => ({ z: this._getRiderLeanAngle() }),
+            meshRotationLag: () => this.riderLag,
+            extra: () => ({
+                steer: this._currentSteering,
+                steerInput: this._currentSteerInput,
+                wheelRot: this._vehicle?.getWheelInfo?.(0)?.get_m_rotation?.() || 0,
+                riderLean: this._getRiderLeanAngle(),
+            }),
+        });
+
+        if (this.rideAccelUrl) {
+            this._applyRideAccelAnimation();
+        }
+        if (this.rideIdleUrl) {
+            this._applyRideIdleAnimation();
+        }
+        if (this.rideJumpUrl) {
+            this._applyRideJumpAnimation();
+        }
+
+        return attachHandle;
+    }
+
+    _refreshMountAttachment() {
+        if (!this._mounted || !this._attachHandle) return;
+
+        this._attachHandle.detach();
+        this._attachHandle = this._buildMountAttachment();
+    }
+
     _dismount() {
         if (!this._mounted) return;
         this._mounted = false;
         this._dismountCooldown = 1.0;
+        this._jumpCooldown = 0;
+        this._rideAccelPrimed = false;
+        this._wasOnAir = null;
 
         this.applyEngineForce(0);
         this.setBrake(0);
@@ -564,8 +960,17 @@ export class SkateboardModel extends ArrivalScript {
 
         this.unlockKeyboard();
 
-        ArrivalSpace.setPlayerAnimation("Signature1", null);
         this._setRideAccelActive(false);
+        if (this._rideJumpTimer) {
+            clearTimeout(this._rideJumpTimer);
+            this._rideJumpTimer = null;
+        }
+        const playerMesh = ArrivalSpace.getPlayer()?.findByName("ReadyPlayerMe");
+        if (playerMesh?.anim) {
+            playerMesh.anim.setInteger("signatureNumber", -1);
+        }
+        ArrivalSpace.setPlayerAnimation("Signature1", null);
+        ArrivalSpace.setPlayerAnimation("Signature2", null);
 
         if (this._speedEl) this._speedEl.classList.remove("visible");
 
@@ -580,9 +985,9 @@ export class SkateboardModel extends ArrivalScript {
         if (!player) return;
 
         const pos = this.entity.getPosition();
-        const right = this.entity.right.clone().mulScalar(this.enterDistance + 0.5);
+        const right = this.entity.right.clone().mulScalar(this.enterDistance + 0.2);
         const exitPos = pos.clone().add(right);
-        exitPos.y += 0.3;
+        exitPos.y += 0.2;
 
         if (player.rigidbody) {
             player.rigidbody.teleport(exitPos);
@@ -606,6 +1011,7 @@ export class SkateboardModel extends ArrivalScript {
         if (!player) return;
 
         const dist = player.getPosition().distance(this.entity.getPosition());
+
         if (dist < this.enterDistance) {
             this._mount();
         }
@@ -636,20 +1042,28 @@ export class SkateboardModel extends ArrivalScript {
             return;
         }
 
+        if (kb.wasPressed(pc.KEY_SPACE)) {
+            this.jump();
+        }
+
         // Speed
         const speed = this.entity.rigidbody.linearVelocity.length();
+        this._currentSpeed = speed;
         if (this._speedEl) this._speedEl.textContent = `Skateboard`;
 
         // Steering (decays with speed)
         const steerLimit = pc.math.lerp(this.maxSteering, this.minSteering,
             pc.math.clamp(speed / this.steeringFalloffSpeed, 0, 1));
-        let targetSteering = 0;
-        if (kb.isPressed(pc.KEY_A) || kb.isPressed(pc.KEY_LEFT))  targetSteering =  steerLimit;
-        if (kb.isPressed(pc.KEY_D) || kb.isPressed(pc.KEY_RIGHT)) targetSteering = -steerLimit;
+        let targetSteerInput = 0;
+        if (kb.isPressed(pc.KEY_A) || kb.isPressed(pc.KEY_LEFT))  targetSteerInput = 1;
+        if (kb.isPressed(pc.KEY_D) || kb.isPressed(pc.KEY_RIGHT)) targetSteerInput = -1;
         // Mobile stick steering (analog)
-        if (Math.abs(stick.x) > 0.05) targetSteering = -stick.x * steerLimit;
+        if (Math.abs(stick.x) > 0.05) targetSteerInput = -stick.x;
+        this._currentSteerInput = pc.math.lerp(this._currentSteerInput, targetSteerInput, dt * this.steeringSpeed);
+        const targetSteering = targetSteerInput * steerLimit;
         this._currentSteering = pc.math.lerp(this._currentSteering, targetSteering, dt * this.steeringSpeed);
         this.setSteering(this._currentSteering);
+        this._applyChassisModelTransform();
 
         // Engine / brake
         let engineForce = 0;
@@ -673,8 +1087,6 @@ export class SkateboardModel extends ArrivalScript {
         } else {
             brakeForce = this.idleBrake;
         }
-        if (kb.isPressed(pc.KEY_SPACE)) brakeForce = this.maxBrakingForce;
-
         this.applyEngineForce(engineForce);
         this.setBrake(brakeForce);
 
@@ -687,6 +1099,7 @@ export class SkateboardModel extends ArrivalScript {
 
     update(dt) {
         if (this._dismountCooldown > 0) this._dismountCooldown -= dt;
+        if (this._jumpCooldown > 0) this._jumpCooldown -= dt;
 
         // Remote mode: someone else is driving (doesn't need _vehicle)
         if (this._remoteInfo) {
@@ -703,28 +1116,39 @@ export class SkateboardModel extends ArrivalScript {
 
         // Flip upright if tipped on its side
         const up = this.entity.up;
-        if (up.y < 0.0) {
+        if (up.y < 0.2) {
+            if (this._mounted) {
+                this._dismount();
+                return;
+            }
             const pos = this.entity.getPosition();
             const fwd = this.entity.forward;
             const yaw = Math.atan2(-fwd.x, -fwd.z) * (180 / Math.PI);
-            this.entity.rigidbody.teleport(pos.x, pos.y + 0.5, pos.z, 0, yaw, 0);
-            this.entity.rigidbody.linearVelocity = pc.Vec3.ZERO;
-            this.entity.rigidbody.angularVelocity = pc.Vec3.ZERO;
+            this.entity.rigidbody.teleport(pos.x, pos.y + 0.1, pos.z, 0, yaw, 0);
+            //this.entity.rigidbody.linearVelocity = pc.Vec3.ZERO;
+            //this.entity.rigidbody.angularVelocity = pc.Vec3.ZERO;
         }
 
         if (this._mounted) {
             this._handleInput(dt);
+            this._procOnAirState();
         } else {
             this._checkProximity();
             this.applyEngineForce(0);
             this.setBrake(this.idleBrake);
             this._setRideAccelActive(false);
+            this._currentSteerInput = pc.math.lerp(this._currentSteerInput, 0, dt * this.steeringSpeed);
+            this._applyChassisModelTransform();
+            this._wasOnAir = null;
         }
     }
 
     postUpdate() {
         // Remote mode: wheels already placed in update()
-        if (this._remoteInfo) return;
+        if (this._remoteInfo) {
+            this._drawWheelDebug();
+            return;
+        }
 
         if (!this._vehicle) return;
 
@@ -736,11 +1160,21 @@ export class SkateboardModel extends ArrivalScript {
             const p = tm.getOrigin();
             const q = tm.getRotation();
             const we = this._wheelEntities[i];
+            const pivot = this._wheelPivotEntities[i];
+            const visualOffset = this._getWheelVisualOffset(i);
             if (we) {
-                we.setPosition(p.x(), p.y(), p.z());
-                we.setRotation(q.x(), q.y(), q.z(), q.w());
+                we.setPosition(
+                    p.x() + visualOffset.x,
+                    p.y() + visualOffset.y,
+                    p.z() + visualOffset.z,
+                );
+            }
+            if (pivot) {
+                pivot.setRotation(q.x(), q.y(), q.z(), q.w());
             }
         }
+
+        this._drawWheelDebug();
 
         if (!this._mounted) return;
 
@@ -789,6 +1223,14 @@ export class SkateboardModel extends ArrivalScript {
         this._vehicle.setSteeringValue(angle, 1);
     }
 
+    jump() {
+        if (!this._mounted || !this.entity.rigidbody || this._jumpCooldown > 0) return;
+        const jumpDir = this.entity.up.clone().normalize().mulScalar(this.jumpImpulse);
+        this.entity.rigidbody.applyImpulse(jumpDir.x, jumpDir.y, jumpDir.z);
+        this._jumpCooldown = 0.35;
+        this._playRideJumpAnimation();
+    }
+
     // ═════════════════════════════════════════════════════════
     //  PROPERTY CHANGES
     // ═════════════════════════════════════════════════════════
@@ -796,14 +1238,16 @@ export class SkateboardModel extends ArrivalScript {
     onPropertyChanged(name) {
         if (name === "rideIdleUrl") {
             if (this._mounted) {
-                ArrivalSpace.setPlayerAnimation("Idle", this.rideIdleUrl || null);
-                ArrivalSpace.setPlayerAnimation("Forward", this.rideIdleUrl || null);
+                this._applyRideIdleAnimation();
             }
             return;
         }
-        if (name === "rideAccelUrl") {
+        if (name === "rideAccelUrl" || name === "rideAccelInPlaceY" || name === "rideAccelInPlaceZ") {
+            this._rideAccelPrimed = false;
             if (this._mounted) {
                 this._applyRideAccelAnimation();
+                this._applyRideIdleAnimation();
+                this._applyRideJumpAnimation();
             }
             if (!this.rideAccelUrl) {
                 ArrivalSpace.setPlayerAnimation("Signature1", null);
@@ -811,11 +1255,30 @@ export class SkateboardModel extends ArrivalScript {
             }
             return;
         }
+        if (name === "rideJumpUrl") {
+            if (this._mounted) {
+                this._applyRideJumpAnimation();
+            }
+            if (!this.rideJumpUrl) {
+                ArrivalSpace.setPlayerAnimation("Signature2", null);
+            }
+            return;
+        }
+        if (name === "rideJumpDuration") {
+            return;
+        }
+        if (name === "riderLean" || name === "riderLag") {
+            return;
+        }
+        if (name === "seatOffsetX" || name === "seatOffsetY" || name === "seatOffsetZ") {
+            this._refreshMountAttachment();
+            return;
+        }
         if (name === "chassisModelUrl") {
             this._loadChassisModel();
             return;
         }
-        if (name === "chassisScale" || name === "chassisRotationX" || name === "chassisRotationY" || name === "chassisRotationZ") {
+        if (name === "chassisScale" || name === "chassisOffsetY" || name === "chassisRotationX" || name === "chassisRotationY" || name === "chassisRotationZ" || name === "boardLean") {
             this._applyChassisModelTransform();
             return;
         }
@@ -830,11 +1293,17 @@ export class SkateboardModel extends ArrivalScript {
             }
             return;
         }
-        // Collision box changed — update the chassis shape entity
+        if (name === "wheelOffsetX") {
+            this._applyWheelModelOffsets();
+            return;
+        }
+        // Collision shape changed — collisionHeight is intentionally unused for the capsule for now
         if (name === "collisionWidth" || name === "collisionHeight" || name === "collisionLength" || name === "collisionY" || name === "collisionFrontOffset") {
             const chassisShape = this._shapeEntities[0];
             if (chassisShape?.collision) {
-                chassisShape.collision.halfExtents = new pc.Vec3(this.collisionWidth, this.collisionHeight, this.collisionLength);
+                chassisShape.collision.radius = this.collisionWidth;
+                chassisShape.collision.height = this.collisionLength * 2;
+                chassisShape.collision.axis = 2;
                 chassisShape.setLocalPosition(0, this.collisionY, this.collisionFrontOffset);
             }
             return;
