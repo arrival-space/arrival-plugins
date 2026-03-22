@@ -774,6 +774,12 @@ export class VehiclePhysicsModel extends ArrivalScript {
         if (!this._mounted) return;
 
 
+        // Sync avatar network heading to vehicle yaw
+        const fpv = ArrivalSpace.getPlayer()?.script?.firstPersonView;
+        if (fpv) {
+            fpv.target_angle = fpv.azimuth + 180;
+        }
+
         // Rotate camera by the same yaw delta as the vehicle
         const fwd = this.entity.forward;
         const yaw = Math.atan2(-fwd.x, -fwd.z) * (180 / Math.PI);
