@@ -83,6 +83,12 @@ export class VehiclePhysicsModel extends ArrivalScript {
     cameraTargetHeightOffset = -0.3;
     cameraTargetDistance = 2.7;
     rideIdleUrl = "driving.glb";
+    driveSoundUrl = "";
+    driveSoundVolume = 0.4;
+    driveSoundMinSpeed = 0.2;
+    driveSoundPitch = 0.9;
+    driveSoundSpeedPitch = 0.02;
+    driveSoundAccelPitch = 0.12;
 
     static properties = {
         chassisModelUrl:       { title: "Chassis Model (GLB)", editor: "asset" },
@@ -134,6 +140,12 @@ export class VehiclePhysicsModel extends ArrivalScript {
         seatOffsetZ:           { title: "Seat Forward",           min: -1,   max: 1,   step: 0.05 },
         cameraTargetHeightOffset: { title: "Camera Height Offset", min: -1, max: 2, step: 0.05 },
         cameraTargetDistance:  { title: "Camera Distance",        min: 0.8,  max: 4,   step: 0.05 },
+        driveSoundUrl:         { title: "Drive Sound", editor: "asset" },
+        driveSoundVolume:      { title: "Drive Sound Volume", min: 0, max: 10, step: 0.01 },
+        driveSoundMinSpeed:    { title: "Drive Sound Min Speed", min: 0, max: 20, step: 0.01 },
+        driveSoundPitch:       { title: "Drive Sound Pitch", min: 0.25, max: 4, step: 0.01 },
+        driveSoundSpeedPitch:  { title: "Drive Speed Pitch", min: 0, max: 1, step: 0.001 },
+        driveSoundAccelPitch:  { title: "Drive Accel Pitch", min: 0, max: 2, step: 0.01 },
         rideIdleUrl:           { title: "Ride Idle Animation" },
     };
 
@@ -149,6 +161,12 @@ export class VehiclePhysicsModel extends ArrivalScript {
     _mounted = false;
     _currentSteering = 0;
     _dismountCooldown = 0;
+    _currentSpeed = 0;
+    _currentEngineForce = 0;
+    _driveSoundEntity = null;
+    _driveSoundSlot = null;
+    _driveSoundPending = false;
+    _driveSoundRequestId = 0;
 
     // Multiplayer
     _attachHandle = null;
@@ -195,6 +213,8 @@ export class VehiclePhysicsModel extends ArrivalScript {
                 this._remoteExtra = null;
                 this._remoteExtraLast = null;
                 this._remoteExtraLastTime = null;
+                this._currentSpeed = 0;
+                this._currentEngineForce = 0;
 
                 this._wheelSpinAngle = 0;
                 this.entity.rigidbody.type = pc.BODYTYPE_KINEMATIC;
@@ -455,6 +475,9 @@ export class VehiclePhysicsModel extends ArrivalScript {
             if (!this._remoteLoggedNoDriver) {
                 console.warn('[Vehicle] Remote mode: driver entity not found for userId:', this._remoteInfo.userId, 'players:', players.map(p => p.userID));
                 this._remoteLoggedNoDriver = true;
+            this._currentSpeed = 0;
+            this._currentEngineForce = 0;
+            this._updateDriveSound();
             }
             return;
         }
@@ -481,6 +504,10 @@ export class VehiclePhysicsModel extends ArrivalScript {
         // Apply vehicle transform
         this.entity.setPosition(vehiclePos);
         this.entity.setRotation(quat);
+
+        this._currentSpeed = this._remoteExtra?.speed || 0;
+        this._currentEngineForce = this._remoteExtra?.engineForce || 0;
+        this._updateDriveSound();
 
         // Update wheels at static offsets with steering + spin
         this._updateWheelsRemote();
@@ -532,6 +559,95 @@ export class VehiclePhysicsModel extends ArrivalScript {
     //  HINT UI
     // ═════════════════════════════════════════════════════════
 
+    _getDriveSoundAccelAmount() {
+        if (!this.maxEngineForce) return 0;
+        return pc.math.clamp(Math.max(0, this._currentEngineForce) / this.maxEngineForce, 0, 1);
+    }
+
+    _getDriveSoundPitch() {
+        return this.driveSoundPitch
+            + (this._currentSpeed * this.driveSoundSpeedPitch)
+            + (this._getDriveSoundAccelAmount() * this.driveSoundAccelPitch);
+    }
+
+    _shouldPlayDriveSound() {
+        if (!this.driveSoundUrl) return false;
+        const active = this._mounted || !!this._remoteInfo;
+        return active && (this._currentSpeed >= this.driveSoundMinSpeed || this._getDriveSoundAccelAmount() > 0.01);
+    }
+
+    async _startDriveSound() {
+        if (!this.driveSoundUrl || this._driveSoundSlot || this._driveSoundPending) return;
+
+        const requestId = ++this._driveSoundRequestId;
+        const soundUrl = this.driveSoundUrl;
+        this._driveSoundPending = true;
+
+        try {
+            const { entity, slot } = await ArrivalSpace.playSound(soundUrl, {
+                entity: this.entity,
+                loop: true,
+                volume: this.driveSoundVolume,
+                pitch: this._getDriveSoundPitch(),
+                autoCleanup: false,
+            });
+
+            if (requestId !== this._driveSoundRequestId || soundUrl !== this.driveSoundUrl || !this._shouldPlayDriveSound()) {
+                slot.stop();
+                if (entity && entity !== this.entity && !entity._destroyed) {
+                    ArrivalSpace.disposeEntity(entity);
+                }
+                return;
+            }
+
+            this._driveSoundEntity = entity;
+            this._driveSoundSlot = slot;
+            this._updateDriveSoundAudio();
+        } catch (err) {
+            console.error('[VehiclePhysicsModel] Failed to start drive sound:', err);
+        } finally {
+            if (requestId === this._driveSoundRequestId) {
+                this._driveSoundPending = false;
+            }
+        }
+    }
+
+    _stopDriveSound() {
+        this._driveSoundRequestId++;
+        this._driveSoundPending = false;
+
+        if (this._driveSoundSlot) {
+            this._driveSoundSlot.stop();
+            this._driveSoundSlot = null;
+        }
+        if (this._driveSoundEntity && this._driveSoundEntity !== this.entity && !this._driveSoundEntity._destroyed) {
+            ArrivalSpace.disposeEntity(this._driveSoundEntity);
+        }
+        this._driveSoundEntity = null;
+    }
+
+    _updateDriveSoundAudio() {
+        if (!this._driveSoundSlot) return;
+        if (typeof this._driveSoundSlot.volume === 'number') {
+            this._driveSoundSlot.volume = this.driveSoundVolume;
+        }
+        if (typeof this._driveSoundSlot.pitch === 'number') {
+            this._driveSoundSlot.pitch = this._getDriveSoundPitch();
+        }
+    }
+
+    _updateDriveSound() {
+        if (!this._shouldPlayDriveSound()) {
+            this._stopDriveSound();
+            return;
+        }
+        if (!this._driveSoundSlot) {
+            this._startDriveSound();
+            return;
+        }
+        this._updateDriveSoundAudio();
+    }
+
     _createHint() {
         const ui = this.getUIContainer();
         ui.innerHTML = `
@@ -562,7 +678,8 @@ export class VehiclePhysicsModel extends ArrivalScript {
     // ═════════════════════════════════════════════════════════
 
     _mount() {
-        if (this._mounted || this._remoteInfo) return;
+        const attachedEntity = ArrivalSpace.getLocalAttachedEntity();
+        if (this._mounted || this._remoteInfo || (attachedEntity && attachedEntity !== this.entity)) return;
         this._mounted = true;
         this._currentSteering = 0;
 
@@ -587,6 +704,8 @@ export class VehiclePhysicsModel extends ArrivalScript {
             extra: () => ({
                 steer: this._currentSteering,
                 wheelRot: this._vehicle?.getWheelInfo?.(0)?.get_m_rotation?.() || 0,
+                speed: this._currentSpeed,
+                engineForce: this._currentEngineForce,
             }),
         });
 
@@ -605,6 +724,8 @@ export class VehiclePhysicsModel extends ArrivalScript {
         this.applyEngineForce(0);
         this.setBrake(0);
         this.setSteering(0);
+        this._currentEngineForce = 0;
+        this._updateDriveSound();
 
         this.unlockKeyboard();
 
@@ -644,7 +765,8 @@ export class VehiclePhysicsModel extends ArrivalScript {
         if (this._remoteInfo) return;
 
         const player = ArrivalSpace.getPlayer();
-        if (!player) return;
+        const attachedEntity = ArrivalSpace.getLocalAttachedEntity();
+        if (!player || (attachedEntity && attachedEntity !== this.entity)) return;
 
         const dist = player.getPosition().distance(this.entity.getPosition());
         if (dist < this.enterDistance) {
@@ -676,6 +798,7 @@ export class VehiclePhysicsModel extends ArrivalScript {
         }
 
         const speed = this.entity.rigidbody.linearVelocity.length();
+        this._currentSpeed = speed;
         const kmh = (speed / 0.7) * 3.6;
         if (this._speedEl) this._speedEl.textContent = `${Math.round(kmh)} km/h`;
 
@@ -711,6 +834,7 @@ export class VehiclePhysicsModel extends ArrivalScript {
 
         this.applyEngineForce(engineForce);
         this.setBrake(brakeForce);
+        this._currentEngineForce = engineForce;
     }
 
     // ═════════════════════════════════════════════════════════
@@ -744,10 +868,14 @@ export class VehiclePhysicsModel extends ArrivalScript {
 
         if (this._mounted) {
             this._handleInput(dt);
+            this._updateDriveSound();
         } else {
             this._checkProximity();
             this.applyEngineForce(0);
             this.setBrake(this.idleBrake);
+            this._currentEngineForce = 0;
+            this._currentSpeed = this.entity.rigidbody.linearVelocity.length();
+            this._updateDriveSound();
         }
     }
 
@@ -841,6 +969,15 @@ export class VehiclePhysicsModel extends ArrivalScript {
     // ═════════════════════════════════════════════════════════
 
     onPropertyChanged(name) {
+        if (name === "driveSoundUrl") {
+            this._stopDriveSound();
+            this._updateDriveSound();
+            return;
+        }
+        if (name === "driveSoundVolume" || name === "driveSoundMinSpeed" || name === "driveSoundPitch" || name === "driveSoundSpeedPitch" || name === "driveSoundAccelPitch") {
+            this._updateDriveSound();
+            return;
+        }
         if (name === "cameraTargetHeightOffset") {
             if (this._mounted) {
                 ArrivalSpace.setCameraTargetHeightOffset(this.cameraTargetHeightOffset);
@@ -928,6 +1065,8 @@ export class VehiclePhysicsModel extends ArrivalScript {
 
         if (this._mounted) this._dismount();
 
+        this._stopDriveSound();
+
         if (this._unsubAttach) {
             this._unsubAttach();
             this._unsubAttach = null;
@@ -959,3 +1098,4 @@ export class VehiclePhysicsModel extends ArrivalScript {
         if (this.entity.collision) this.entity.removeComponent("collision");
     }
 }
+
