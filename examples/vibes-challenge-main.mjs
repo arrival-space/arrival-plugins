@@ -38,6 +38,7 @@ export class ScavengerHunt extends ArrivalScript {
     _stateInterval = null;
     _networkUnsubs = [];
     _finishTime = 0;
+    _lastHostHeartbeat = 0;
 
     initialize() {
         this._items = [];
@@ -114,6 +115,16 @@ export class ScavengerHunt extends ArrivalScript {
             // Non-host: interpolate timer locally
             this._timeRemaining -= dt;
             if (this._timeRemaining < 0) this._timeRemaining = 0;
+        }
+
+        // Non-host: if no host message in 6s, assume host is gone
+        if (!this._isHost && this._lastHostHeartbeat > 0) {
+            const silence = Date.now() - this._lastHostHeartbeat;
+            if (silence > 6000) {
+                this._lastHostHeartbeat = 0; // prevent re-triggering
+                this._onHostDisconnected();
+                if (this._isHost) return; // we just became host, let next frame settle
+            }
         }
 
         // All clients: check local player proximity
@@ -224,6 +235,7 @@ export class ScavengerHunt extends ArrivalScript {
         const user = ArrivalSpace.getUser?.();
         this._isHost = true;
         this._hostUserId = user?.userID;
+        this._lastHostHeartbeat = 0;
         this._started = true;
         this._gameComplete = false;
         this._timeRemaining = this.duration;
@@ -327,6 +339,7 @@ export class ScavengerHunt extends ArrivalScript {
 
     _onNetStart(data) {
         if (this._started) return;
+        this._lastHostHeartbeat = Date.now();
         this._isHost = false;
         this._hostUserId = data.hostUserId;
         this._started = true;
@@ -364,6 +377,7 @@ export class ScavengerHunt extends ArrivalScript {
     }
 
     _onNetCollectConfirm(data) {
+        this._lastHostHeartbeat = Date.now();
         if (this._isHost) return; // host already processed
 
         const { letter, userId, userName, slotIndex } = data;
@@ -390,6 +404,13 @@ export class ScavengerHunt extends ArrivalScript {
     }
 
     _onNetState(data) {
+        this._lastHostHeartbeat = Date.now();
+
+        // If another client became host (migration), step down
+        if (this._isHost && data.hostUserId !== this._hostUserId) {
+            this._isHost = false;
+            this._stopStateBroadcast();
+        }
         if (this._isHost) return;
         this._hostUserId = data.hostUserId;
         this._started = data.started;
@@ -426,12 +447,31 @@ export class ScavengerHunt extends ArrivalScript {
     }
 
     _onHostDisconnected() {
-        this._gameComplete = true;
-        this._started = false;
-        this._stopStateBroadcast();
-        this._fireStateUpdated();
-        ArrivalSpace.fire("vibes:game-reset");
-        ArrivalSpace.fire("scavenger:reset");
+        if (!this._started || this._gameComplete) return;
+
+        const deadHostId = this._hostUserId;
+
+        // Deterministic election: lowest userID among remaining players becomes host.
+        // Explicitly exclude the dead host in case getPlayers() hasn't been pruned yet.
+        const me = ArrivalSpace.getUser?.();
+        if (!me?.userID) return;
+        const players = ArrivalSpace.net.getPlayers();
+        const ids = players
+            .map((p) => p.userID)
+            .filter((id) => id && id !== deadHostId);
+        if (!ids.includes(me.userID)) ids.push(me.userID);
+        ids.sort();
+
+        if (ids[0] === me.userID) {
+            // This client becomes the new host
+            this._isHost = true;
+            this._hostUserId = me.userID;
+            this._startStateBroadcast();
+            // Immediately broadcast so other clients learn the new host
+            ArrivalSpace.net.send("vibes:state", this._buildStatePayload());
+        }
+        // Non-elected clients keep running with their local state;
+        // the new host's next broadcast will re-sync everyone.
     }
 
     // ── Game end (all clients) ──
