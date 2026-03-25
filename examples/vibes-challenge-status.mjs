@@ -27,14 +27,15 @@ export class VibesChallengeStatus extends ArrivalScript {
     _state = null;
     _lastFilledCount = -1;
 
-    async initialize() {
+    initialize() {
         this._state = null;
-        await this._buildPanel();
 
         this._onStateUpdated = (data) => this._onState(data);
         this._onReset = () => this._onGameReset();
         ArrivalSpace.on("vibes:state-updated", this._onStateUpdated);
         ArrivalSpace.on("vibes:game-reset", this._onReset);
+
+        this._buildPanel();
     }
 
     _onState(data) {
