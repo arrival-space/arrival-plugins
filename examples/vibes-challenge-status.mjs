@@ -1,0 +1,214 @@
+/**
+ * Vibes Challenge Status — 3D panel showing timer and letter progress.
+ *
+ * Place this in the scene wherever you want the status display.
+ * Listens for events from the "Scavenger Hunt" controller and
+ * updates a texture panel with timer countdown, letter slots,
+ * and who collected each letter.
+ */
+export class VibesChallengeStatus extends ArrivalScript {
+    static scriptName = "Vibes Challenge Status";
+
+    panelWidth = 1.6;
+    panelHeight = 1.2;
+    resolution = 300;
+    billboard = false;
+    offsetY = 1.5;
+
+    static properties = {
+        panelWidth: { title: "Panel Width", min: 0.5, max: 5 },
+        panelHeight: { title: "Panel Height", min: 0.5, max: 5 },
+        resolution: { title: "Resolution", min: 10, max: 600, step: 50 },
+        billboard: { title: "Billboard Mode" },
+        offsetY: { title: "Vertical Offset", min: -5, max: 10 },
+    };
+
+    _panel = null;
+    _state = null;
+    _lastUpdate = 0;
+    _pendingUpdate = false;
+
+    async initialize() {
+        this._state = null;
+        await this._buildPanel();
+
+        this._onStateUpdated = (data) => this._onState(data);
+        this._onReset = () => this._onGameReset();
+        ArrivalSpace.on("vibes:state-updated", this._onStateUpdated);
+        ArrivalSpace.on("vibes:game-reset", this._onReset);
+    }
+
+    update(dt) {
+        if (this._pendingUpdate && Date.now() - this._lastUpdate > 500) {
+            this._pendingUpdate = false;
+            this._doUpdate();
+        }
+    }
+
+    _onState(data) {
+        this._state = data;
+        this._scheduleUpdate();
+    }
+
+    _onGameReset() {
+        this._state = null;
+        this._scheduleUpdate();
+    }
+
+    _scheduleUpdate() {
+        const now = Date.now();
+        if (now - this._lastUpdate > 500) {
+            this._doUpdate();
+        } else {
+            this._pendingUpdate = true;
+        }
+    }
+
+    _doUpdate() {
+        this._lastUpdate = Date.now();
+        if (!this._panel?.updateContent) return;
+        this._panel.updateContent(this._renderHTML());
+    }
+
+    // -- Panel --
+
+    async _buildPanel() {
+        this._destroyPanel();
+
+        const panel = await ArrivalSpace.createTexturePanel({
+            position: { x: 0, y: 0, z: 0 },
+            width: this.panelWidth,
+            height: this.panelHeight,
+            resolution: this.resolution,
+            html: this._renderHTML(),
+            transparent: true,
+            billboard: this.billboard,
+        });
+
+        if (!panel) return;
+
+        if (panel.render?.meshInstances?.length) {
+            const mat = panel.render.meshInstances[0].material;
+            if (mat) {
+                mat.shininess = 90;
+                mat.metalness = 0.7;
+                mat.useMetalness = true;
+                mat.twoSidedLighting = true;
+                mat.cull = pc.CULLFACE_NONE;
+                mat.update();
+            }
+        }
+
+        this._panel = panel;
+        this._panel.reparent(this.entity);
+        this._panel.setLocalPosition(0, this.offsetY, 0);
+        this._panel.setLocalEulerAngles(90, 180, 0);
+    }
+
+    _destroyPanel() {
+        if (this._panel) {
+            ArrivalSpace.disposeEntity(this._panel);
+            this._panel = null;
+        }
+    }
+
+    // -- Rendering --
+
+    _renderHTML() {
+        const s = this._state;
+        const m = 4;
+
+        if (!s || !s.started) {
+            return `<div style="width:100%;height:100%;background:transparent;"></div>`;
+        }
+
+        // Timer
+        const timeLeft = Math.max(0, s.timeRemaining);
+        const mins = Math.floor(timeLeft / 60);
+        const secs = Math.floor(timeLeft % 60);
+        const timerStr = mins > 0 ? `${mins}:${String(secs).padStart(2, "0")}` : `${secs}`;
+        const timerColor = timeLeft < 10 ? "#ff4444" : "#f5c542";
+
+        // Slots
+        const slots = s.slots || [];
+        let slotsHtml = "";
+        for (const slot of slots) {
+            const filled = slot.filled;
+            const bg = filled ? "#3d2e08" : "#1a1508";
+            const border = filled ? "#f5c542" : "rgba(255,255,255,0.25)";
+            const letterColor = filled ? "#f5c542" : "rgba(255,255,255,0.3)";
+            const shadow = filled ? "text-shadow:0 0 10px rgba(245,197,66,0.5);" : "";
+            const who = filled && slot.collectedBy
+                ? `<div style="font-size:8px;color:rgba(255,255,255,0.5);max-width:46px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px;">${this._esc(slot.collectedBy)}</div>`
+                : "";
+
+            slotsHtml += `
+            <div style="
+                width:48px;height:56px;
+                background:${bg};
+                border:2px solid ${border};
+                border-radius:8px;
+                display:flex;flex-direction:column;
+                align-items:center;justify-content:center;
+            ">
+                <div style="font-size:26px;font-weight:bold;color:${letterColor};${shadow}">${slot.letter}</div>
+                ${who}
+            </div>`;
+        }
+
+        // Participants
+        const participants = Object.values(s.participants || {});
+        const partNames = participants.map((p) => this._esc(p.userName)).join(", ");
+
+        // Status line
+        let status = "";
+        if (s.gameComplete) {
+            status = s.allCollected
+                ? '<span style="color:#f5c542;">Complete!</span>'
+                : '<span style="color:#ff6666;">Time\'s up!</span>';
+        }
+
+        return `
+        <div style="
+            width:100%;height:100%;
+            box-sizing:border-box;
+            background:transparent;
+            color:#fff;font-family:Arial,sans-serif;
+            display:flex;flex-direction:column;
+            align-items:center;justify-content:center;
+        ">
+            <div style="background:#1a1508;padding:8px 16px;border-radius:12px;border:1px solid rgba(245,197,66,0.35);margin-bottom:8px;">
+                <div style="font-size:42px;font-weight:bold;color:${timerColor};text-align:center;">
+                    ${timerStr}
+                </div>
+            </div>
+            <div style="display:flex;gap:6px;margin-bottom:8px;">
+                ${slotsHtml}
+            </div>
+            ${status ? `<div style="background:#1a1508;padding:4px 14px;border-radius:8px;font-size:16px;font-weight:bold;margin-bottom:6px;">${status}</div>` : ""}
+            ${partNames ? `<div style="background:#1a1508;padding:3px 10px;border-radius:6px;font-size:11px;color:rgba(255,255,255,0.5);max-width:90%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${partNames}</div>` : ""}
+        </div>`;
+    }
+
+    _esc(str) {
+        return String(str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    }
+
+    // -- Property changes --
+
+    onPropertyChanged(name) {
+        if (name === "offsetY" && this._panel) {
+            this._panel.setLocalPosition(0, this.offsetY, 0);
+            return;
+        }
+        this._buildPanel();
+    }
+
+    // -- Cleanup --
+
+    destroy() {
+        if (this._onStateUpdated) ArrivalSpace.off("vibes:state-updated", this._onStateUpdated);
+        if (this._onReset) ArrivalSpace.off("vibes:game-reset", this._onReset);
+        this._destroyPanel();
+    }
+}

@@ -1,3 +1,18 @@
+/**
+ * Localized Light Probe
+ *
+ * A spatial volume that overrides the room's primary light, environment
+ * map, and post-effects when the player walks inside it. Uses
+ * ArrivalSpace.createLocalizedLightProbe() with configurable radius
+ * and falloff for smooth blending at the edges.
+ *
+ * Features demonstrated:
+ * - createLocalizedLightProbe() with radius-based falloff
+ * - Primary light direction/color/intensity override
+ * - Environment HDR and post-effect overrides
+ * - enabledBy in property schema (conditional UI)
+ * - Debug volume visualization with drawLine
+ */
 export class LocalizedLightProbePlugin extends ArrivalScript {
     static scriptName = "Light Probe";
 
@@ -211,8 +226,4 @@ export class LocalizedLightProbePlugin extends ArrivalScript {
         const b = parseInt(normalized.slice(4, 6), 16) / 255;
         return new pc.Color(r, g, b);
     }
-}
-
-export function createPlugin() {
-    return new LocalizedLightProbePlugin();
 }

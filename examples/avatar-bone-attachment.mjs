@@ -1,13 +1,15 @@
 /**
- * Avatar Paintball
+ * Avatar Bone Attachment
  *
- * Loads a GLB and attaches it to the local player's avatar root.
- * This is a simple placeholder attachment point until bone parenting is added.
+ * Loads a GLB model and attaches it to a specific bone on the local
+ * player's avatar skeleton. Configurable bone selection, offset,
+ * rotation, and scale allow positioning props, weapons, or accessories
+ * on any avatar bone.
  */
-export class AvatarPaintball extends ArrivalScript {
-    static scriptName = "Avatar Paintball";
+export class AvatarBoneAttachment extends ArrivalScript {
+    static scriptName = "Avatar Bone Attachment";
 
-    paintballModelUrl = "";
+    modelUrl = "";
     boneName = "RightHand";
     boneRotationX = 0;
     boneRotationY = 0;
@@ -23,7 +25,7 @@ export class AvatarPaintball extends ArrivalScript {
     rotationZ = 0;
 
     static properties = {
-        paintballModelUrl: { title: "Paintball Model (GLB)" },
+        modelUrl: { title: "Model (GLB)", editor: "asset" },
         boneName: { title: "Gun Bone" },
         boneRotationX: { title: "Bone Rotation X", min: -180, max: 180, step: 1 },
         boneRotationY: { title: "Bone Rotation Y", min: -180, max: 180, step: 1 },
@@ -70,7 +72,7 @@ export class AvatarPaintball extends ArrivalScript {
     }
 
     async onPropertyChanged(name) {
-        if (name === "paintballModelUrl" || name === "boneName") {
+        if (name === "modelUrl" || name === "boneName") {
             await this._refreshAttachment();
             return;
         }
@@ -89,7 +91,7 @@ export class AvatarPaintball extends ArrivalScript {
         if (!root || root === this._printedBoneRoot || root._destroyed) return;
 
         this._printedBoneRoot = root;
-        console.log(`[AvatarPaintball] Bone hierarchy under ${root.name}:`);
+        console.log(`[AvatarBoneAttachment] Bone hierarchy under ${root.name}:`);
         this._printBoneTree(root, 0);
     }
 
@@ -163,12 +165,12 @@ export class AvatarPaintball extends ArrivalScript {
         this._disposeAttachment();
         this._anchorEntity = anchorEntity;
 
-        if (!anchorEntity || !this.paintballModelUrl) return;
+        if (!anchorEntity || !this.modelUrl) return;
 
         try {
-            const { entity } = await this.createModel(this.paintballModelUrl, {
+            const { entity } = await this.createModel(this.modelUrl, {
                 parent: anchorEntity,
-                name: "AvatarPaintballModel",
+                name: "AvatarBoneAttachmentModel",
                 scale: this.modelScale,
             });
 
@@ -181,7 +183,7 @@ export class AvatarPaintball extends ArrivalScript {
             this._applyTransform();
         } catch (err) {
             if (attachVersion !== this._attachVersion) return;
-            console.error("[AvatarPaintball] Failed to attach model:", err);
+            console.error("[AvatarBoneAttachment] Failed to attach model:", err);
         }
     }
 

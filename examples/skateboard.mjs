@@ -16,19 +16,19 @@ export class SkateboardModel extends ArrivalScript {
     static EXTRA_SYNC_RATE = 20;
 
     // ── Models ──────────────────────────────────────────────
-    chassisModelUrl = "https://dzrmwng2ae8bq.cloudfront.net/42485456/a6694ca53596284ccc4b8ecc8d9cc9838a8b71a8f61f831e4201c5d09f9d74c9_skateboard.glb";
+    chassisModelUrl = "https://dzrmwng2ae8bq.cloudfront.net/42485456/992abbf14f90bf8406b7a28ca9cacd8e7705666f3f3445b9f2bc7ab8539621b2_main_board.glb";
     chassisScale = 0.5;
-    chassisOffsetY = 0;
+    chassisOffsetY = -0.062;
     chassisRotationX = 0;
     chassisRotationY = 90;
     chassisRotationZ = 0;
-    boardLean = 0;
-    riderLean = 0;
-    riderLag = 0.12;
-    wheelModelUrl = "https://dzrmwng2ae8bq.cloudfront.net/42485456/a9d3253bbded709a96819158b9f58d63d6a0a6c964ca2b09ab9c1df6f5400c0c_kart_wheels.glb";
-    wheelScale = 0.01;
-    wheelOffsetX = 0;
-    wheelOffsetY = 0;
+    boardLean = 12.4;
+    riderLean = -15;
+    riderLag = 0.16;
+    wheelModelUrl = "https://dzrmwng2ae8bq.cloudfront.net/42485456/0e0d05ddbf5f76749c8a49951f573a51bd24922398fd4e5883cc3a6d5a19345e_wheel_2.glb";
+    wheelScale = 0.5;
+    wheelOffsetX = -0.136;
+    wheelOffsetY = -0.082;
     debugWheels = false;
 
     // ── Chassis ──────────────────────────────────────────────
@@ -36,77 +36,79 @@ export class SkateboardModel extends ArrivalScript {
 
     // ── Wheels ───────────────────────────────────────────────
     wheelRadius = 0.1;
-    wheelFrontX = 0.356;
-    wheelRearX = 0.407;
-    wheelY = 0.432;
-    wheelFrontZ = 0.298;
-    wheelRearZ = -0.42;
+    wheelFrontX = 0.2;
+    wheelRearX = 0.2;
+    wheelY = 0.475;
+    wheelFrontZ = 0.18;
+    wheelRearZ = -0.18;
 
     // ── Suspension ───────────────────────────────────────────
-    suspensionStiffness = 18;
-    suspensionDamping = 1;
-    suspensionCompression = 2.0;
+    suspensionStiffness = 200;
+    suspensionDamping = 10;
+    suspensionCompression = 2.15;
     suspensionRestLength = 0.45;
 
     // ── Grip ─────────────────────────────────────────────────
     frictionSlipFront = 1.5;
     frictionSlipRear = 1.46;
-    rollInfluence = 0.7;
+    rollInfluence = 0;
     linearDamping = 0.1;
-    angularDamping = 0.1;
+    angularDamping = 0.98;
     physicsHz = 120;
     physicsSubSteps = 30;
 
     // ── Motor ────────────────────────────────────────────────
-    maxEngineForce = 200;
+    maxEngineForce = 120;
     maxBrakingForce = 4;
-    idleBrake = 0.0;
+    idleBrake = 0.01;
     idleBrakeUnmounted = 0.1;
     maxSteering = 0.7;
-    minSteering = 0.1;
-    steeringFalloffSpeed = 12;
+    minSteering = 0.15;
+    steeringFalloffSpeed = 4;
     steeringSpeed = 3.5;
     airSteeringSpeed = 2.5;
-    jumpImpulse = 180;
-    jumpSideImpulse = 45;
+    jumpImpulse = 300;
+    jumpSideImpulse = 12;
 
     // ── Collision Box ──────────────────────────────────────────
-    collisionWidth = 0.421;
-    collisionHeight = 0.167;
-    collisionLength = 0.563;
-    collisionY = 0.277;
-    collisionFrontOffset = -0.031;
+    collisionWidth = 0.07;
+    collisionHeight = 0.05;
+    collisionLength = 0.33;
+    collisionY = 0.055;
+    collisionFrontOffset = 0;
     chassisFriction = 0.013;
     chassisRestitution = 0.1;
 
     // ── Mounting ─────────────────────────────────────────────
-    enterDistance = 1;
-    seatOffsetX = 0.036;
-    seatOffsetY = 0.074;
+    enterDistance = 0.65;
+    seatOffsetX = 0.01;
+    seatOffsetY = 0.035;
     seatOffsetZ = -0.063;
     rideIdleUrl = "skate_idle.glb";
-    rideAccelUrl = "skate_accelerating.glb";
-    rideJumpUrl = "";
-    rideJumpDuration = 0.35;
+    rideAccelUrl = "skate_accelerating_short.glb";
+    rideJumpUrl = "skate_accelerating_short.glb";
+    rideAccelDuration = 1.3;
+    rideAccelRepeat = 2.5;
+    rideJumpDuration = 0.2;
     rideAccelInPlaceY = 0;
-    rideAccelInPlaceZ = 0;
-    rollingSoundUrl = "";
-    rollingSoundVolume = 0.2;
-    rollingSoundMinSpeed = 1.2;
-    rollingSoundMaxSpeed = 8;
-    rollingSoundMinPitch = 0.85;
+    rideAccelInPlaceZ = 0.255;
+    rollingSoundUrl = "https://dzrmwng2ae8bq.cloudfront.net/42485456/593c07ced96171c4a23e5ab4b28635c4dbbae227f98e0eb616cb138702c2513c_skateboard_rolling.mp3";
+    rollingSoundVolume = 10;
+    rollingSoundMinSpeed = 0.2;
+    rollingSoundMaxSpeed = 7.87;
+    rollingSoundMinPitch = 0.75;
     rollingSoundMinPitchSpeed = 1.2;
-    rollingSoundPitch = 1;
+    rollingSoundPitch = 1.3;
     rollingSoundPitchSpeed = 8;
-    onAirSoundUrl = "";
-    onAirSoundPitch = 1;
-    landingSoundUrl = "";
-    landingSoundPitch = 1;
+    onAirSoundUrl = "https://dzrmwng2ae8bq.cloudfront.net/42485456/277398df98af4d4baefa4854910ebf4558498380789f3f119aa95e45311db467_skateboard_ollie_short.mp3";
+    onAirSoundPitch = 0.98;
+    landingSoundUrl = "https://dzrmwng2ae8bq.cloudfront.net/42485456/277398df98af4d4baefa4854910ebf4558498380789f3f119aa95e45311db467_skateboard_ollie_short.mp3";
+    landingSoundPitch = 1.04;
     airStateSoundVolume = 1;
-    indicatorModelUrl = "";
-    indicatorScale = 0.2;
-    indicatorBounceHeight = 0.15;
-    indicatorBounceSpeed = 1.5;
+    indicatorModelUrl = "https://dzrmwng2ae8bq.cloudfront.net/42485456/6384d4686378294d20103167384858725032d25a1a1434b96df010e5d44711d7_indicator.glb";
+    indicatorScale = 0.35;
+    indicatorBounceHeight = 0.59;
+    indicatorBounceSpeed = 0.48;
     static properties = {
         chassisModelUrl:       { title: "Chassis Model (GLB)", editor: "asset" },
         chassisScale:          { title: "Chassis Scale",          min: 0.01, max: 10,  step: 0.001 },
@@ -165,6 +167,8 @@ export class SkateboardModel extends ArrivalScript {
         rideIdleUrl:           { title: "Ride Idle Animation" },
         rideAccelUrl:          { title: "Ride Accelerate Animation" },
         rideJumpUrl:           { title: "Ride Jump Animation" },
+        rideAccelDuration:     { title: "Ride Accel Duration",     min: 0.05, max: 2,   step: 0.01 },
+        rideAccelRepeat:       { title: "Ride Accel Repeat (s)",   min: 0.5,  max: 10,  step: 0.1 },
         rideJumpDuration:      { title: "Ride Jump Duration",     min: 0.05, max: 2,   step: 0.01 },
         rideAccelInPlaceY:     { title: "Ride Accel InPlace Y",   min: -2,   max: 2,   step: 0.001 },
         rideAccelInPlaceZ:     { title: "Ride Accel InPlace Z",   min: -2,   max: 2,   step: 0.001 },
@@ -255,8 +259,8 @@ export class SkateboardModel extends ArrivalScript {
         this.setPhysicsStepRate(this.physicsHz, this.physicsSubSteps);
         this._buildPhysics();
         await this._buildVisuals();
-        this._createVehicle();
-        
+        this._placeWheelsAtRest();
+
         //this._createHint();
 
         // Listen for remote players mounting this vehicle
@@ -331,7 +335,7 @@ export class SkateboardModel extends ArrivalScript {
         this._shapeEntities.push(chassis);
 
         this.entity.addComponent("rigidbody", {
-            type: pc.BODYTYPE_DYNAMIC,
+            type: this._vehicle ? pc.BODYTYPE_DYNAMIC : pc.BODYTYPE_KINEMATIC,
             mass: this.chassisMass,
             friction: this.chassisFriction,
             restitution: this.chassisRestitution,
@@ -454,6 +458,20 @@ export class SkateboardModel extends ArrivalScript {
             .add(this.entity.up.clone().mulScalar(this.wheelOffsetY));
     }
 
+    _placeWheelsAtRest() {
+        const wheels = this._getWheels();
+        const wt = this.entity.getWorldTransform();
+        for (let i = 0; i < wheels.length; i++) {
+            const def = wheels[i];
+            const we = this._wheelEntities[i];
+            if (!we) continue;
+            const restY = def.y - this.suspensionRestLength + 0.02;
+            const worldPos = wt.transformPoint(new pc.Vec3(def.x, restY, def.z));
+            const offset = this._getWheelVisualOffset(i);
+            we.setPosition(worldPos.x + offset.x, worldPos.y + offset.y, worldPos.z + offset.z);
+        }
+    }
+
     // ═════════════════════════════════════════════════════════
     //  RAYCAST VEHICLE
     // ═════════════════════════════════════════════════════════
@@ -477,8 +495,10 @@ export class SkateboardModel extends ArrivalScript {
         const bouncePhase = this._indicatorBounceTime * this.indicatorBounceSpeed * Math.PI * 2;
         const bounceOffset = this.indicatorBounceHeight > 0 ? ((Math.sin(bouncePhase) + 1) * 0.5 * this.indicatorBounceHeight) : 0;
         const y = this._getIndicatorBaseY() + bounceOffset;
-        this._indicatorEntity.setLocalPosition(0, y, 0);
+        const pos = this.entity.getPosition();
+        this._indicatorEntity.setPosition(pos.x, pos.y + y, pos.z);
         this._indicatorEntity.setLocalScale(this.indicatorScale, this.indicatorScale, this.indicatorScale);
+        this._indicatorEntity.setEulerAngles(0, 0, 0);
         this._updateIndicatorVisibility();
     }
 
@@ -681,7 +701,7 @@ export class SkateboardModel extends ArrivalScript {
             const pivot = this._wheelPivotEntities[i];
             if (!we) continue;
 
-            const localPos = new pc.Vec3(def.x, def.y - this.suspensionRestLength*0.75, def.z);
+            const localPos = new pc.Vec3(def.x, def.y - this.suspensionRestLength + 0.02, def.z);
             const worldPos = wt.transformPoint(localPos).add(this._getWheelVisualOffset(i));
             we.setPosition(worldPos);
 
@@ -935,15 +955,51 @@ export class SkateboardModel extends ArrivalScript {
 
     _setRideAccelActive(active) {
         if (this._rideAccelActive === active) return;
-        if (active && !this._rideAccelPrimed && this.rideAccelUrl) {
+        this._rideAccelActive = active;
+        if (active && this.rideAccelUrl) {
+            this._playAccelOnce();
+        } else {
+            this._clearAccelTimers();
+            this._clearRideSignatures();
+            this.app.fire("firstperson:signature", false, 1);
+        }
+    }
+
+    _playAccelOnce() {
+        if (!this._rideAccelPrimed) {
             this._applyRideAccelAnimation();
             this._rideAccelPrimed = true;
         }
-        this._rideAccelActive = active;
-        if (!active) {
+        this._clearAccelTimers();
+        this._clearRideSignatures();
+        this.app.fire("firstperson:signature", true, 1);
+
+        // Clear after duration, then schedule repeat if still holding
+        this._rideAccelTimer = setTimeout(() => {
+            this._rideAccelTimer = null;
+            if (!this._mounted) return;
             this._clearRideSignatures();
+
+            // Schedule repeat while still accelerating
+            if (this._rideAccelActive && this.rideAccelRepeat > 0) {
+                this._rideAccelRepeatTimer = setTimeout(() => {
+                    this._rideAccelRepeatTimer = null;
+                    if (!this._mounted || !this._rideAccelActive) return;
+                    this._playAccelOnce();
+                }, Math.max(50, (this.rideAccelRepeat - this.rideAccelDuration) * 1000));
+            }
+        }, Math.max(50, this.rideAccelDuration * 1000));
+    }
+
+    _clearAccelTimers() {
+        if (this._rideAccelTimer) {
+            clearTimeout(this._rideAccelTimer);
+            this._rideAccelTimer = null;
         }
-        this.app.fire("firstperson:signature", active, 1);
+        if (this._rideAccelRepeatTimer) {
+            clearTimeout(this._rideAccelRepeatTimer);
+            this._rideAccelRepeatTimer = null;
+        }
     }
 
     _playRideJumpAnimation() {
@@ -1163,8 +1219,19 @@ export class SkateboardModel extends ArrivalScript {
     // ═════════════════════════════════════════════════════════
 
     _mount() {
+
         const attachedEntity = ArrivalSpace.getLocalAttachedEntity();
         if (this._mounted || this._remoteInfo || (attachedEntity && attachedEntity !== this.entity)) return;
+
+        if (!this._vehicle) {
+            // Straighten the board upright, keeping its forward direction
+            const fwd = this.entity.forward.clone();
+            const yaw = Math.atan2(-fwd.x, -fwd.z) * (180 / Math.PI);
+            this.entity.rigidbody.teleport(this.entity.getPosition(), new pc.Quat().setFromEulerAngles(0, yaw, 0));
+            this.entity.rigidbody.type = pc.BODYTYPE_DYNAMIC;
+            this._createVehicle();
+        }
+
         this._mounted = true;
         this._currentSteering = 0;
         this._currentSteerInput = 0;
@@ -1410,6 +1477,7 @@ export class SkateboardModel extends ArrivalScript {
             this._currentSpeed = 0;
             this._remoteOnAir = null;
             this._updateRollingSound();
+            this._checkProximity();
             return;
         }
 
@@ -1554,6 +1622,24 @@ export class SkateboardModel extends ArrivalScript {
     // ═════════════════════════════════════════════════════════
     //  PROPERTY CHANGES
     // ═════════════════════════════════════════════════════════
+
+    onEntityMoved(position, rotation) {
+        if (position) this.entity.setPosition(position.x, position.y, position.z);
+        if (rotation) this.entity.setEulerAngles(rotation.x, rotation.y, rotation.z);
+        this._spawnPos = this.entity.getPosition().clone();
+        this._spawnRot = this.entity.getRotation().clone();
+        if (this._vehicle) {
+            this._destroyVehicle();
+        }
+        if (this.entity.rigidbody) {
+            this.entity.rigidbody.linearVelocity = pc.Vec3.ZERO;
+            this.entity.rigidbody.angularVelocity = pc.Vec3.ZERO;
+            this.entity.rigidbody.type = pc.BODYTYPE_KINEMATIC;
+            this.entity.rigidbody.teleport(this._spawnPos, this._spawnRot);
+        }
+        this._placeWheelsAtRest();
+        this._applyChassisModelTransform();
+    }
 
     onPropertyChanged(name) {
         if (name === "rollingSoundUrl" || name === "rollingSoundMinPitch" || name === "rollingSoundMinPitchSpeed" || name === "rollingSoundPitch" || name === "rollingSoundPitchSpeed") {
