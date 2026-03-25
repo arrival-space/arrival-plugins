@@ -100,6 +100,9 @@ export class VibesChallengeStatus extends ArrivalScript {
         this._panel.reparent(this.entity);
         this._panel.setLocalPosition(0, this.offsetY, 0);
         this._panel.setLocalEulerAngles(90, 180, 0);
+
+        // If state arrived while panel was building, render it now
+        if (this._state) this._doUpdate();
     }
 
     _destroyPanel() {
