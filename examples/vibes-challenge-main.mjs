@@ -569,14 +569,107 @@ export class ScavengerHunt extends ArrivalScript {
             allCollected: this._allSlotsFilled(),
             challengeWord: this.challengeWord,
         });
+        this._updateHUD();
     }
 
-    // ── UI (finish overlay only) ──
+    // ── 2D HUD (bottom-screen slots + timer) ──
+
+    _updateHUD() {
+        const hud = this._uiContainer?.querySelector("#sh-hud");
+        if (!hud) return;
+
+        // Show HUD only during active game (not during complete/finish overlay)
+        if (!this._started || this._gameComplete || this._slots.length === 0) {
+            hud.classList.remove("visible");
+            return;
+        }
+
+        hud.classList.add("visible");
+
+        const slotsEl = hud.querySelector("#sh-hud-slots");
+        if (!slotsEl) return;
+
+        // Rebuild only when slot count changes (avoid DOM thrash)
+        const letterEls = slotsEl.querySelectorAll(".sh-hud-letter");
+        if (letterEls.length !== this._slots.length) {
+            let html = "";
+            for (const slot of this._slots) {
+                html += `<div class="sh-hud-letter">${slot.letter}</div>`;
+            }
+            html += `<span id="sh-hud-timer"></span>`;
+            slotsEl.innerHTML = html;
+        }
+
+        // Update filled state
+        const letters = slotsEl.querySelectorAll(".sh-hud-letter");
+        for (let i = 0; i < this._slots.length; i++) {
+            if (i < letters.length) {
+                letters[i].classList.toggle("filled", this._slots[i].filled);
+            }
+        }
+
+        // Update timer
+        const timerEl = slotsEl.querySelector("#sh-hud-timer");
+        if (timerEl) {
+            const t = Math.max(0, this._timeRemaining);
+            const mins = Math.floor(t / 60);
+            const secs = Math.floor(t % 60);
+            timerEl.textContent = mins > 0 ? `${mins}:${String(secs).padStart(2, "0")}` : `${secs}s`;
+            timerEl.classList.toggle("urgent", t < 10);
+        }
+    }
+
+    // ── UI ──
 
     _buildUI() {
         const ui = this.getUIContainer();
         ui.innerHTML = `
         <style>
+            #sh-hud {
+                display: none;
+                position: fixed;
+                bottom: 24px;
+                left: 50%;
+                transform: translateX(-50%);
+                z-index: 100;
+                pointer-events: none;
+                user-select: none;
+                font-family: sans-serif;
+            }
+            #sh-hud.visible { display: flex; }
+            #sh-hud-slots {
+                display: flex;
+                gap: 6px;
+                background: rgba(0,0,0,0.55);
+                backdrop-filter: blur(6px);
+                padding: 8px 14px;
+                border-radius: 10px;
+                border: 1px solid rgba(255,255,255,0.1);
+                align-items: center;
+            }
+            .sh-hud-letter {
+                width: 32px; height: 38px;
+                display: flex; align-items: center; justify-content: center;
+                border-radius: 5px;
+                border: 2px solid rgba(255,255,255,0.15);
+                background: rgba(0,0,0,0.3);
+                font-size: 18px; font-weight: bold;
+                color: rgba(255,255,255,0.2);
+                transition: all 0.3s;
+            }
+            .sh-hud-letter.filled {
+                color: #f5c542;
+                border-color: #f5c542;
+                background: rgba(245,197,66,0.1);
+                text-shadow: 0 0 8px rgba(245,197,66,0.4);
+            }
+            #sh-hud-timer {
+                font-size: 14px;
+                color: rgba(255,255,255,0.6);
+                margin-left: 10px;
+                font-variant-numeric: tabular-nums;
+            }
+            #sh-hud-timer.urgent { color: #ff4444; }
             #sh-finish {
                 display: none;
                 position: fixed; inset: 0;
@@ -670,6 +763,10 @@ export class ScavengerHunt extends ArrivalScript {
             .sh-rank-time { flex-shrink: 0; margin-left: 8px; }
         </style>
 
+        <div id="sh-hud">
+            <div id="sh-hud-slots"></div>
+        </div>
+
         <div id="sh-finish">
             <div id="sh-finish-title"></div>
             <div id="sh-finish-stats"></div>
@@ -747,6 +844,8 @@ export class ScavengerHunt extends ArrivalScript {
     _hideFinishOverlay() {
         const overlay = this._uiContainer?.querySelector("#sh-finish");
         if (overlay) overlay.classList.remove("visible");
+        const hud = this._uiContainer?.querySelector("#sh-hud");
+        if (hud) hud.classList.remove("visible");
     }
 
     _updateFinishCountdown() {

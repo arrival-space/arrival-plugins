@@ -43,7 +43,9 @@ export class ScavengerStartTrigger extends ArrivalScript {
         this._time = 0;
         this._startY = this.localPosition.y;
 
+        this._onGameStarted = () => this._deactivate();
         this._onReset = () => this._activate();
+        ArrivalSpace.on("scavenger:start", this._onGameStarted);
         ArrivalSpace.on("scavenger:reset", this._onReset);
 
         if (this.modelUrl) {
@@ -92,6 +94,11 @@ export class ScavengerStartTrigger extends ArrivalScript {
             userId: user?.userID,
             userName: user?.userName,
         });
+    }
+
+    _deactivate() {
+        this._active = false;
+        this._setVisualVisible(false);
     }
 
     _activate() {
@@ -264,6 +271,7 @@ export class ScavengerStartTrigger extends ArrivalScript {
     // -- Cleanup --
 
     destroy() {
+        if (this._onGameStarted) ArrivalSpace.off("scavenger:start", this._onGameStarted);
         if (this._onReset) ArrivalSpace.off("scavenger:reset", this._onReset);
         this._destroyVisual();
     }
