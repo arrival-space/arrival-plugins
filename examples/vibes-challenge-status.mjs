@@ -25,8 +25,7 @@ export class VibesChallengeStatus extends ArrivalScript {
 
     _panel = null;
     _state = null;
-    _lastUpdate = 0;
-    _pendingUpdate = false;
+    _lastFilledCount = -1;
 
     async initialize() {
         this._state = null;
@@ -38,34 +37,31 @@ export class VibesChallengeStatus extends ArrivalScript {
         ArrivalSpace.on("vibes:game-reset", this._onReset);
     }
 
-    update(dt) {
-        if (this._pendingUpdate && Date.now() - this._lastUpdate > 500) {
-            this._pendingUpdate = false;
+    _onState(data) {
+        const prevStarted = this._state?.started;
+        const prevComplete = this._state?.gameComplete;
+        this._state = data;
+
+        // Only re-render when something visual changes (not every frame for the timer)
+        const filledCount = (data.slots || []).filter((s) => s.filled).length;
+        const needsUpdate =
+            data.started !== prevStarted ||
+            data.gameComplete !== prevComplete ||
+            filledCount !== this._lastFilledCount;
+
+        if (needsUpdate) {
+            this._lastFilledCount = filledCount;
             this._doUpdate();
         }
-    }
-
-    _onState(data) {
-        this._state = data;
-        this._scheduleUpdate();
     }
 
     _onGameReset() {
         this._state = null;
-        this._scheduleUpdate();
-    }
-
-    _scheduleUpdate() {
-        const now = Date.now();
-        if (now - this._lastUpdate > 500) {
-            this._doUpdate();
-        } else {
-            this._pendingUpdate = true;
-        }
+        this._lastFilledCount = -1;
+        this._doUpdate();
     }
 
     _doUpdate() {
-        this._lastUpdate = Date.now();
         if (!this._panel?.updateContent) return;
         this._panel.updateContent(this._renderHTML());
     }
@@ -122,13 +118,6 @@ export class VibesChallengeStatus extends ArrivalScript {
             return `<div style="width:100%;height:100%;background:transparent;"></div>`;
         }
 
-        // Timer
-        const timeLeft = Math.max(0, s.timeRemaining);
-        const mins = Math.floor(timeLeft / 60);
-        const secs = Math.floor(timeLeft % 60);
-        const timerStr = mins > 0 ? `${mins}:${String(secs).padStart(2, "0")}` : `${secs}`;
-        const timerColor = timeLeft < 10 ? "#ff4444" : "#f5c542";
-
         // Slots
         const slots = s.slots || [];
         let slotsHtml = "";
@@ -177,11 +166,6 @@ export class VibesChallengeStatus extends ArrivalScript {
             display:flex;flex-direction:column;
             align-items:center;justify-content:center;
         ">
-            <div style="background:#1a1508;padding:8px 16px;border-radius:12px;border:1px solid rgba(245,197,66,0.35);margin-bottom:8px;">
-                <div style="font-size:42px;font-weight:bold;color:${timerColor};text-align:center;">
-                    ${timerStr}
-                </div>
-            </div>
             <div style="display:flex;gap:6px;margin-bottom:8px;">
                 ${slotsHtml}
             </div>
