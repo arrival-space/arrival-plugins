@@ -68,8 +68,20 @@ export class ScavengerItem extends ArrivalScript {
 
         this._onStart = () => this._show();
         this._onReset = () => this._hide();
+        this._onStateUpdated = (data) => {
+            if (!data.started || data.gameComplete) return;
+            // Late join: show if game is active and this letter's slot is not filled
+            const letter = this.letter?.toUpperCase();
+            const filled = (data.slots || []).some((s) => s.letter === letter && s.filled);
+            if (filled) {
+                this.collect();
+            } else if (this._hidden) {
+                this._show();
+            }
+        };
         ArrivalSpace.on("scavenger:start", this._onStart);
         ArrivalSpace.on("scavenger:reset", this._onReset);
+        ArrivalSpace.on("vibes:state-updated", this._onStateUpdated);
 
         ArrivalSpace.fire("scavenger:item:ready", this);
     }
@@ -245,6 +257,7 @@ export class ScavengerItem extends ArrivalScript {
     destroy() {
         if (this._onStart) ArrivalSpace.off("scavenger:start", this._onStart);
         if (this._onReset) ArrivalSpace.off("scavenger:reset", this._onReset);
+        if (this._onStateUpdated) ArrivalSpace.off("vibes:state-updated", this._onStateUpdated);
         ArrivalSpace.fire("scavenger:item:removed", this);
         this._destroyVisual();
     }
