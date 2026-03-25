@@ -149,12 +149,19 @@ export class VibesChallengeStatus extends ArrivalScript {
         const participants = Object.values(s.participants || {});
         const partNames = participants.map((p) => this._esc(p.userName)).join(", ");
 
-        // Status line
-        let status = "";
+        // Headline
+        const filled = slots.filter((sl) => sl.filled).length;
+        let headline = "";
+        let headlineColor = "#f5c542";
         if (s.gameComplete) {
-            status = s.allCollected
-                ? '<span style="color:#f5c542;">Complete!</span>'
-                : '<span style="color:#ff6666;">Time\'s up!</span>';
+            headline = s.allCollected ? "NAILED IT!" : "WIPEOUT!";
+            headlineColor = s.allCollected ? "#f5c542" : "#ff6666";
+        } else if (filled === 0) {
+            headline = "SHRED &amp; COLLECT!";
+        } else if (filled < slots.length - 1) {
+            headline = "KEEP RIDING!";
+        } else {
+            headline = "ONE MORE!";
         }
 
         return `
@@ -166,10 +173,12 @@ export class VibesChallengeStatus extends ArrivalScript {
             display:flex;flex-direction:column;
             align-items:center;justify-content:center;
         ">
+            <div style="font-size:28px;font-weight:bold;color:${headlineColor};letter-spacing:3px;margin-bottom:10px;text-shadow:0 0 12px rgba(245,197,66,0.3);">
+                ${headline}
+            </div>
             <div style="display:flex;gap:6px;margin-bottom:8px;">
                 ${slotsHtml}
             </div>
-            ${status ? `<div style="background:#1a1508;padding:4px 14px;border-radius:8px;font-size:16px;font-weight:bold;margin-bottom:6px;">${status}</div>` : ""}
             ${partNames ? `<div style="background:#1a1508;padding:3px 10px;border-radius:6px;font-size:11px;color:rgba(255,255,255,0.5);max-width:90%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${partNames}</div>` : ""}
         </div>`;
     }

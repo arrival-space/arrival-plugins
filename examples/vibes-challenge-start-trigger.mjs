@@ -45,8 +45,13 @@ export class ScavengerStartTrigger extends ArrivalScript {
 
         this._onGameStarted = () => this._deactivate();
         this._onReset = () => this._activate();
+        this._onStateUpdated = (data) => {
+            if (data.started && !data.gameComplete) this._deactivate();
+            else if (!data.started) this._activate();
+        };
         ArrivalSpace.on("scavenger:start", this._onGameStarted);
         ArrivalSpace.on("scavenger:reset", this._onReset);
+        ArrivalSpace.on("vibes:state-updated", this._onStateUpdated);
 
         if (this.modelUrl) {
             this._loadModel(this.modelUrl);
@@ -273,6 +278,7 @@ export class ScavengerStartTrigger extends ArrivalScript {
     destroy() {
         if (this._onGameStarted) ArrivalSpace.off("scavenger:start", this._onGameStarted);
         if (this._onReset) ArrivalSpace.off("scavenger:reset", this._onReset);
+        if (this._onStateUpdated) ArrivalSpace.off("vibes:state-updated", this._onStateUpdated);
         this._destroyVisual();
     }
 }
