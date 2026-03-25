@@ -578,8 +578,8 @@ export class ScavengerHunt extends ArrivalScript {
         const hud = this._uiContainer?.querySelector("#sh-hud");
         if (!hud) return;
 
-        // Show HUD only during active game (not during complete/finish overlay)
-        if (!this._started || this._gameComplete || this._slots.length === 0) {
+        // Show HUD only during active game while on a board
+        if (!this._started || this._gameComplete || this._slots.length === 0 || !ArrivalSpace.getLocalAttachedEntity()) {
             hud.classList.remove("visible");
             return;
         }
