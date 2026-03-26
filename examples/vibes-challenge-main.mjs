@@ -17,6 +17,7 @@ export class ScavengerHunt extends ArrivalScript {
     challengeWord = "VIBES";
     duration = 1800;
     storeKey = "vibes-best-time";
+    forceEnd = false;
 
     static properties = {
         autoReset: { title: "Auto Reset" },
@@ -24,6 +25,7 @@ export class ScavengerHunt extends ArrivalScript {
         challengeWord: { title: "Challenge Word" },
         duration: { title: "Duration (s)", min: 10, max: 3600, step: 5 },
         storeKey: { title: "Leaderboard Key" },
+        forceEnd: { title: "Force End (no score)" },
     };
 
     _items = [];
@@ -216,12 +218,12 @@ export class ScavengerHunt extends ArrivalScript {
                 if (!slotAvailable) continue;
 
                 if (this._isHost) {
-                    this._hostProcessCollect(letter, item);
+                    this._hostProcessCollect(letter, item, player);
                 } else {
                     // Send request to host
                     ArrivalSpace.net.send("vibes:collect-request", { letter });
                     // Optimistic: mark locally to avoid re-sending
-                    item.collect();
+                    item.collect(player);
                 }
             }
         }
@@ -257,14 +259,14 @@ export class ScavengerHunt extends ArrivalScript {
         this._fireStateUpdated();
     }
 
-    _hostProcessCollect(letter, item) {
+    _hostProcessCollect(letter, item, collectorEntity) {
         const user = ArrivalSpace.getUser?.();
         const userId = user?.userID;
         const userName = user?.userName || "Unknown";
-        this._processCollect(letter, userId, userName, item);
+        this._processCollect(letter, userId, userName, item, collectorEntity);
     }
 
-    _processCollect(letter, userId, userName, item) {
+    _processCollect(letter, userId, userName, item, collectorEntity) {
         const slotIndex = this._tryFillSlot(letter, userName);
         if (slotIndex < 0) return; // no slot available
 
@@ -275,7 +277,7 @@ export class ScavengerHunt extends ArrivalScript {
         this._participants[userId].letters.push(letter);
 
         // Collect the item
-        if (item) item.collect();
+        if (item) item.collect(collectorEntity);
 
         // Broadcast confirmation
         ArrivalSpace.net.send("vibes:collect-confirm", {
@@ -367,13 +369,20 @@ export class ScavengerHunt extends ArrivalScript {
         const letter = data.letter?.toUpperCase();
         if (!letter) return;
 
+        // Find the remote player's entity for velocity
+        const players = ArrivalSpace.net.getPlayers();
+        const remote = (data.senderNetworkId
+            ? players.find(p => p.socketId === data.senderNetworkId)
+            : null) || players.find(p => p.userID == sender.userID);
+        const collectorEntity = remote?.entity || null;
+
         // Find a matching uncollected item
         const item = this._items.find(
             (i) => !i.collected && i.letter?.toUpperCase() === letter
         );
-        if (item) item.collect();
+        if (item) item.collect(collectorEntity);
 
-        this._processCollect(letter, sender.userID, sender.userName, null);
+        this._processCollect(letter, sender.userID, sender.userName, null, collectorEntity);
     }
 
     _onNetCollectConfirm(data) {
@@ -394,11 +403,17 @@ export class ScavengerHunt extends ArrivalScript {
         }
         this._participants[userId].letters.push(letter);
 
-        // Hide the item
+        // Hide the item — find collector entity for effects
+        const players = ArrivalSpace.net.getPlayers();
+        const remote = (data.senderNetworkId
+            ? players.find(p => p.socketId === data.senderNetworkId)
+            : null) || players.find(p => p.userID == userId);
+        const collectorEntity = remote?.entity || ArrivalSpace.getPlayer();
+
         const item = this._items.find(
             (i) => !i.collected && i.letter?.toUpperCase() === letter?.toUpperCase()
         );
-        if (item) item.collect();
+        if (item) item.collect(collectorEntity);
 
         this._fireStateUpdated();
     }
@@ -489,11 +504,14 @@ export class ScavengerHunt extends ArrivalScript {
             filled: s.filled,
             by: s.collectedBy || null,
         }));
-        const names = Object.values(data.participants)
-            .map((p) => p.userName)
-            .join(", ");
+        const participantIds = Object.keys(data.participants).sort().join("+");
+        const teamKey = `${this.storeKey}:${participantIds}`;
+        const hostId = this._hostUserId;
+        const entries = Object.entries(data.participants);
+        entries.sort((a, b) => (a[0] === hostId ? -1 : b[0] === hostId ? 1 : 0));
+        const names = entries.map(([, p]) => p.userName).join(", ");
         const value = JSON.stringify({ names, slots });
-        await ArrivalSpace.pluginStore.push(this.storeKey, value, {
+        await ArrivalSpace.pluginStore.push(teamKey, value, {
             numval: data.score,
             mode: "max",
         });
@@ -590,21 +608,30 @@ export class ScavengerHunt extends ArrivalScript {
         if (!slotsEl) return;
 
         // Rebuild only when slot count changes (avoid DOM thrash)
+        let justRebuilt = false;
         const letterEls = slotsEl.querySelectorAll(".sh-hud-letter");
         if (letterEls.length !== this._slots.length) {
             let html = "";
             for (const slot of this._slots) {
-                html += `<div class="sh-hud-letter">${slot.letter}</div>`;
+                html += `<div class="sh-hud-letter${slot.filled ? " filled" : ""}">${slot.letter}</div>`;
             }
             html += `<span id="sh-hud-timer"></span>`;
             slotsEl.innerHTML = html;
+            justRebuilt = true;
         }
 
         // Update filled state
         const letters = slotsEl.querySelectorAll(".sh-hud-letter");
         for (let i = 0; i < this._slots.length; i++) {
             if (i < letters.length) {
-                letters[i].classList.toggle("filled", this._slots[i].filled);
+                const wasFilled = letters[i].classList.contains("filled");
+                const isFilled = this._slots[i].filled;
+                letters[i].classList.toggle("filled", isFilled);
+                if (isFilled && !wasFilled && !justRebuilt) {
+                    const el = letters[i];
+                    el.style.cssText += ";animation: stampIn 1.4s cubic-bezier(0.12,0.9,0.2,1) both;";
+                    el.addEventListener("animationend", () => { el.style.animation = ""; }, { once: true });
+                }
             }
         }
 
@@ -637,14 +664,13 @@ export class ScavengerHunt extends ArrivalScript {
                 font-family: sans-serif;
             }
             #sh-hud.visible { display: flex; }
+            #sh-hud, #sh-hud-slots { overflow: visible !important; }
             #sh-hud-slots {
                 display: flex;
                 gap: 6px;
-                background: rgba(0,0,0,0.55);
-                backdrop-filter: blur(6px);
+                background: rgba(0,0,0,0.15);
                 padding: 8px 14px;
                 border-radius: 10px;
-                border: 1px solid rgba(255,255,255,0.1);
                 align-items: center;
             }
             .sh-hud-letter {
@@ -662,6 +688,18 @@ export class ScavengerHunt extends ArrivalScript {
                 border-color: #f5c542;
                 background: rgba(245,197,66,0.1);
                 text-shadow: 0 0 8px rgba(245,197,66,0.4);
+            }
+            @keyframes stampIn {
+                0%   { transform: translateY(-1200px) scale(25); opacity: 0; text-shadow: 0 0 80px rgba(245,197,66,1); }
+                10%  { opacity: 0.3; }
+                25%  { transform: translateY(-400px) scale(20); opacity: 0.6; text-shadow: 0 0 60px rgba(245,197,66,0.8); }
+                40%  { transform: translateY(-60px) scale(12); opacity: 0.9; }
+                50%  { transform: translateY(5px) scale(1.3); opacity: 1; text-shadow: 0 0 30px rgba(245,197,66,0.6); }
+                58%  { transform: translateY(-8px) scale(0.85); }
+                66%  { transform: translateY(4px) scale(1.15); }
+                74%  { transform: translateY(-3px) scale(0.95); }
+                82%  { transform: translateY(1px) scale(1.04); }
+                100% { transform: translateY(0) scale(1); text-shadow: 0 0 8px rgba(245,197,66,0.4); }
             }
             #sh-hud-timer {
                 font-size: 14px;
@@ -912,6 +950,11 @@ export class ScavengerHunt extends ArrivalScript {
         if (name === "challengeWord" && !this._started) {
             this._buildSlots();
             this._fireStateUpdated();
+        }
+
+        if (name === "forceEnd" && this.forceEnd) {
+            this._resetGame();
+            setTimeout(() => { this.forceEnd = false; }, 100);
         }
     }
 

@@ -59,9 +59,18 @@ export class VibesLeaderboard extends ArrivalScript {
         const data = await ArrivalSpace.pluginStore.get(this.storeKey, {
             sort: "desc",
             limit: this.maxEntries,
+            prefix: true,
         });
         if (data) {
-            this._entries = data;
+            console.log("== leaderboard raw entries:", data.map(e => ({ numval: e.numval, value: e.value })));
+            const seen = new Set();
+            this._entries = data.filter((e) => {
+                let name = "";
+                try { name = JSON.parse(e.value).names; } catch { name = e.value; }
+                if (seen.has(name)) return false;
+                seen.add(name);
+                return true;
+            });
             this._updatePanel();
         }
     }
@@ -133,23 +142,14 @@ export class VibesLeaderboard extends ArrivalScript {
 
                 // Parse value: JSON with { names, slots } or plain string
                 let name = "";
-                let slots = [];
                 try {
                     const parsed = JSON.parse(e.value);
                     name = this._escapeHtml(parsed.names || "Unknown");
-                    slots = parsed.slots || [];
                 } catch {
                     name = this._escapeHtml(String(e.value || "Unknown"));
                 }
 
-                // Render mini letter slots
-                let slotsHtml = "";
-                if (slots.length > 0) {
-                    for (const s of slots) {
-                        const c = s.filled ? "#f5c542" : "rgba(255,255,255,0.15)";
-                        slotsHtml += `<span style="display:inline-block;width:14px;height:16px;line-height:16px;text-align:center;font-size:10px;font-weight:bold;color:${c};border:1px solid ${c};border-radius:3px;margin-right:2px;">${s.letter}</span>`;
-                    }
-                }
+                const slotsHtml = "";
 
                 const rowBg = rank === 1
                     ? "rgba(245,197,66,0.15)"
