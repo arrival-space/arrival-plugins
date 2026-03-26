@@ -206,6 +206,66 @@ Current plugin API version string.
 
 ---
 
+### Plugin Event Bus
+
+A dedicated event bus for inter-plugin communication. Use namespaced event names (e.g. `"myGame:event"`) to avoid collisions.
+
+This is separate from `ArrivalSpace.net` (which is for multiplayer messaging between players). The event bus is local — events are only received by plugins running in the same client.
+
+#### `ArrivalSpace.fire(event, ...args)`
+
+Fire an event. All plugins listening via `on()` or `once()` will be called.
+
+```javascript
+ArrivalSpace.fire("scavenger:item:ready", this);
+```
+
+#### `ArrivalSpace.on(event, callback)`
+
+Listen for an event.
+
+```javascript
+ArrivalSpace.on("scavenger:item:ready", (item) => {
+    console.log("New item:", item.label);
+});
+```
+
+#### `ArrivalSpace.off(event, callback)`
+
+Remove an event listener. Pass the same function reference used in `on()`.
+
+#### `ArrivalSpace.once(event, callback)`
+
+Listen for an event once. The listener is automatically removed after the first call.
+
+**Pattern — Controller + Items:**
+
+Use the event bus when multiple plugin instances need to discover each other. A common pattern is a controller plugin that manages game logic and item plugins that register themselves:
+
+```javascript
+// Item plugin (many instances):
+initialize() {
+    ArrivalSpace.fire("myGame:item:ready", this);
+}
+destroy() {
+    ArrivalSpace.fire("myGame:item:removed", this);
+}
+
+// Controller plugin (one instance):
+initialize() {
+    // Discover items already in the scene
+    const plugins = ArrivalSpace.getPlugins();
+    const items = plugins.filter(p => p.name === "My Item");
+
+    // Listen for items that load after us
+    ArrivalSpace.on("myGame:item:ready", (item) => { ... });
+}
+```
+
+See [`scavenger-hunt.mjs`](../examples/scavenger-hunt.mjs) and [`scavenger-item.mjs`](../examples/scavenger-item.mjs) for a complete working example.
+
+---
+
 ### Model Loading
 
 #### `ArrivalSpace.loadGLB(url, options?)`

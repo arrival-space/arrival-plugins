@@ -14,3 +14,4 @@ Thumbs.db
 *.swo
 .idea/
 .vscode/
+/examples/.claude/settings.local.json

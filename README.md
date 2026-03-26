@@ -64,6 +64,7 @@ See [Multiplayer Documentation](docs/multiplayer.md) for details.
 |--------|-------------|
 | [Annotation Marker](examples/annotation-marker.mjs) | 3D marker with icon and markdown popup panel |
 | [Avatar Animation](examples/avatar-animation.mjs) | Override player idle/walk/jump animations |
+| [Avatar Bone Attachment](examples/avatar-bone-attachment.mjs) | Attach a GLB model to any avatar bone with configurable offset and rotation |
 | [Bouncy Box](examples/bouncy-box.mjs) | Simple bouncing motion behavior |
 | [Box Stack](examples/box-stack.mjs) | Physics pyramid of boxes and spheres |
 | [Character Scale](examples/character-scale-plugin.mjs) | Adjust character scale and movement feel |
@@ -73,10 +74,13 @@ See [Multiplayer Documentation](docs/multiplayer.md) for details.
 | [Hover Board](examples/hover-board.mjs) | Rideable dynamic board with avatar animation, input, and physics tuning |
 | [Info Panel](examples/info-panel.mjs) | Dynamic world-space iframe/UI panel |
 | [Lamp](examples/lamp.mjs) | Lamp GLB with rigidbody collision and configurable light |
+| [Localized Light Probe](examples/localized-light-probe.mjs) | Spatial light probe volume that overrides primary light, environment, and post-effects with radius falloff |
 | [NPC Character](examples/npc-character.mjs) | Spawn and control a follower NPC |
 | [Outfit Override](examples/outfit-override.mjs) | Temporarily override avatar outfit parts |
 | [Physics Box](examples/physics-box.mjs) | Basic rigidbody/collision example |
 | [Post Process Volume](examples/post-process-volume.mjs) | Local post-effects blend volume |
+| [Scavenger Hunt](examples/scavenger-hunt.mjs) | Controller that discovers Scavenger Item entities, tracks collection via proximity, and shows progress/finish HUD |
+| [Scavenger Item](examples/scavenger-item.mjs) | Collectible marker with gizmo-positionable placement, default visual or custom GLB, used with Scavenger Hunt |
 | [Shooter HUD](examples/shooter-hud.mjs) | Game-style HUD overlay example |
 | [Simple Chat](examples/simple-chat.mjs) | Multiplayer chat with `ArrivalSpace.net` |
 | [Snowfall](examples/snowfall.mjs) | Configurable snowfall particle effect |

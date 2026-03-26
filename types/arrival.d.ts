@@ -244,6 +244,42 @@ declare namespace ArrivalSpace {
     /** Version string */
     const VERSION: string;
 
+    // ═══════════════════════════════════════════════════════════════════════════
+    // PLUGIN EVENT BUS
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Fire an event on the plugin event bus.
+     * All plugins listening for the event will be notified.
+     * @param event - Event name (use namespaced names, e.g. "myPlugin:eventName")
+     * @param args - Arguments passed to listeners
+     */
+    function fire(event: string, ...args: any[]): void;
+
+    /**
+     * Listen for an event on the plugin event bus.
+     * @param event - Event name
+     * @param callback - Handler function
+     */
+    function on(event: string, callback: Function): void;
+
+    /**
+     * Remove an event listener from the plugin event bus.
+     * @param event - Event name
+     * @param callback - The same handler function passed to on()
+     */
+    function off(event: string, callback: Function): void;
+
+    /**
+     * Listen for an event once on the plugin event bus.
+     * The listener is automatically removed after the first call.
+     * @param event - Event name
+     * @param callback - Handler function
+     */
+    function once(event: string, callback: Function): void;
+
+    // ═══════════════════════════════════════════════════════════════════════════
+
     interface LoadGLBOptions {
         /** Parent entity to attach to */
         parent?: pc.Entity;
@@ -868,6 +904,71 @@ declare namespace ArrivalSpace {
      * }
      */
     function reloadPlugin(pluginId: string, newCode: string): Promise<CreatePluginResult>;
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // PLUGIN KEY-VALUE STORE
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    interface PluginStoreEntry {
+        userId: string;
+        value: string;
+        numval: number | null;
+        updatedAt: string;
+    }
+
+    interface PluginStorePushOptions {
+        /** Numeric value for sorting and min/max modes */
+        numval?: number;
+        /** Write mode: "unique" (default), "min", "max", or "append" */
+        mode?: "unique" | "min" | "max" | "append";
+        /** Override space ID (defaults to current space) */
+        spaceId?: string;
+    }
+
+    interface PluginStoreGetOptions {
+        /** Sort order by numval: "asc" (default) or "desc" */
+        sort?: "asc" | "desc";
+        /** Max entries to return (default 10, max 100) */
+        limit?: number;
+        /** Override space ID (defaults to current space) */
+        spaceId?: string;
+    }
+
+    interface PluginStoreDeleteOptions {
+        /** Override space ID (defaults to current space) */
+        spaceId?: string;
+    }
+
+    /**
+     * Simple key-value store for plugins, scoped per space + user.
+     */
+    namespace pluginStore {
+        /**
+         * Push a value to the store.
+         *
+         * @example
+         * // Save best time (keep lowest)
+         * await ArrivalSpace.pluginStore.push("best-time", playerName, { numval: 12.3, mode: "min" });
+         *
+         * // Save a setting (overwrite)
+         * await ArrivalSpace.pluginStore.push("my-setting", "dark-mode");
+         */
+        function push(key: string, value: string, options?: PluginStorePushOptions): Promise<object | false>;
+
+        /**
+         * Get entries for a key in the current space.
+         *
+         * @example
+         * // Leaderboard: top 10 fastest times
+         * const board = await ArrivalSpace.pluginStore.get("best-time", { sort: "asc", limit: 10 });
+         */
+        function get(key: string, options?: PluginStoreGetOptions): Promise<PluginStoreEntry[] | false>;
+
+        /**
+         * Delete own entry for a key.
+         */
+        function delete(key: string, options?: PluginStoreDeleteOptions): Promise<boolean>;
+    }
 
     // ═══════════════════════════════════════════════════════════════════════════
     // MULTIPLAYER / NETWORK API

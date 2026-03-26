@@ -2,7 +2,7 @@
   "version": 1,
   "updated_at": "2026-03-12",
   "source": "curated",
-  "total_entries": 31,
+  "total_entries": 35,
   "entries": [
     {
       "path": "README.md",
@@ -61,6 +61,14 @@
       "summary": "Overrides player idle, walk, and jump animations using custom GLBs and demonstrates animation speed control.",
       "script_name": "avatarAnimation",
       "keywords": ["avatar", "animation", "setplayeranimation", "walk", "idle", "jump", "custom glb", "movement"]
+    },
+    {
+      "path": "examples/avatar-bone-attachment.mjs",
+      "kind": "example",
+      "title": "Avatar Bone Attachment",
+      "summary": "Attaches a GLB model to a specific bone on the player's avatar skeleton with configurable bone selection, offset, rotation, and scale.",
+      "script_name": "Avatar Bone Attachment",
+      "keywords": ["avatar", "bone", "attachment", "prop", "weapon", "accessory", "skeleton", "glb", "bone parenting", "hand", "equip"]
     },
     {
       "path": "examples/bouncy-box.mjs",
@@ -151,6 +159,14 @@
       "keywords": ["lamp", "light", "glb", "model", "rigidbody", "collision", "spotlight", "point light", "physics"]
     },
     {
+      "path": "examples/localized-light-probe.mjs",
+      "kind": "example",
+      "title": "Localized Light Probe",
+      "summary": "Spatial light probe volume with radius-based falloff that can override primary light direction/color, environment HDR, and post-effects as the player enters the volume.",
+      "script_name": "Light Probe",
+      "keywords": ["light probe", "localized", "volume", "environment", "hdr", "primary light", "post-effects", "falloff", "radius", "lighting", "createLocalizedLightProbe"]
+    },
+    {
       "path": "examples/npc-character.mjs",
       "kind": "example",
       "title": "NPC Character",
@@ -205,6 +221,22 @@
       "summary": "Flattened GSplat snow cover that raycasts onto collision surfaces and builds soft packed snow clumps instead of round blobs.",
       "script_name": "Procedural Splats Snow",
       "keywords": ["splat", "splats", "procedural splats", "snow", "snow cover", "gsplat", "collision", "flattened", "packed snow", "effect"]
+    },
+    {
+      "path": "examples/scavenger-hunt.mjs",
+      "kind": "example",
+      "title": "Scavenger Hunt",
+      "summary": "Controller plugin that discovers Scavenger Item entities via getPlugins and the plugin event bus, tracks proximity-based collection, and displays a progress HUD with a finish overlay.",
+      "script_name": "Scavenger Hunt",
+      "keywords": ["scavenger hunt", "collectible", "game", "inter-plugin", "event bus", "discovery", "getPlugins", "proximity", "hud", "controller", "multi-entity"]
+    },
+    {
+      "path": "examples/scavenger-item.mjs",
+      "kind": "example",
+      "title": "Scavenger Item",
+      "summary": "Gizmo-positionable collectible marker that announces itself via the plugin event bus. Supports a default box visual or custom GLB model with bob and rotate animation.",
+      "script_name": "Scavenger Item",
+      "keywords": ["scavenger item", "collectible", "marker", "event bus", "gizmo", "glb model", "bob", "pickup", "inter-plugin"]
     },
     {
       "path": "examples/sound-trigger.mjs",

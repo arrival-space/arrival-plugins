@@ -65,6 +65,7 @@ export class MyPlugin extends ArrivalScript {
 - NPC behavior: `ArrivalSpace.createNPC`
 - Multiplayer state: `attribute(default, { sync: true, authority: ... })`
 - Multiplayer events: `ArrivalSpace.net.send/on/...`
+- Plugin event bus (local inter-plugin communication): `ArrivalSpace.fire/on/off/once`
 - Space utilities: `getPlayer`, `getCamera`, `getRoom`, `findEntity`, etc.
 
 ## Multiplayer Pattern
@@ -81,6 +82,7 @@ export class MyPlugin extends ArrivalScript {
 - Destroy entities/panels/materials you created.
 - **Parent sub-entities to `this.entity`** so they are auto-destroyed on unload. Avoid `this.app.root.addChild()` for entities your plugin owns — if they are on the scene root they will persist after the plugin is removed. `setPosition`/`setRotation` set world-space transforms regardless of parent, so parenting to your entity does not affect positioning.
 - Unsubscribe all callbacks returned by `ArrivalSpace.net.on*`.
+- Unsubscribe `ArrivalSpace.off(...)` for any `ArrivalSpace.on(...)` listeners.
 - Stop timers/intervals/timeouts you started.
 - Reset temporary global/avatar/player overrides:
   - `ArrivalSpace.resetAvatar()`
@@ -98,6 +100,7 @@ export class MyPlugin extends ArrivalScript {
 - `examples/splat-fire.mjs`, `examples/splat-fog.mjs`, `examples/splat-grass.mjs`: procedural GSplat examples for animated fire, volumetric fog, and dense grass using editable effect parameters.
 - `examples/annotation-marker.mjs`: texture panel UI with interaction.
 - `examples/vehicle-physics-model.mjs`: Ammo.js raycast vehicle, compound collision, custom GLB models, headlights, mount/dismount.
+- `examples/scavenger-hunt.mjs` + `examples/scavenger-item.mjs`: inter-plugin communication via event bus, plugin discovery with `getPlugins`, proximity collection, progress HUD + finish overlay. Best reference for multi-entity plugin architectures.
 
 ## Common Failure Modes
 
