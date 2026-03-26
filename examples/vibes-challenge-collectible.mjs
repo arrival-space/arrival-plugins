@@ -23,6 +23,7 @@ export class ScavengerItem extends ArrivalScript {
     collectDistance = 1.5;
     modelUrl = "";
     modelScale = 0.18;
+    modelScaleX = 1;
     bobSpeed = 2;
     bobHeight = 0;
     rotateSpeed = 60;
@@ -49,6 +50,7 @@ export class ScavengerItem extends ArrivalScript {
         collectDistance: { title: "Collect Distance", min: 0.5, max: 10 },
         modelUrl: { title: "Model URL", editor: "asset" },
         modelScale: { title: "Model Scale", min: 0.01, max: 5 },
+        modelScaleX: { title: "Model Scale X", min: 0.1, max: 5 },
         bobSpeed: { title: "Bob Speed", min: 0, max: 10 },
         bobHeight: { title: "Bob Height", min: 0, max: 2 },
         rotateSpeed: { title: "Rotate Speed", min: 0, max: 360, step: 1 },
@@ -59,7 +61,7 @@ export class ScavengerItem extends ArrivalScript {
         burstParticleSize: { title: "Burst Size", min: 0.01, max: 0.5 },
         burstParticleSpeed: { title: "Burst Speed", min: 0.1, max: 10 },
         burstParticleLifetime: { title: "Burst Lifetime", min: 0.1, max: 3 },
-        shardCount: { title: "Shard Count", min: 0, max: 10, step: 1 },
+        shardCount: { title: "Shard Count", min: 0, max: 100, step: 1 },
         shardSize: { title: "Shard Size", min: 0.01, max: 0.3 },
         shardImpulse: { title: "Shard Impulse", min: 0, max: 5 },
         shardImpulseUp: { title: "Shard Impulse Up", min: 0, max: 5 },
@@ -179,7 +181,7 @@ export class ScavengerItem extends ArrivalScript {
         entity.render.material = this._material;
 
         const s = this.modelScale;
-        entity.setLocalScale(s, s, s);
+        entity.setLocalScale(s * this.modelScaleX, s, s);
         entity.setLocalPosition(0, s * 0.5, 0);
 
         this.entity.addChild(entity);
@@ -197,6 +199,8 @@ export class ScavengerItem extends ArrivalScript {
             });
             this._modelEntity = entity;
             this._visual = entity;
+            const s = this.modelScale;
+            entity.setLocalScale(s * this.modelScaleX, s, s);
             if (startHidden || this._hidden) {
                 this._setVisualVisible(false);
             }
@@ -240,13 +244,12 @@ export class ScavengerItem extends ArrivalScript {
             return;
         }
 
-        if (name === "modelScale") {
+        if (name === "modelScale" || name === "modelScaleX") {
+            const s = this.modelScale;
             if (this._modelEntity) {
-                const s = this.modelScale;
-                this._modelEntity.setLocalScale(s, s, s);
+                this._modelEntity.setLocalScale(s * this.modelScaleX, s, s);
             } else if (this._visual) {
-                const s = this.modelScale;
-                this._visual.setLocalScale(s, s, s);
+                this._visual.setLocalScale(s * this.modelScaleX, s, s);
                 this._visual.setLocalPosition(0, s * 0.5, 0);
             }
             return;
