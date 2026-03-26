@@ -261,7 +261,7 @@ export class SkateboardModel extends ArrivalScript {
         await this._buildVisuals();
         this._placeWheelsAtRest();
 
-        //this._createHint();
+        this._createHint();
 
         // Listen for remote players mounting this vehicle
         this._unsubAttach = ArrivalSpace.onEntityAttachChanged(this.entity, (info, dismountData) => {
@@ -1214,6 +1214,46 @@ export class SkateboardModel extends ArrivalScript {
             <div class="vehicle-speed"></div>
         `;
         this._speedEl = ui.querySelector(".vehicle-speed");
+
+        if (this.isMobile) {
+            {
+                const existing = document.getElementById("vehicle-mobile-btn-style");
+                if (existing) existing.remove();
+                const style = document.createElement("style");
+                style.id = "vehicle-mobile-btn-style";
+                style.textContent = `
+                    .vehicle-mobile-btn {
+                        display: none; position: fixed;
+                        width: 64px; height: 64px; border-radius: 50%;
+                        border: 2px solid rgba(255,255,255,0.3);
+                        background: rgba(0,0,0,0.4); color: #fff;
+                        font-size: 24px; align-items: center; justify-content: center;
+                        touch-action: none; user-select: none; -webkit-user-select: none;
+                        z-index: 1000; cursor: pointer;
+                    }
+                    .vehicle-mobile-btn.visible { display: flex; }
+                    .vehicle-mobile-btn:active { background: rgba(255,255,255,0.2); }
+                    .vehicle-btn-jump { right: 40px; bottom: 60px; }
+                    .vehicle-btn-exit { right: 40px; top: 20px; font-size: 18px; }
+                `;
+                document.head.appendChild(style);
+            }
+
+            const jumpBtn = document.createElement("div");
+            jumpBtn.className = "vehicle-mobile-btn vehicle-btn-jump";
+            jumpBtn.textContent = "⬆";
+            document.body.appendChild(jumpBtn);
+            jumpBtn.addEventListener("touchstart", (e) => { e.stopPropagation(); e.preventDefault(); this.jump(); });
+
+            const exitBtn = document.createElement("div");
+            exitBtn.className = "vehicle-mobile-btn vehicle-btn-exit";
+            exitBtn.textContent = "✕";
+            document.body.appendChild(exitBtn);
+            exitBtn.addEventListener("touchstart", (e) => { e.stopPropagation(); e.preventDefault(); this._dismount(); });
+
+            this._mobileJumpBtn = jumpBtn;
+            this._mobileExitBtn = exitBtn;
+        }
     }
 
     // ═════════════════════════════════════════════════════════
@@ -1251,6 +1291,11 @@ export class SkateboardModel extends ArrivalScript {
         this._lastVehicleYaw = Math.atan2(-fwd.x, -fwd.z) * (180 / Math.PI);
 
         if (this._speedEl) this._speedEl.classList.add("visible");
+        if (this.isMobile) {
+            if (this._mobileJumpBtn) this._mobileJumpBtn.classList.add("visible");
+            if (this._mobileExitBtn) this._mobileExitBtn.classList.add("visible");
+            ArrivalSpace.setAppUIVisible(false, true);
+        }
         this._updateIndicatorVisibility();
     }
 
@@ -1327,6 +1372,9 @@ export class SkateboardModel extends ArrivalScript {
         ArrivalSpace.setPlayerAnimation("Signature2", null);
 
         if (this._speedEl) this._speedEl.classList.remove("visible");
+        if (this._mobileJumpBtn) this._mobileJumpBtn.classList.remove("visible");
+        if (this._mobileExitBtn) this._mobileExitBtn.classList.remove("visible");
+        if (this.isMobile) ArrivalSpace.setAppUIVisible(true);
         this._updateIndicatorVisibility();
 
         // Detach player — restores collision, camera, animations, broadcasts dismount
@@ -1405,7 +1453,6 @@ export class SkateboardModel extends ArrivalScript {
         // Speed
         const speed = this.entity.rigidbody.linearVelocity.length();
         this._currentSpeed = speed;
-        if (this._speedEl) this._speedEl.textContent = `Skateboard`;
 
         // Steering (decays with speed)
         const steerLimit = pc.math.lerp(this.maxSteering, this.minSteering,
@@ -1818,6 +1865,9 @@ export class SkateboardModel extends ArrivalScript {
 
         if (this.entity.rigidbody) this.entity.removeComponent("rigidbody");
         if (this.entity.collision) this.entity.removeComponent("collision");
+
+        if (this._mobileJumpBtn) { this._mobileJumpBtn.remove(); this._mobileJumpBtn = null; }
+        if (this._mobileExitBtn) { this._mobileExitBtn.remove(); this._mobileExitBtn = null; }
     }
 }
 

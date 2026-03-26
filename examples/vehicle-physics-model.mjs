@@ -186,6 +186,20 @@ export class VehiclePhysicsModel extends ArrivalScript {
         ];
     }
 
+    _placeWheelsAtRest() {
+        const wheels = this._getWheels();
+        const wt = this.entity.getWorldTransform();
+        for (let i = 0; i < wheels.length; i++) {
+            const def = wheels[i];
+            const we = this._wheelEntities[i];
+            if (!we) continue;
+            const restY = def.y - this.suspensionRestLength + 0.02;
+            const worldPos = wt.transformPoint(new pc.Vec3(def.x, restY, def.z));
+            we.setPosition(worldPos.x, worldPos.y, worldPos.z);
+            we.setLocalEulerAngles(0, 180, 0);
+        }
+    }
+
     async initialize() {
         if (typeof Ammo === "undefined") {
             console.error("[VehiclePhysicsModel] Ammo.js not available");
@@ -202,7 +216,7 @@ export class VehiclePhysicsModel extends ArrivalScript {
         this._buildPhysics();
         await this._buildVisuals();
         this._createHeadlights();
-        this._createVehicle();
+        this._placeWheelsAtRest();
         this._createHint();
 
         // Listen for remote players mounting this vehicle
@@ -268,7 +282,7 @@ export class VehiclePhysicsModel extends ArrivalScript {
         this._shapeEntities.push(chassis);
 
         this.entity.addComponent("rigidbody", {
-            type: pc.BODYTYPE_DYNAMIC,
+            type: pc.BODYTYPE_KINEMATIC,
             mass: this.chassisMass,
             friction: this.chassisFriction,
             restitution: this.chassisRestitution,
@@ -673,6 +687,36 @@ export class VehiclePhysicsModel extends ArrivalScript {
             <div class="vehicle-speed"></div>
         `;
         this._speedEl = ui.querySelector(".vehicle-speed");
+
+        if (this.isMobile) {
+            const existing = document.getElementById("vehicle-mobile-btn-style");
+            if (!existing) {
+                const style = document.createElement("style");
+                style.id = "vehicle-mobile-btn-style";
+                style.textContent = `
+                    .vehicle-mobile-btn {
+                        display: none; position: fixed;
+                        width: 64px; height: 64px; border-radius: 50%;
+                        border: 2px solid rgba(255,255,255,0.3);
+                        background: rgba(0,0,0,0.4); color: #fff;
+                        font-size: 24px; align-items: center; justify-content: center;
+                        touch-action: none; user-select: none; -webkit-user-select: none;
+                        z-index: 1000; cursor: pointer;
+                    }
+                    .vehicle-mobile-btn.visible { display: flex; }
+                    .vehicle-mobile-btn:active { background: rgba(255,255,255,0.2); }
+                    .vehicle-btn-exit { right: 40px; top: 20px; font-size: 18px; }
+                `;
+                document.head.appendChild(style);
+            }
+
+            const exitBtn = document.createElement("div");
+            exitBtn.className = "vehicle-mobile-btn vehicle-btn-exit";
+            exitBtn.textContent = "✕";
+            document.body.appendChild(exitBtn);
+            exitBtn.addEventListener("touchstart", (e) => { e.stopPropagation(); e.preventDefault(); this._dismount(); });
+            this._mobileExitBtn = exitBtn;
+        }
     }
 
     // ═════════════════════════════════════════════════════════
@@ -682,7 +726,18 @@ export class VehiclePhysicsModel extends ArrivalScript {
     _mount() {
         const attachedEntity = ArrivalSpace.getLocalAttachedEntity();
         if (this._mounted || this._remoteInfo || (attachedEntity && attachedEntity !== this.entity)) return;
+
+        if (!this._vehicle) {
+            // Straighten upright, preserving forward direction
+            const fwd = this.entity.forward.clone();
+            const yaw = Math.atan2(-fwd.x, -fwd.z) * (180 / Math.PI);
+            this.entity.rigidbody.teleport(this.entity.getPosition(), new pc.Quat().setFromEulerAngles(0, yaw, 0));
+            this.entity.rigidbody.type = pc.BODYTYPE_DYNAMIC;
+            this._createVehicle();
+        }
+
         this._mounted = true;
+        this._hasBeenMounted = true;
         this._currentSteering = 0;
 
         this.lockKeyboard();
@@ -715,7 +770,10 @@ export class VehiclePhysicsModel extends ArrivalScript {
         this._lastVehicleYaw = Math.atan2(-fwd.x, -fwd.z) * (180 / Math.PI);
 
         if (this._speedEl) this._speedEl.classList.add("visible");
-
+        if (this.isMobile) {
+            if (this._mobileExitBtn) this._mobileExitBtn.classList.add("visible");
+            ArrivalSpace.setAppUIVisible(false, true);
+        }
     }
 
     _dismount() {
@@ -732,6 +790,8 @@ export class VehiclePhysicsModel extends ArrivalScript {
         this.unlockKeyboard();
 
         if (this._speedEl) this._speedEl.classList.remove("visible");
+        if (this._mobileExitBtn) this._mobileExitBtn.classList.remove("visible");
+        if (this.isMobile) ArrivalSpace.setAppUIVisible(true);
 
         // Detach player — restores collision, camera, animations, broadcasts dismount
         if (this._attachHandle) {
@@ -852,7 +912,10 @@ export class VehiclePhysicsModel extends ArrivalScript {
             return;
         }
 
-        if (!this._vehicle) return;
+        if (!this._vehicle) {
+            if (!this._mounted) this._checkProximity();
+            return;
+        }
 
         if (this.entity.getPosition().y < -100) {
             this._resetToSpawn();
@@ -937,15 +1000,23 @@ export class VehiclePhysicsModel extends ArrivalScript {
     //  MOTOR API
     // ═════════════════════════════════════════════════════════
 
-    onEntityMoved() {
-        this._spawnPos = this.entity.getPosition().clone();
-        this._spawnRot = this.entity.getRotation().clone();
+    onEntityMoved(position, rotation) {
+        this._spawnPos = position || this.entity.getPosition().clone();
+        this._spawnRot = rotation || this.entity.getRotation().clone();
 
         if (!this.entity.rigidbody) return;
+
+        // In edit mode: go kinematic so it doesn't fall, destroy vehicle sim
+        if (!this._mounted) {
+            this._destroyVehicle();
+            this.entity.rigidbody.type = pc.BODYTYPE_KINEMATIC;
+            this._hasBeenMounted = false;
+        }
 
         this.entity.rigidbody.linearVelocity = pc.Vec3.ZERO;
         this.entity.rigidbody.angularVelocity = pc.Vec3.ZERO;
         this.entity.rigidbody.teleport(this._spawnPos, this._spawnRot);
+        this._placeWheelsAtRest();
     }
 
     applyEngineForce(force) {
@@ -1098,6 +1169,8 @@ export class VehiclePhysicsModel extends ArrivalScript {
 
         if (this.entity.rigidbody) this.entity.removeComponent("rigidbody");
         if (this.entity.collision) this.entity.removeComponent("collision");
+
+        if (this._mobileExitBtn) { this._mobileExitBtn.remove(); this._mobileExitBtn = null; }
     }
 }
 
