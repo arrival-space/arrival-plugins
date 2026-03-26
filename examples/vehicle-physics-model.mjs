@@ -467,18 +467,20 @@ export class VehiclePhysicsModel extends ArrivalScript {
     _updateRemote(dt) {
         if (!this._remoteInfo) return;
 
-        // Find the remote driver's avatar entity
+        // Find the remote driver's avatar entity (prefer networkId, fall back to userId)
         const players = ArrivalSpace.net.getPlayers();
-        const driver = players.find(p => p.userID == this._remoteInfo.userId);
+        const driver = (this._remoteInfo.networkId
+            ? players.find(p => p.socketId === this._remoteInfo.networkId)
+            : null) || players.find(p => p.userID == this._remoteInfo.userId);
         const driverEntity = driver?.entity;
         if (!driverEntity) {
             if (!this._remoteLoggedNoDriver) {
-                console.warn('[Vehicle] Remote mode: driver entity not found for userId:', this._remoteInfo.userId, 'players:', players.map(p => p.userID));
+                console.warn('[Vehicle] Remote mode: driver entity not found for networkId:', this._remoteInfo.networkId, 'userId:', this._remoteInfo.userId);
                 this._remoteLoggedNoDriver = true;
+            }
             this._currentSpeed = 0;
             this._currentEngineForce = 0;
             this._updateDriveSound();
-            }
             return;
         }
         this._remoteLoggedNoDriver = false;
