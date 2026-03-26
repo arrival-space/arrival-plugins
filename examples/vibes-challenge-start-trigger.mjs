@@ -13,11 +13,24 @@ export class ScavengerStartTrigger extends ArrivalScript {
 
     triggerDistance = 1.5;
     modelUrl = "";
-    modelScale = 0.5;
+    modelScale = 0.18;
     bobSpeed = 2;
-    bobHeight = 0.2;
+    bobHeight = 0;
     rotateSpeed = 60;
-    itemColor = "#4ade80";
+    itemColor = "#f1ebd3";
+    burstParticleCount = 40;
+    burstParticleSize = 0.2;
+    burstParticleSpeed = 3;
+    burstParticleLifetime = 1;
+    shardCount = 6;
+    shardSize = 0.15;
+    shardImpulse = 0.125;
+    shardImpulseUp = 0.3;
+    shardTorque = 7;
+    shardLifetime = 8;
+    startSound = "";
+    startSoundPitch = 1;
+    testBurst = false;
 
     static properties = {
         triggerDistance: { title: "Trigger Distance", min: 0.5, max: 10 },
@@ -27,6 +40,19 @@ export class ScavengerStartTrigger extends ArrivalScript {
         bobHeight: { title: "Bob Height", min: 0, max: 2 },
         rotateSpeed: { title: "Rotate Speed", min: 0, max: 360, step: 1 },
         itemColor: { title: "Item Color" },
+        burstParticleCount: { title: "Burst Particles", min: 0, max: 100, step: 1 },
+        burstParticleSize: { title: "Burst Size", min: 0.01, max: 0.5 },
+        burstParticleSpeed: { title: "Burst Speed", min: 0.1, max: 10 },
+        burstParticleLifetime: { title: "Burst Lifetime", min: 0.1, max: 3 },
+        shardCount: { title: "Shard Count", min: 0, max: 100, step: 1 },
+        shardSize: { title: "Shard Size", min: 0.01, max: 0.3 },
+        shardImpulse: { title: "Shard Impulse", min: 0, max: 5 },
+        shardImpulseUp: { title: "Shard Impulse Up", min: 0, max: 5 },
+        shardTorque: { title: "Shard Torque", min: 0, max: 10 },
+        shardLifetime: { title: "Shard Lifetime (s)", min: 1, max: 10, step: 1 },
+        startSound: { title: "Start Sound", editor: "asset" },
+        startSoundPitch: { title: "Sound Pitch", min: 0.1, max: 3, step: 0.1 },
+        testBurst: { title: "Test Burst" },
     };
 
     _active = true;
@@ -94,6 +120,11 @@ export class ScavengerStartTrigger extends ArrivalScript {
     _trigger() {
         this._active = false;
         this._setVisualVisible(false);
+        const player = ArrivalSpace.getPlayer?.();
+        this._spawnTriggerBurst(player?.rigidbody?.linearVelocity);
+        if (this.startSound) {
+            ArrivalSpace.playSound(this.startSound, { position: this.position, pitch: this.startSoundPitch });
+        }
         const user = ArrivalSpace.getUser?.();
         ArrivalSpace.fire("scavenger:start", {
             userId: user?.userID,
@@ -257,6 +288,12 @@ export class ScavengerStartTrigger extends ArrivalScript {
             this._material.emissive.set(rgb.r * 0.4, rgb.g * 0.4, rgb.b * 0.4);
             this._material.update();
         }
+
+        if (name === "testBurst" && this.testBurst) {
+            const player = ArrivalSpace.getPlayer?.();
+            this._spawnTriggerBurst(player?.rigidbody?.linearVelocity);
+            setTimeout(() => { this.testBurst = false; }, 100);
+        }
     }
 
     // -- Helpers --
@@ -271,6 +308,153 @@ export class ScavengerStartTrigger extends ArrivalScript {
             };
         }
         return { r: 0.29, g: 0.87, b: 0.5 };
+    }
+
+    // -- Trigger burst effect --
+
+    _spawnTriggerBurst(collectorVelocity) {
+        const rgb = this._hexToRgb(this.itemColor);
+        const pos = this.position;
+
+        // Soft radial gradient texture (cached on class)
+        if (!ScavengerStartTrigger._burstTexture) {
+            const size = 32;
+            const canvas = document.createElement("canvas");
+            canvas.width = size;
+            canvas.height = size;
+            const ctx = canvas.getContext("2d");
+            const g = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+            g.addColorStop(0, "rgba(255,255,255,1)");
+            g.addColorStop(0.5, "rgba(255,255,255,0.6)");
+            g.addColorStop(1, "rgba(255,255,255,0)");
+            ctx.fillStyle = g;
+            ctx.fillRect(0, 0, size, size);
+            ScavengerStartTrigger._burstTexture = new pc.Texture(this.app.graphicsDevice, {
+                width: size, height: size,
+                format: pc.PIXELFORMAT_R8_G8_B8_A8,
+                mipmaps: true,
+                minFilter: pc.FILTER_LINEAR_MIPMAP_LINEAR,
+                magFilter: pc.FILTER_LINEAR,
+                addressU: pc.ADDRESS_CLAMP_TO_EDGE,
+                addressV: pc.ADDRESS_CLAMP_TO_EDGE,
+                levels: [canvas],
+            });
+        }
+
+        // Particles — horizontal ring burst
+        const spd = this.burstParticleSpeed;
+        const sz = this.burstParticleSize;
+        const lt = this.burstParticleLifetime;
+
+        if (this.burstParticleCount > 0) {
+            const e = new pc.Entity("StartBurst");
+            e.setPosition(pos.x, pos.y + 0.3, pos.z);
+            this.app.root.addChild(e);
+
+            const colorGraph = new pc.CurveSet([
+                [0, rgb.r, 1, rgb.r * 0.3],
+                [0, rgb.g, 1, rgb.g * 0.3],
+                [0, rgb.b, 1, rgb.b * 0.3],
+            ]);
+            const alphaGraph = new pc.Curve([0, 1, 0.4, 0.8, 1, 0]);
+            alphaGraph.type = pc.CURVE_SMOOTHSTEP;
+            const scaleGraph = new pc.Curve([0, sz * 0.5, 0.3, sz, 1, sz * 0.15]);
+            scaleGraph.type = pc.CURVE_SMOOTHSTEP;
+            const velocityGraph = new pc.CurveSet([
+                [0, -spd, 1, -spd * 0.3],
+                [0, spd * 0.3, 1, spd * 0.1],
+                [0, -spd, 1, -spd * 0.3],
+            ]);
+            const velocityGraph2 = new pc.CurveSet([
+                [0, spd, 1, spd * 0.3],
+                [0, spd * 0.5, 1, spd * 0.15],
+                [0, spd, 1, spd * 0.3],
+            ]);
+
+            const layer = this.app.scene.layers.getLayerByName("Splats");
+            e.addComponent("particlesystem", {
+                numParticles: this.burstParticleCount,
+                lifetime: lt,
+                rate: 0,
+                rate2: 0,
+                emitterShape: pc.EMITTERSHAPE_SPHERE,
+                emitterRadius: 0.15,
+                localVelocityGraph: velocityGraph,
+                localVelocityGraph2: velocityGraph2,
+                scaleGraph,
+                alphaGraph,
+                colorGraph,
+                colorMap: ScavengerStartTrigger._burstTexture,
+                blendType: pc.BLEND_ADDITIVE,
+                depthWrite: false,
+                orientation: pc.PARTICLEORIENTATION_SCREEN,
+                loop: false,
+                lighting: false,
+                sort: pc.PARTICLESORT_NONE,
+                layers: layer ? [layer.id] : undefined,
+            });
+            e.particlesystem.reset();
+            e.particlesystem.play();
+            setTimeout(() => e.destroy(), (lt + 0.5) * 1000);
+        }
+
+        // Shards — same style as collectible but arranged in a radial ring
+        const ss = this.shardSize;
+        for (let i = 0; i < this.shardCount; i++) {
+            const shard = new pc.Entity("StartShard" + i);
+            const sx = ss * (0.6 + Math.random() * 0.8);
+            const sy = ss * (0.4 + Math.random() * 0.6);
+            const szz = ss * (0.6 + Math.random() * 0.8);
+            shard.setLocalScale(sx, sy, szz);
+
+            /// arrange on a line 
+            const spread = ss * 15;
+            shard.setPosition(
+                pos.x + (i / this.shardCount - 0.5) * spread + (Math.random() - 0.5) * spread * 0.5,
+                pos.y,
+                pos.z
+            );
+
+            const mat = new pc.StandardMaterial();
+            mat.diffuse = new pc.Color(1, 1, 1);
+            mat.emissive = new pc.Color(0, 0, 0);
+            mat.metalness = 0.9;
+            mat.gloss = 0.8;
+            mat.useMetalness = true;
+            mat.update();
+
+            shard.addComponent("render", { type: "box", material: mat });
+            shard.addComponent("collision", { type: "box", halfExtents: new pc.Vec3(sx / 2, sy / 2, szz / 2) });
+            shard.addComponent("rigidbody", {
+                type: pc.BODYTYPE_DYNAMIC,
+                mass: 0.1,
+                restitution: 0.4,
+            });
+
+            this.app.root.addChild(shard);
+
+            // Collector velocity + radial outward impulse
+            const vx = collectorVelocity?.x || 0;
+            const vy = collectorVelocity?.y || 0;
+            const vz = collectorVelocity?.z || 0;
+            shard.rigidbody.linearVelocity = new pc.Vec3(vx, vy, vz);
+
+            shard.rigidbody.applyImpulse(
+                (Math.random() - 0.5) * this.shardImpulse * 2,
+                Math.random() * this.shardImpulseUp,
+                (Math.random() - 0.5) * this.shardImpulse * 2
+            );
+            shard.rigidbody.applyTorqueImpulse(
+                (Math.random() - 0.5) * this.shardTorque * 0.001,
+                (Math.random() - 0.5) * this.shardTorque * 0.001,
+                (Math.random() - 0.5) * this.shardTorque * 0.001
+            );
+
+            setTimeout(() => {
+                mat.destroy();
+                shard.destroy();
+            }, this.shardLifetime * 1000);
+        }
     }
 
     // -- Cleanup --
