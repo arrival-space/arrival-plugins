@@ -1229,13 +1229,13 @@ export class SkateboardModel extends ArrivalScript {
 
             const jumpBtn = document.createElement("div");
             jumpBtn.className = "vehicle-mobile-btn vehicle-btn-jump";
-            jumpBtn.textContent = "⬆";
+            jumpBtn.innerHTML = '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>';
             document.body.appendChild(jumpBtn);
             jumpBtn.addEventListener("touchstart", (e) => { e.stopPropagation(); e.preventDefault(); this.jump(); });
 
             const exitBtn = document.createElement("div");
             exitBtn.className = "vehicle-mobile-btn vehicle-btn-exit";
-            exitBtn.textContent = "✕";
+            exitBtn.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>';
             document.body.appendChild(exitBtn);
             exitBtn.addEventListener("touchstart", (e) => { e.stopPropagation(); e.preventDefault(); this._dismount(); });
 
@@ -1298,7 +1298,7 @@ export class SkateboardModel extends ArrivalScript {
             animations,
             disableCollision: true,
             camera: {
-                heightOffset: -0.4,
+                heightOffset: -0.6,
             },
             rate:  SkateboardModel.EXTRA_SYNC_RATE,
             meshEuler: () => ({ z: this._getRiderLeanAngle() }),
