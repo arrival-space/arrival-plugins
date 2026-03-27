@@ -105,6 +105,8 @@ export class SkateboardModel extends ArrivalScript {
     landingSoundUrl = "https://dzrmwng2ae8bq.cloudfront.net/42485456/277398df98af4d4baefa4854910ebf4558498380789f3f119aa95e45311db467_skateboard_ollie_short.mp3";
     landingSoundPitch = 1.04;
     airStateSoundVolume = 1;
+    soundRefDistance = 3;
+    soundMaxDistance = 25;
     indicatorModelUrl = "https://dzrmwng2ae8bq.cloudfront.net/42485456/6384d4686378294d20103167384858725032d25a1a1434b96df010e5d44711d7_indicator.glb";
     indicatorScale = 0.35;
     indicatorBounceHeight = 0.59;
@@ -185,6 +187,8 @@ export class SkateboardModel extends ArrivalScript {
         landingSoundUrl:        { title: "Landing Sound", editor: "asset" },
         landingSoundPitch:      { title: "Landing Sound Pitch", min: 0.25, max: 4, step: 0.01 },
         airStateSoundVolume:    { title: "Air State Sound Volume", min: 0, max: 10, step: 0.01 },
+        soundRefDistance:       { title: "Sound Ref Distance",     min: 0.1, max: 50,  step: 0.1 },
+        soundMaxDistance:       { title: "Sound Max Distance",     min: 1,   max: 200, step: 1 },
         indicatorModelUrl:      { title: "Indicator Model (GLB)", editor: "asset" },
         indicatorScale:         { title: "Indicator Scale", min: 0.01, max: 10, step: 0.001 },
         indicatorBounceHeight:  { title: "Indicator Bounce Height", min: 0, max: 5, step: 0.01 },
@@ -1059,6 +1063,8 @@ export class SkateboardModel extends ArrivalScript {
             entity: this.entity,
             volume: this.airStateSoundVolume,
             autoCleanup: false,
+            refDistance: this.soundRefDistance,
+            maxDistance: this.soundMaxDistance,
         });
 
         const slotNames = Object.keys(entity.sound?.slots || {});
@@ -1133,6 +1139,8 @@ export class SkateboardModel extends ArrivalScript {
                 loop: true,
                 volume: this._getRollingSoundVolume(),
                 pitch: this._getRollingSoundPitch(),
+                refDistance: this.soundRefDistance,
+                maxDistance: this.soundMaxDistance,
             });
 
             if (requestId !== this._rollingSoundRequestId || soundUrl !== this.rollingSoundUrl || !this._shouldPlayRollingSound()) {
@@ -1193,27 +1201,7 @@ export class SkateboardModel extends ArrivalScript {
 
     _createHint() {
         const ui = this.getUIContainer();
-        ui.innerHTML = `
-            <style>
-                .vehicle-speed {
-                    position: fixed;
-                    top: 20px;
-                    left: 50%;
-                    transform: translateX(-50%);
-                    background: rgba(0, 0, 0, 0.35);
-                    color: #fff;
-                    padding: 4px 12px;
-                    border-radius: 6px;
-                    font: 15px/1.4 monospace;
-                    pointer-events: none;
-                    opacity: 0;
-                    transition: opacity 0.25s;
-                }
-                .vehicle-speed.visible { opacity: 1; }
-            </style>
-            <div class="vehicle-speed"></div>
-        `;
-        this._speedEl = ui.querySelector(".vehicle-speed");
+        ui.innerHTML = ``;
 
         if (this.isMobile) {
             {
@@ -1290,7 +1278,6 @@ export class SkateboardModel extends ArrivalScript {
         const fwd = this.entity.forward;
         this._lastVehicleYaw = Math.atan2(-fwd.x, -fwd.z) * (180 / Math.PI);
 
-        if (this._speedEl) this._speedEl.classList.add("visible");
         if (this.isMobile) {
             if (this._mobileJumpBtn) this._mobileJumpBtn.classList.add("visible");
             if (this._mobileExitBtn) this._mobileExitBtn.classList.add("visible");
@@ -1371,7 +1358,6 @@ export class SkateboardModel extends ArrivalScript {
         ArrivalSpace.setPlayerAnimation("Signature1", null);
         ArrivalSpace.setPlayerAnimation("Signature2", null);
 
-        if (this._speedEl) this._speedEl.classList.remove("visible");
         if (this._mobileJumpBtn) this._mobileJumpBtn.classList.remove("visible");
         if (this._mobileExitBtn) this._mobileExitBtn.classList.remove("visible");
         if (this.isMobile) ArrivalSpace.setAppUIVisible(true);
@@ -1709,6 +1695,13 @@ export class SkateboardModel extends ArrivalScript {
             return;
         }
         if (name === "onAirSoundPitch" || name === "landingSoundPitch" || name === "airStateSoundVolume") {
+            return;
+        }
+        if (name === "soundRefDistance" || name === "soundMaxDistance") {
+            this._stopRollingSound();
+            this._updateRollingSound();
+            this._disposeAirStateSoundSlot("onAir");
+            this._disposeAirStateSoundSlot("landing");
             return;
         }
         if (name === "indicatorModelUrl") {
