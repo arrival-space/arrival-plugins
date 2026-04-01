@@ -28,6 +28,8 @@ export class AnnotationMarker extends ArrivalScript {
     textColor = "#ffffff";
     titleColor = "#8dd6ff";
     linkColor = "#60a5fa";
+    showClose = true;
+    showRotate = true;
     fixedScreenSize = false;
     billboard = true;
     castShadows = false;
@@ -50,6 +52,8 @@ export class AnnotationMarker extends ArrivalScript {
         textColor: { title: "Text Color" },
         titleColor: { title: "Title Color" },
         linkColor: { title: "Link Color" },
+        showClose: { title: "Show Close Button" },
+        showRotate: { title: "Show Rotate Button" },
         fixedScreenSize: { title: "Fixed Screen Size" },
         billboard: { title: "Billboard" },
         castShadows: { title: "Cast Shadows" },
@@ -62,6 +66,8 @@ export class AnnotationMarker extends ArrivalScript {
     _iconToken = 0;
     _descToken = 0;
     _wasInRange = false;
+    _spinRemaining = 0;
+    _descYaw = 0;
 
     static REF_DIST = 5;
 
@@ -161,13 +167,26 @@ export class AnnotationMarker extends ArrivalScript {
 
         const bodyHtml = this._markdownToHtml(this.description);
         const m = 4;
+        const closeBtn = this.showClose ? `<a href="arrival://close" style="
+            position:absolute;top:10px;right:10px;
+            width:28px;height:28px;display:flex;align-items:center;justify-content:center;
+            background:rgba(255,255,255,0.1);border-radius:50%;
+            color:${this.textColor};text-decoration:none;font-size:16px;line-height:1;
+        ">\u2715</a>` : "";
+        const spinBtn = this.showRotate ? `<a href="arrival://spin" style="
+            position:absolute;top:10px;right:${this.showClose ? 44 : 10}px;
+            width:28px;height:28px;display:flex;align-items:center;justify-content:center;
+            background:rgba(255,255,255,0.1);border-radius:50%;
+            color:${this.textColor};text-decoration:none;font-size:14px;line-height:1;
+        ">\u21BB</a>` : "";
         const html = `<div style="
+            position:relative;
             width:calc(100% - ${m * 2}px);height:calc(100% - ${m * 2}px);margin:${m}px;padding:20px;box-sizing:border-box;
             background:${this.backgroundColor};border-radius:16px;
             border:1px solid rgba(120,180,255,0.35);
             color:${this.textColor};font-family:Arial,sans-serif;font-size:16px;line-height:1.5;
             overflow:hidden;
-        ">${bodyHtml}</div>`;
+        ">${spinBtn}${closeBtn}${bodyHtml}</div>`;
 
         const panel = await ArrivalSpace.createTexturePanel({
             position: this.entity.getPosition(),
@@ -176,7 +195,19 @@ export class AnnotationMarker extends ArrivalScript {
             resolution: 200,
             html,
             transparent: true,
-            billboard: this.billboard,
+            billboard: false,
+            onClick: (href) => {
+                if (!href) return;
+                if (href.includes("arrival://close")) {
+                    this._hideDescription();
+                    return;
+                }
+                if (href.includes("arrival://spin")) {
+                    this._spinRemaining += 360;
+                    return;
+                }
+                window.open(href, "_blank");
+            },
         });
 
         if (token !== this._descToken) { panel?.destroy(); return; }
@@ -187,8 +218,6 @@ export class AnnotationMarker extends ArrivalScript {
         panel.setLocalPosition(0, yOffset, 0);
         if (!this.billboard) panel.setLocalEulerAngles(90, 0, 0);
         if (panel.render) panel.render.castShadows = this.castShadows;
-        // Disable collision on description panel — it's not clickable and would block icon clicks
-        if (panel.collision) panel.collision.enabled = false;
         this._descVisible = true;
     }
 
@@ -223,15 +252,35 @@ export class AnnotationMarker extends ArrivalScript {
 
     // ── Update ──
 
-    update() {
+    update(dt) {
         const cam = ArrivalSpace.getCamera();
         if (!cam || !this._container) return;
+
+        if (this._descPanel && this._descVisible) {
+            if (this._spinRemaining > 0) {
+                const step = Math.min(this._spinRemaining, dt * 540);
+                this._spinRemaining -= step;
+                this._descYaw = (this._descYaw + step) % 360;
+                this._descPanel.setLocalEulerAngles(90, this._descYaw, 0);
+            } else if (this.billboard) {
+                this._descPanel.lookAt(cam.getPosition());
+                this._descPanel.rotateLocal(90, 180, 0);
+            }
+        }
 
         const dist = cam.getPosition().distance(this.position);
 
         if (this.fixedScreenSize) {
             const s = Math.max(0.15, dist / AnnotationMarker.REF_DIST);
             this._container.setLocalScale(s, s, s);
+            // Collision shapes don't inherit parent scale (PlayCanvas known issue) — update manually
+            if (this._iconPanel?.collision) {
+                const hs = this.iconSize / 2 * s;
+                this._iconPanel.collision.halfExtents = new pc.Vec3(hs, 0.01, hs);
+            }
+            if (this._descPanel?.collision) {
+                this._descPanel.collision.halfExtents = new pc.Vec3(this.panelWidth / 2 * s, 0.01, this.panelHeight / 2 * s);
+            }
         } else {
             this._container.setLocalScale(1, 1, 1);
         }
@@ -273,7 +322,7 @@ export class AnnotationMarker extends ArrivalScript {
             return;
         }
 
-        if (name === "description" || name === "panelWidth" || name === "panelHeight") {
+        if (name === "description" || name === "panelWidth" || name === "panelHeight" || name === "showClose" || name === "showRotate") {
             if (this._descVisible) this._buildDescription().catch(console.error);
             return;
         }
