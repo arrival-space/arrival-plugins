@@ -23,8 +23,10 @@ export class DynamicLight extends ArrivalScript {
     shadowIntensity = 1;
     showHelper = false;
     rotateSpeed = 0;
-	affectSplats = true;
-
+	
+    /// also forces HDR that might cause a change in overall lighting
+    affectSplats = true;
+    
     static properties = {
         lightType: {
             title: "Light Type",
