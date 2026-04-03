@@ -2,7 +2,7 @@
   "version": 1,
   "updated_at": "2026-03-12",
   "source": "curated",
-  "total_entries": 35,
+  "total_entries": 36,
   "entries": [
     {
       "path": "README.md",
@@ -23,7 +23,7 @@
       "kind": "doc",
       "title": "API Reference",
       "summary": "Reference for ArrivalScript lifecycle, ArrivalSpace helpers, model loading, UI, audio, physics, animation, avatars, and plugin management.",
-      "keywords": ["api", "reference", "arrivalscript", "arrivalspace", "methods", "helpers", "physics", "ui", "models"]
+      "keywords": ["api", "reference", "arrivalscript", "arrivalspace", "methods", "helpers", "physics", "ui", "models", "splat", "gsplat", "ply"]
     },
     {
       "path": "docs/getting-started.md",
@@ -285,6 +285,14 @@
       "summary": "Driveable Ammo.js vehicle with custom chassis and wheel GLBs, suspension, headlights, and desktop/mobile mount controls.",
       "script_name": "Vehicle Physics Model",
       "keywords": ["vehicle", "car", "physics", "ammo", "raycast vehicle", "driveable", "wheels", "headlights", "mount"]
+    },
+    {
+      "path": "examples/splat-shader.mjs",
+      "kind": "example",
+      "title": "Splat Shader",
+      "summary": "Loads a Gaussian Splat via loadSplat and applies custom GLSL vertex/fragment shaders with animated uniforms.",
+      "script_name": "Splat Shader",
+      "keywords": ["splat", "shader", "gsplat", "glsl", "custom shader", "loadSplat", "ply", "sog", "spz", "vertex shader", "fragment shader", "material", "tint", "pulse"]
     },
     {
       "path": "types/arrival.d.ts",

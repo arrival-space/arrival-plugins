@@ -52,6 +52,7 @@ export class MyPlugin extends ArrivalScript {
 ## API Selection Guide
 
 - Load models: `ArrivalSpace.loadGLB`
+- Load splats: `ArrivalSpace.loadSplat` (.ply, .sog, .spz)
 - Load textures: `ArrivalSpace.loadTexture`
 - World-space UI panel: `ArrivalSpace.createTexturePanel` or `createHTMLPanel`
 - Audio: `ArrivalSpace.playSound`

@@ -130,6 +130,13 @@ export class ScavengerHunt extends ArrivalScript {
         this._gameComplete = true;
         this._resetTimer = this.resetDelay;
         this._showFinishOverlay();
+
+        const elapsed = (Date.now() - this._startTime) / 1000;
+        ArrivalSpace.fire("scavenger:complete", {
+            score: this._score,
+            time: elapsed,
+            items: this._items.length,
+        });
     }
 
     _resetGame() {

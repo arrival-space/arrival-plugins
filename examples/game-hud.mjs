@@ -23,6 +23,7 @@ export class GameHud extends ArrivalScript {
     maxHealth = 100;
     ammo = 30;
     maxAmmo = 30;
+    
     mapRange = 30;
 
     static properties = {
@@ -294,9 +295,9 @@ export class GameHud extends ArrivalScript {
         const player = ArrivalSpace.getPlayer();
         if (!player) return;
         const myPos = player.getPosition();
+        const mapRadius = 76;
 
         const players = ArrivalSpace.net.getPlayers();
-        const mapRadius = 76;
 
         // Remove old dots
         inner.querySelectorAll('.sh-minimap-dot').forEach(d => d.remove());

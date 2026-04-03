@@ -457,6 +457,26 @@ declare namespace ArrivalSpace {
     /** Load a GLB/GLTF 3D model */
     function loadGLB(url: string, options?: LoadGLBOptions): Promise<{ entity: pc.Entity; asset: pc.Asset }>;
 
+    interface LoadSplatOptions {
+        /** Parent entity to attach to */
+        parent?: pc.Entity;
+        /** Entity name */
+        name?: string;
+        /** Uniform scale */
+        scale?: number;
+        /** Position offset */
+        position?: { x: number; y: number; z: number };
+        /** Euler rotation in degrees */
+        rotation?: { x: number; y: number; z: number };
+        /** Load callback */
+        onLoad?: (entity: pc.Entity, asset: pc.Asset) => void;
+        /** Error callback */
+        onError?: (error: Error) => void;
+    }
+
+    /** Load a Gaussian Splat (.ply, .sog, .spz) */
+    function loadSplat(url: string, options?: LoadSplatOptions): Promise<{ entity: pc.Entity; asset: pc.Asset }>;
+
     /** Load a texture/image */
     function loadTexture(url: string, options?: LoadTextureOptions): Promise<{ texture: pc.Texture; asset: pc.Asset }>;
 

@@ -266,7 +266,7 @@ See [`scavenger-hunt.mjs`](../examples/scavenger-hunt.mjs) and [`scavenger-item.
 
 ---
 
-### Model Loading
+### Asset Loading
 
 #### `ArrivalSpace.loadGLB(url, options?)`
 
@@ -280,9 +280,31 @@ Load a GLB/GLTF 3D model.
 | `position` | `{x,y,z}` | - | Local position |
 | `rotation` | `{x,y,z}` | - | Euler rotation |
 
-**Important:** Always parent loaded models and sub-entities to `this.entity` (not `this.app.root`). Children of `this.entity` are automatically destroyed when the plugin is removed. Entities on the scene root will persist as orphans.
+**Returns:** `Promise<{ entity: pc.Entity, asset: pc.Asset }>`
+
+#### `ArrivalSpace.loadSplat(url, options?)`
+
+Load a Gaussian Splat. Supports `.ply`, `.sog`, and `.spz` (decompressed on-the-fly).
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `parent` | `pc.Entity` | - | Parent entity. Use `this.entity` for auto-cleanup |
+| `name` | `string` | `'LoadedSplat'` | Entity name |
+| `scale` | `number` | `1` | Uniform scale |
+| `position` | `{x,y,z}` | - | Local position |
+| `rotation` | `{x,y,z}` | - | Euler rotation |
 
 **Returns:** `Promise<{ entity: pc.Entity, asset: pc.Asset }>`
+
+```javascript
+const { entity } = await ArrivalSpace.loadSplat('https://example.com/scene.ply', {
+    parent: this.entity,
+    scale: 0.5,
+    position: { x: 0, y: 1, z: 0 },
+});
+```
+
+**Important:** Always parent loaded assets to `this.entity` (not `this.app.root`). Children of `this.entity` are automatically destroyed when the plugin is removed. Entities on the scene root will persist as orphans.
 
 #### `ArrivalSpace.loadTexture(url, options?)`
 
