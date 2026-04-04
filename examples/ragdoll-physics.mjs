@@ -1,0 +1,557 @@
+/**
+ * Ragdoll Physics
+ *
+ * Procedurally creates physics bodies and constraints from the player
+ * avatar skeleton. When activated the animation is paused and the
+ * avatar collapses under gravity like a lifeless body.
+ *
+ * Supports RPM (short), Mixamo-prefixed, and VRM (J_Bip) bone names.
+ */
+export class RagdollPhysics extends ArrivalScript {
+    static scriptName = "Ragdoll Physics";
+
+    ragdollEnabled = false;
+    bodyMass = 8;
+    limbMass = 2;
+    groundFriction = 0.8;
+    debugKinematic = false;
+
+    static properties = {
+        ragdollEnabled: { title: "Ragdoll Enabled" },
+        bodyMass: { title: "Torso Mass", min: 1, max: 50, step: 0.5 },
+        limbMass: { title: "Limb Mass", min: 0.5, max: 20, step: 0.5 },
+        groundFriction: { title: "Friction", min: 0, max: 2, step: 0.05 },
+        debugKinematic: { title: "Debug Kinematic" },
+    };
+
+    // ------------------------------------------------------------------ state
+    _active = false;
+    _bodies = [];       // { entity, bone, constraint? }
+    _constraints = [];  // Ammo constraint refs
+    _savedPoses = [];   // { bone, pos, rot }
+    _animWasPlaying = false;
+    _playerMesh = null;
+    _groundEntity = null;
+
+    // --------------------------------------------------- bone naming variants
+    static BONE_PREFIXES = ["", "mixamorig:", "mixamorig", "J_Bip_C_", "J_Bip_L_", "J_Bip_R_"];
+
+    static BONE_ALIASES = {
+        Hips:          ["Hips", "mixamorig:Hips", "mixamorigHips", "J_Bip_C_Hips"],
+        Spine:         ["Spine", "mixamorig:Spine", "mixamorigSpine", "J_Bip_C_Spine"],
+        Head:          ["Head", "mixamorig:Head", "mixamorigHead", "J_Bip_C_Head"],
+        LeftArm:       ["LeftArm", "mixamorig:LeftArm", "mixamorigLeftArm", "J_Bip_L_UpperArm"],
+        LeftForeArm:   ["LeftForeArm", "mixamorig:LeftForeArm", "mixamorigLeftForeArm", "J_Bip_L_LowerArm"],
+        LeftHand:      ["LeftHand", "mixamorig:LeftHand", "mixamorigLeftHand", "J_Bip_L_Hand"],
+        RightArm:      ["RightArm", "mixamorig:RightArm", "mixamorigRightArm", "J_Bip_R_UpperArm"],
+        RightForeArm:  ["RightForeArm", "mixamorig:RightForeArm", "mixamorigRightForeArm", "J_Bip_R_LowerArm"],
+        RightHand:     ["RightHand", "mixamorig:RightHand", "mixamorigRightHand", "J_Bip_R_Hand"],
+        LeftMiddle1:   ["LeftHandMiddle2", "mixamorig:LeftHandMiddle2", "mixamorigLeftHandMiddle2", "J_Bip_L_Mid2"],
+        RightMiddle1:  ["RightHandMiddle2", "mixamorig:RightHandMiddle2", "mixamorigRightHandMiddle2", "J_Bip_R_Mid2"],
+        LeftUpLeg:     ["LeftUpLeg", "mixamorig:LeftUpLeg", "mixamorigLeftUpLeg", "J_Bip_L_UpperLeg"],
+        LeftLeg:       ["LeftLeg", "mixamorig:LeftLeg", "mixamorigLeftLeg", "J_Bip_L_LowerLeg"],
+        LeftFoot:      ["LeftFoot", "mixamorig:LeftFoot", "mixamorigLeftFoot", "J_Bip_L_Foot"],
+        RightUpLeg:    ["RightUpLeg", "mixamorig:RightUpLeg", "mixamorigRightUpLeg", "J_Bip_R_UpperLeg"],
+        RightLeg:      ["RightLeg", "mixamorig:RightLeg", "mixamorigRightLeg", "J_Bip_R_LowerLeg"],
+        Neck:          ["Neck", "mixamorig:Neck", "mixamorigNeck", "J_Bip_C_Neck"],
+        HeadTop:       ["HeadTop_End", "mixamorig:HeadTop_End", "mixamorigHeadTop_End", "J_Bip_C_HeadTop"],
+        RightFoot:     ["RightFoot", "mixamorig:RightFoot", "mixamorigRightFoot", "J_Bip_R_Foot"],
+        LeftToeBase:   ["LeftToeBase", "mixamorig:LeftToeBase", "mixamorigLeftToeBase", "J_Bip_L_ToeBase"],
+        RightToeBase:  ["RightToeBase", "mixamorig:RightToeBase", "mixamorigRightToeBase", "J_Bip_R_ToeBase"],
+    };
+
+    // ----------------------------------------- body segment definitions
+    // Each segment: [canonical bone start, canonical bone end, mass multiplier, shape]
+    // bone end is used to compute length; shape is "capsule" or "sphere"
+    static SEGMENTS = [
+        { name: "Body",           boneStart: "Hips",        boneEnd: "Neck",        massMul: 1.0,  shape: "capsule", radius: 0.09 },
+        { name: "Head",           boneStart: "Head",        boneEnd: "HeadTop",     massMul: 0.5,  shape: "capsule", radius: 0.08 },
+        { name: "Left Arm",       boneStart: "LeftArm",     boneEnd: "LeftForeArm", massMul: 0.3,  shape: "capsule", radius: 0.04 },
+        { name: "Left ForeArm",   boneStart: "LeftForeArm", boneEnd: "LeftHand",    massMul: 0.2,  shape: "capsule", radius: 0.03 },
+        { name: "Left Hand",      boneStart: "LeftHand",    boneEnd: "LeftMiddle1", massMul: 0.1,  shape: "capsule", radius: 0.03 },
+        { name: "Right Arm",      boneStart: "RightArm",    boneEnd: "RightForeArm",massMul: 0.3,  shape: "capsule", radius: 0.04 },
+        { name: "Right ForeArm",  boneStart: "RightForeArm",boneEnd: "RightHand",   massMul: 0.2,  shape: "capsule", radius: 0.03 },
+        { name: "Right Hand",     boneStart: "RightHand",   boneEnd: "RightMiddle1",massMul: 0.1,  shape: "capsule", radius: 0.03 },
+        { name: "Left Upper Leg", boneStart: "LeftUpLeg",   boneEnd: "LeftLeg",     massMul: 0.4,  shape: "capsule", radius: 0.05 },
+        { name: "Left Lower Leg", boneStart: "LeftLeg",     boneEnd: "LeftFoot",    massMul: 0.3,  shape: "capsule", radius: 0.04 },
+        { name: "Left Foot",      boneStart: "LeftFoot",    boneEnd: "LeftToeBase", massMul: 0.1,  shape: "box",     radius: 0.03 },
+        { name: "Right Upper Leg",boneStart: "RightUpLeg",  boneEnd: "RightLeg",    massMul: 0.4,  shape: "capsule", radius: 0.05 },
+        { name: "Right Lower Leg",boneStart: "RightLeg",    boneEnd: "RightFoot",   massMul: 0.3,  shape: "capsule", radius: 0.04 },
+        { name: "Right Foot",     boneStart: "RightFoot",   boneEnd: "RightToeBase",massMul: 0.1,  shape: "box",     radius: 0.03 },
+    ];
+
+    // ----------------------------------------- constraint definitions
+    // type: "cone" (ConeTwist) or "hinge"
+    static CONSTRAINTS = [
+        // torso
+        { a: "Body",            b: "Head",            type: "cone",  limits: [30, 30, 20] },
+        // arms
+        { a: "Body",            b: "Left Arm",        type: "cone",  limits: [60, 60, 30] },
+        { a: "Left Arm",        b: "Left ForeArm",    type: "hinge", limits: [0, 130] },
+        { a: "Left ForeArm",    b: "Left Hand",       type: "hinge", limits: [-30, 30] },
+        { a: "Body",            b: "Right Arm",       type: "cone",  limits: [60, 60, 30] },
+        { a: "Right Arm",       b: "Right ForeArm",   type: "hinge", limits: [0, 130] },
+        { a: "Right ForeArm",   b: "Right Hand",      type: "hinge", limits: [-30, 30] },
+        // legs
+        { a: "Body",            b: "Left Upper Leg",  type: "cone",  limits: [45, 45, 20] },
+        { a: "Left Upper Leg",  b: "Left Lower Leg",  type: "hinge", limits: [0, 130] },
+        { a: "Left Lower Leg",  b: "Left Foot",       type: "hinge", limits: [-30, 30] },
+        { a: "Body",            b: "Right Upper Leg", type: "cone",  limits: [45, 45, 20] },
+        { a: "Right Upper Leg", b: "Right Lower Leg", type: "hinge", limits: [0, 130] },
+        { a: "Right Lower Leg", b: "Right Foot",      type: "hinge", limits: [-30, 30] },
+    ];
+
+    // ================================================================ lifecycle
+    initialize() {}
+
+    onPropertyChanged(name) {
+        if (name === "ragdollEnabled") {
+            if (this.ragdollEnabled && !this._active) this.activate();
+            else if (!this.ragdollEnabled && this._active) this.deactivate();
+        }
+    }
+
+    postUpdate(dt) {
+        if (!this._active) return;
+        this._writeBonePoses();
+    }
+
+    destroy() {
+        if (this._active) this.deactivate();
+    }
+
+    // ================================================================ public API
+    activate() {
+        const player = ArrivalSpace.getPlayer();
+        if (!player) { console.warn("[Ragdoll] No player found"); return; }
+
+        const meshRoot = player.findByName("ReadyPlayerMe");
+        if (!meshRoot) { console.warn("[Ragdoll] No avatar mesh found"); return; }
+
+        // Find the skeleton root — the render root inside glbEntity
+        const glb = meshRoot.script?.glbEntity;
+        const skeleton = glb?.renderRootEntity || meshRoot;
+        this._playerMesh = meshRoot;
+
+        // Resolve bones
+        const bones = this._resolveBones(skeleton);
+        if (!bones) { console.warn("[Ragdoll] Could not resolve bones"); return; }
+
+        // Disable player collision so ragdoll bodies don't collide with it
+        this._player = player;
+        this._playerCollisions = [];
+        const disableCollision = (e) => {
+            if (e.collision) { e.collision.enabled = false; this._playerCollisions.push(e.collision); }
+            if (e.rigidbody) { e.rigidbody.enabled = false; this._playerCollisions.push(e.rigidbody); }
+        };
+        disableCollision(player);
+        if (meshRoot !== player) disableCollision(meshRoot);
+
+        // Disable character controller (ground raycast, movement, repositioning)
+        this._disabledScripts = [];
+        const ccScript = player.script?.characterController;
+        if (ccScript && ccScript.enabled) {
+            ccScript.enabled = false;
+            this._disabledScripts.push(ccScript);
+        }
+
+        // Pause animation
+        const animComponent = this._findAnimComponent(meshRoot);
+        if (animComponent) {
+            this._animWasPlaying = animComponent.playing;
+            animComponent.speed = 0;
+        }
+
+        // Snapshot local poses (animation works in local space)
+        this._savedPoses = [];
+        for (const [canonical, boneEntity] of Object.entries(bones)) {
+            this._savedPoses.push({
+                bone: boneEntity,
+                pos: boneEntity.getLocalPosition().clone(),
+                rot: boneEntity.getLocalRotation().clone(),
+            });
+        }
+
+        // Log bone hierarchy for debugging
+        this._logBoneStructure(bones);
+
+        // Create physics bodies
+        this._createBodies(bones);
+
+        // Log body placement
+        this._logBodyPlacement();
+
+        // Create constraints
+        this._createConstraints();
+
+        // Create ground plane
+        this._createGround(player);
+
+        this._active = true;
+        this.ragdollEnabled = true;
+        console.log("[Ragdoll] Activated");
+    }
+
+    deactivate() {
+        // Get hips position before removing bodies (to reposition player)
+        const hipsBody = this._bodyMap?.["Body"];
+        const hipsPos = hipsBody && !hipsBody._destroyed
+            ? hipsBody.getPosition().clone() : null;
+
+        this._removeConstraints();
+        this._removeBodies();
+        this._removeGround();
+
+        // Restore local bone poses
+        for (const saved of this._savedPoses) {
+            if (saved.bone && !saved.bone._destroyed) {
+                saved.bone.setLocalPosition(saved.pos);
+                saved.bone.setLocalRotation(saved.rot);
+            }
+        }
+        this._savedPoses = [];
+
+        // Reposition player at ragdoll hips (on the ground)
+        if (this._player && !this._player._destroyed && hipsPos) {
+            this._player.setPosition(hipsPos.x, hipsPos.y, hipsPos.z);
+        }
+
+        // Re-enable player collision
+        for (const comp of this._playerCollisions || []) {
+            if (comp && !comp.entity?._destroyed) comp.enabled = true;
+        }
+        this._playerCollisions = [];
+
+        // Re-enable player controller scripts
+        for (const inst of this._disabledScripts || []) {
+            if (inst && !inst.entity?._destroyed) inst.enabled = true;
+        }
+        this._disabledScripts = [];
+
+        // Resume animation
+        if (this._playerMesh && !this._playerMesh._destroyed) {
+            const animComponent = this._findAnimComponent(this._playerMesh);
+            if (animComponent) {
+                animComponent.speed = 1;
+            }
+        }
+        this._playerMesh = null;
+        this._player = null;
+
+        this._active = false;
+        this.ragdollEnabled = false;
+        console.log("[Ragdoll] Deactivated");
+    }
+
+    // ================================================================ debug
+    _logBoneStructure(bones) {
+        console.log("[Ragdoll] === BONE STRUCTURE ===");
+        for (const [canonical, bone] of Object.entries(bones)) {
+            const pos = bone.getPosition();
+            const rot = bone.getRotation();
+            const euler = rot.getEulerAngles();
+            const parent = bone.parent?.name || "(root)";
+            console.log(
+                `[Ragdoll] ${canonical.padEnd(14)} | name="${bone.name}" parent="${parent}" ` +
+                `pos=(${pos.x.toFixed(3)}, ${pos.y.toFixed(3)}, ${pos.z.toFixed(3)}) ` +
+                `euler=(${euler.x.toFixed(1)}, ${euler.y.toFixed(1)}, ${euler.z.toFixed(1)})`
+            );
+        }
+    }
+
+    _logBodyPlacement() {
+        console.log("[Ragdoll] === PHYSICS BODIES ===");
+        for (const entry of this._bodies) {
+            const ePos = entry.entity.getPosition();
+            const eEuler = entry.entity.getRotation().getEulerAngles();
+            const boneChild = entry.entity.findByName("Bone");
+            const bPos = boneChild.getPosition();
+            const bEuler = boneChild.getRotation().getEulerAngles();
+            const bonePos = entry.bone.getPosition();
+            const diff = new pc.Vec3().sub2(bPos, bonePos).length();
+            console.log(
+                `[Ragdoll] ${entry.name.padEnd(16)} | ` +
+                `body=(${ePos.x.toFixed(3)}, ${ePos.y.toFixed(3)}, ${ePos.z.toFixed(3)}) ` +
+                `euler=(${eEuler.x.toFixed(1)}, ${eEuler.y.toFixed(1)}, ${eEuler.z.toFixed(1)}) | ` +
+                `BoneChild=(${bPos.x.toFixed(3)}, ${bPos.y.toFixed(3)}, ${bPos.z.toFixed(3)}) ` +
+                `euler=(${bEuler.x.toFixed(1)}, ${bEuler.y.toFixed(1)}, ${bEuler.z.toFixed(1)}) | ` +
+                `skelBone=(${bonePos.x.toFixed(3)}, ${bonePos.y.toFixed(3)}, ${bonePos.z.toFixed(3)}) ` +
+                `posDiff=${diff.toFixed(4)}`
+            );
+        }
+    }
+
+    // ================================================================ bones
+    _resolveBones(skeleton) {
+        const resolved = {};
+        for (const [canonical, aliases] of Object.entries(RagdollPhysics.BONE_ALIASES)) {
+            let found = null;
+            for (const alias of aliases) {
+                found = skeleton.findByName(alias);
+                if (found) break;
+            }
+            if (!found) {
+                console.warn(`[Ragdoll] Missing bone: ${canonical}`);
+                return null;
+            }
+            resolved[canonical] = found;
+        }
+        return resolved;
+    }
+
+    _findAnimComponent(root) {
+        if (root.anim) return root.anim;
+        // Search children (RPM usually has anim on the render root)
+        const results = [];
+        const visit = (e) => {
+            if (e.anim) results.push(e.anim);
+            for (const c of e.children) visit(c);
+        };
+        visit(root);
+        return results[0] || null;
+    }
+
+    // ================================================================ body creation
+    _createBodies(bones) {
+        const bodyMap = {};
+
+        for (const seg of RagdollPhysics.SEGMENTS) {
+            const boneStart = bones[seg.boneStart];
+            const boneEnd = seg.boneEnd ? bones[seg.boneEnd] : null;
+
+            const startPos = boneStart.getPosition();
+            const endPos = boneEnd ? boneEnd.getPosition() : null;
+
+            // Compute midpoint and length
+            let midpoint, halfHeight;
+            if (endPos) {
+                midpoint = new pc.Vec3().lerp(startPos, endPos, 0.5);
+                halfHeight = startPos.distance(endPos) * 0.5;
+            } else {
+                // Terminal bones (head, hands, feet) — use a small offset
+                midpoint = startPos.clone();
+                halfHeight = seg.radius;
+            }
+
+            // Compute orientation: Y axis along bone direction
+            let rotation = new pc.Quat();
+            if (endPos) {
+                let dir = new pc.Vec3().sub2(endPos, startPos);
+                // For box shapes (feet), flatten to horizontal so shoes sit flat
+                if (seg.shape === "box") {
+                    dir.y = 0;
+                    midpoint.y = endPos.y; // use toe height, not ankle
+                }
+                dir.normalize();
+                const up = new pc.Vec3(0, 1, 0);
+                // If bone is nearly vertical, use a different up reference
+                const upRef = Math.abs(dir.dot(up)) > 0.99
+                    ? new pc.Vec3(1, 0, 0) : up;
+                const mat = new pc.Mat4().setLookAt(pc.Vec3.ZERO, dir, upRef);
+                rotation.setFromMat4(mat);
+                // setLookAt gives -Z forward; we want Y-up capsule, so rotate 90° around X
+                const fixup = new pc.Quat().setFromEulerAngles(90, 0, 0);
+                rotation.mul(fixup);
+            }
+
+            const mass = seg.name === "Body" ? this.bodyMass * seg.massMul
+                                              : this.limbMass * seg.massMul;
+
+            // Create entity with collision + rigidbody
+            const entity = new pc.Entity(seg.name);
+            this.app.root.addChild(entity);
+            entity.setPosition(midpoint);
+            entity.setRotation(rotation);
+
+            // Collision shape
+            if (seg.shape === "capsule") {
+                entity.addComponent("collision", {
+                    type: "capsule",
+                    radius: seg.radius,
+                    height: Math.max(halfHeight * 2, seg.radius * 2.5),
+                });
+            } else if (seg.shape === "sphere") {
+                entity.addComponent("collision", {
+                    type: "sphere",
+                    radius: seg.radius,
+                });
+            } else if (seg.shape === "box") {
+                // Shoe-shaped: long (Y along bone), narrow (X), flat (Z)
+                const length = Math.max(halfHeight, 0.06);
+                entity.addComponent("collision", {
+                    type: "box",
+                    halfExtents: new pc.Vec3(0.04, length * 2, 0.03),
+                });
+            }
+
+            // Rigidbody
+            entity.addComponent("rigidbody", {
+                type: this.debugKinematic ? pc.BODYTYPE_KINEMATIC : pc.BODYTYPE_DYNAMIC,
+                mass: mass,
+                friction: this.groundFriction,
+                restitution: 0.1,
+                angularDamping: 0.5,
+                linearDamping: 0.1,
+            });
+
+            // "Bone" child placed at the skeleton bone's world transform.
+            // As the physics body moves, this child moves with it, and we
+            // copy its world transform back onto the skeleton bone each frame.
+            const boneChild = new pc.Entity("Bone");
+            entity.addChild(boneChild);
+            boneChild.setPosition(startPos);
+            boneChild.setRotation(boneStart.getRotation());
+
+            bodyMap[seg.name] = entity;
+            this._bodies.push({
+                entity: entity,
+                bone: boneStart,
+                boneEnd: boneEnd,
+                name: seg.name,
+            });
+        }
+
+        this._bodyMap = bodyMap;
+    }
+
+    // ================================================================ constraints
+    _createConstraints() {
+        const world = this.app.systems.rigidbody.dynamicsWorld;
+        if (!world) { console.warn("[Ragdoll] No dynamics world"); return; }
+
+        for (const def of RagdollPhysics.CONSTRAINTS) {
+            const entityA = this._bodyMap[def.a];
+            const entityB = this._bodyMap[def.b];
+            if (!entityA || !entityB) continue;
+
+            const rbA = entityA.rigidbody.body;
+            const rbB = entityB.rigidbody.body;
+            if (!rbA || !rbB) continue;
+
+            // Compute pivot: midpoint between the two bodies
+            // (approximation — use bone start of child body)
+            const bodyEntry = this._bodies.find(b => b.name === def.b);
+            const pivotWorld = bodyEntry.bone.getPosition();
+
+            // Transform pivot into local space of each body
+            const offsetA = this._worldToLocalAmmo(entityA, pivotWorld);
+            const offsetB = this._worldToLocalAmmo(entityB, pivotWorld);
+
+            // Compute constraint frame rotations so the initial pose is the
+            // rest pose (zero constraint error at start). Each frame's basis
+            // is the inverse of the body's world rotation — this maps world
+            // axes into the body's local space, making the initial relative
+            // orientation the "zero" for the constraint.
+            // Frame rotations: inverse of each body's world rotation so
+            // the initial pose is the constraint rest pose.
+            const eulerA = entityA.getRotation().clone().invert().getEulerAngles();
+            const eulerB = entityB.getRotation().clone().invert().getEulerAngles();
+
+            const localA = new Ammo.btTransform();
+            localA.setIdentity();
+            localA.getBasis().setEulerZYX(eulerA.x * pc.math.DEG_TO_RAD, eulerA.y * pc.math.DEG_TO_RAD, eulerA.z * pc.math.DEG_TO_RAD);
+            localA.setOrigin(offsetA);
+
+            const localB = new Ammo.btTransform();
+            localB.setIdentity();
+            localB.getBasis().setEulerZYX(eulerB.x * pc.math.DEG_TO_RAD, eulerB.y * pc.math.DEG_TO_RAD, eulerB.z * pc.math.DEG_TO_RAD);
+            localB.setOrigin(offsetB);
+
+            let constraint;
+
+            if (def.type === "cone") {
+                constraint = new Ammo.btConeTwistConstraint(rbA, rbB, localA, localB);
+                const [twist, swingY, swingZ] = def.limits;
+                constraint.setLimit(3, twist * pc.math.DEG_TO_RAD);
+                constraint.setLimit(4, swingY * pc.math.DEG_TO_RAD);
+                constraint.setLimit(5, swingZ * pc.math.DEG_TO_RAD);
+            } else {
+                constraint = new Ammo.btHingeConstraint(rbA, rbB, localA, localB);
+                constraint.setLimit(
+                    def.limits[0] * pc.math.DEG_TO_RAD,
+                    def.limits[1] * pc.math.DEG_TO_RAD,
+                    0.9, 0.3, 1
+                );
+            }
+
+            world.addConstraint(constraint, true); // disable collision between linked bodies
+            this._constraints.push(constraint);
+
+            // Clean up Ammo temporaries
+            Ammo.destroy(offsetA);
+            Ammo.destroy(offsetB);
+            Ammo.destroy(localA);
+            Ammo.destroy(localB);
+        }
+    }
+
+    _worldToLocalAmmo(entity, worldPos) {
+        const local = new pc.Vec3();
+        const invWorld = entity.getWorldTransform().clone().invert();
+        invWorld.transformPoint(worldPos, local);
+        return new Ammo.btVector3(local.x, local.y, local.z);
+    }
+
+    // ================================================================ ground
+    _createGround(player) {
+        const playerPos = player.getPosition();
+        const ground = new pc.Entity("RagdollGround");
+        this.app.root.addChild(ground);
+        ground.setPosition(playerPos.x, playerPos.y - 0.05, playerPos.z);
+        ground.addComponent("collision", {
+            type: "box",
+            halfExtents: new pc.Vec3(5, 0.05, 5),
+        });
+        ground.addComponent("rigidbody", {
+            type: pc.BODYTYPE_STATIC,
+            friction: this.groundFriction,
+            restitution: 0.2,
+        });
+        this._groundEntity = ground;
+    }
+
+    // ================================================================ pose writeback
+    _writeBonePoses() {
+        for (const entry of this._bodies) {
+            if (!entry.bone || entry.bone._destroyed) continue;
+            if (!entry.entity || entry.entity._destroyed) continue;
+
+            // Write the physics body transform onto the skeleton bone
+            const boneChild = entry.entity.findByName("Bone");
+            const source = boneChild || entry.entity;
+            entry.bone.setPosition(source.getPosition());
+            entry.bone.setRotation(source.getRotation());
+        }
+    }
+
+    // ================================================================ cleanup
+    _removeConstraints() {
+        const world = this.app.systems.rigidbody?.dynamicsWorld;
+        for (const c of this._constraints) {
+            if (world) world.removeConstraint(c);
+            Ammo.destroy(c);
+        }
+        this._constraints = [];
+    }
+
+    _removeBodies() {
+        for (const entry of this._bodies) {
+            if (entry.entity && !entry.entity._destroyed) {
+                entry.entity.removeComponent("rigidbody");
+                entry.entity.removeComponent("collision");
+                entry.entity.destroy();
+            }
+        }
+        this._bodies = [];
+        this._bodyMap = {};
+    }
+
+    _removeGround() {
+        if (this._groundEntity && !this._groundEntity._destroyed) {
+            this._groundEntity.removeComponent("rigidbody");
+            this._groundEntity.removeComponent("collision");
+            this._groundEntity.destroy();
+            this._groundEntity = null;
+        }
+    }
+}
