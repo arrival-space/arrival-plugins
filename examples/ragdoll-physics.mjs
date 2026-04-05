@@ -10,18 +10,26 @@
 export class RagdollPhysics extends ArrivalScript {
     static scriptName = "Ragdoll Physics";
 
-    ragdollEnabled = false;
-    bodyMass = 8;
+    ragdollEnabled = true;
+    activateKey = "r";
+    bodyMass = 1;
     limbMass = 2;
-    groundFriction = 0.8;
+    groundFriction = 1;
+    linearDamping = 0.96;
+    angularDamping = 0.99;
     debugKinematic = false;
+    debugGround = false;
 
     static properties = {
         ragdollEnabled: { title: "Ragdoll Enabled" },
+        activateKey: { title: "Activate Key" },
         bodyMass: { title: "Torso Mass", min: 1, max: 50, step: 0.5 },
         limbMass: { title: "Limb Mass", min: 0.5, max: 20, step: 0.5 },
         groundFriction: { title: "Friction", min: 0, max: 2, step: 0.05 },
+        linearDamping: { title: "Linear Damping", min: 0, max: 1, step: 0.05 },
+        angularDamping: { title: "Angular Damping", min: 0, max: 1, step: 0.05 },
         debugKinematic: { title: "Debug Kinematic" },
+        debugGround: { title: "Debug Ground Plane" },
     };
 
     // ------------------------------------------------------------------ state
@@ -64,7 +72,7 @@ export class RagdollPhysics extends ArrivalScript {
     // Each segment: [canonical bone start, canonical bone end, mass multiplier, shape]
     // bone end is used to compute length; shape is "capsule" or "sphere"
     static SEGMENTS = [
-        { name: "Body",           boneStart: "Hips",        boneEnd: "Neck",        massMul: 1.0,  shape: "capsule", radius: 0.09 },
+        { name: "Body",           boneStart: "Hips",        boneEnd: "Head",        massMul: 1.0,  shape: "capsule", radius: 0.09 },
         { name: "Head",           boneStart: "Head",        boneEnd: "HeadTop",     massMul: 0.5,  shape: "capsule", radius: 0.08 },
         { name: "Left Arm",       boneStart: "LeftArm",     boneEnd: "LeftForeArm", massMul: 0.3,  shape: "capsule", radius: 0.04 },
         { name: "Left ForeArm",   boneStart: "LeftForeArm", boneEnd: "LeftHand",    massMul: 0.2,  shape: "capsule", radius: 0.03 },
@@ -74,10 +82,10 @@ export class RagdollPhysics extends ArrivalScript {
         { name: "Right Hand",     boneStart: "RightHand",   boneEnd: "RightMiddle1",massMul: 0.1,  shape: "capsule", radius: 0.03 },
         { name: "Left Upper Leg", boneStart: "LeftUpLeg",   boneEnd: "LeftLeg",     massMul: 0.4,  shape: "capsule", radius: 0.05 },
         { name: "Left Lower Leg", boneStart: "LeftLeg",     boneEnd: "LeftFoot",    massMul: 0.3,  shape: "capsule", radius: 0.04 },
-        { name: "Left Foot",      boneStart: "LeftFoot",    boneEnd: "LeftToeBase", massMul: 0.1,  shape: "box",     radius: 0.03 },
+        { name: "Left Foot",      boneStart: "LeftFoot",    boneEnd: "LeftToeBase", massMul: 0.1,  shape: "capsule", radius: 0.03 },
         { name: "Right Upper Leg",boneStart: "RightUpLeg",  boneEnd: "RightLeg",    massMul: 0.4,  shape: "capsule", radius: 0.05 },
         { name: "Right Lower Leg",boneStart: "RightLeg",    boneEnd: "RightFoot",   massMul: 0.3,  shape: "capsule", radius: 0.04 },
-        { name: "Right Foot",     boneStart: "RightFoot",   boneEnd: "RightToeBase",massMul: 0.1,  shape: "box",     radius: 0.03 },
+        { name: "Right Foot",     boneStart: "RightFoot",   boneEnd: "RightToeBase",massMul: 0.1,  shape: "capsule", radius: 0.03 },
     ];
 
     // ----------------------------------------- constraint definitions
@@ -102,7 +110,16 @@ export class RagdollPhysics extends ArrivalScript {
     ];
 
     // ================================================================ lifecycle
-    initialize() {}
+    initialize() {
+        this._onKeyDown = (e) => {
+            const key = this.activateKey && pc[`KEY_${this.activateKey.toUpperCase()}`];
+            if (key && e.key === key) {
+                if (this._active) this.deactivate();
+                else this.activate();
+            }
+        };
+        this.app.keyboard.on(pc.EVENT_KEYDOWN, this._onKeyDown, this);
+    }
 
     onPropertyChanged(name) {
         if (name === "ragdollEnabled") {
@@ -113,11 +130,15 @@ export class RagdollPhysics extends ArrivalScript {
 
     postUpdate(dt) {
         if (!this._active) return;
+        if (this._animComponent) this._animComponent.enabled = false;
         this._writeBonePoses();
     }
 
     destroy() {
         if (this._active) this.deactivate();
+        if (this._onKeyDown) {
+            this.app.keyboard.off(pc.EVENT_KEYDOWN, this._onKeyDown, this);
+        }
     }
 
     // ================================================================ public API
@@ -156,10 +177,10 @@ export class RagdollPhysics extends ArrivalScript {
         }
 
         // Pause animation
-        const animComponent = this._findAnimComponent(meshRoot);
-        if (animComponent) {
-            this._animWasPlaying = animComponent.playing;
-            animComponent.speed = 0;
+        this._animComponent = this._findAnimComponent(meshRoot);
+        if (this._animComponent) {
+            this._animWasPlaying = this._animComponent.playing;
+            this._animComponent.enabled = false;
         }
 
         // Snapshot local poses (animation works in local space)
@@ -184,8 +205,7 @@ export class RagdollPhysics extends ArrivalScript {
         // Create constraints
         this._createConstraints();
 
-        // Create ground plane
-        this._createGround(player);
+        if (this.debugGround) this._createGround(player);
 
         this._active = true;
         this.ragdollEnabled = true;
@@ -193,15 +213,14 @@ export class RagdollPhysics extends ArrivalScript {
     }
 
     deactivate() {
-        // Get hips position before removing bodies (to reposition player)
-        const hipsBody = this._bodyMap?.["Body"];
-        const hipsPos = hipsBody && !hipsBody._destroyed
-            ? hipsBody.getPosition().clone() : null;
+        // Get foot position before removing bodies (to reposition player)
+        const footBody = this._bodyMap?.["Right Foot"];
+        const footPos = footBody && !footBody._destroyed
+            ? footBody.getPosition().clone() : null;
 
         this._removeConstraints();
         this._removeBodies();
         this._removeGround();
-
         // Restore local bone poses
         for (const saved of this._savedPoses) {
             if (saved.bone && !saved.bone._destroyed) {
@@ -211,9 +230,9 @@ export class RagdollPhysics extends ArrivalScript {
         }
         this._savedPoses = [];
 
-        // Reposition player at ragdoll hips (on the ground)
-        if (this._player && !this._player._destroyed && hipsPos) {
-            this._player.setPosition(hipsPos.x, hipsPos.y, hipsPos.z);
+        // Reposition player at ragdoll foot position
+        if (this._player && !this._player._destroyed && footPos) {
+            this._player.setPosition(footPos.x, footPos.y, footPos.z);
         }
 
         // Re-enable player collision
@@ -229,11 +248,9 @@ export class RagdollPhysics extends ArrivalScript {
         this._disabledScripts = [];
 
         // Resume animation
-        if (this._playerMesh && !this._playerMesh._destroyed) {
-            const animComponent = this._findAnimComponent(this._playerMesh);
-            if (animComponent) {
-                animComponent.speed = 1;
-            }
+        if (this._animComponent) {
+            this._animComponent.enabled = true;
+            this._animComponent = null;
         }
         this._playerMesh = null;
         this._player = null;
@@ -337,8 +354,8 @@ export class RagdollPhysics extends ArrivalScript {
             let rotation = new pc.Quat();
             if (endPos) {
                 let dir = new pc.Vec3().sub2(endPos, startPos);
-                // For box shapes (feet), flatten to horizontal so shoes sit flat
-                if (seg.shape === "box") {
+                // For feet, flatten to horizontal so shoes sit flat
+                if (seg.name === "Left Foot" || seg.name === "Right Foot") {
                     dir.y = 0;
                     midpoint.y = endPos.y; // use toe height, not ankle
                 }
@@ -359,16 +376,20 @@ export class RagdollPhysics extends ArrivalScript {
 
             // Create entity with collision + rigidbody
             const entity = new pc.Entity(seg.name);
+            entity.tags.add("noCameraBlock");
             this.app.root.addChild(entity);
             entity.setPosition(midpoint);
             entity.setRotation(rotation);
 
             // Collision shape
             if (seg.shape === "capsule") {
+                const isFoot = seg.name === "Left Foot" || seg.name === "Right Foot";
+                const r = isFoot ? seg.radius * 1.5 : seg.radius;
+                const h = isFoot ? Math.max(halfHeight * 4, r * 2.5) : Math.max(halfHeight * 2, r * 2.5);
                 entity.addComponent("collision", {
                     type: "capsule",
-                    radius: seg.radius,
-                    height: Math.max(halfHeight * 2, seg.radius * 2.5),
+                    radius: r,
+                    height: h,
                 });
             } else if (seg.shape === "sphere") {
                 entity.addComponent("collision", {
@@ -385,13 +406,14 @@ export class RagdollPhysics extends ArrivalScript {
             }
 
             // Rigidbody
+            const angDamp = this.angularDamping;
             entity.addComponent("rigidbody", {
                 type: this.debugKinematic ? pc.BODYTYPE_KINEMATIC : pc.BODYTYPE_DYNAMIC,
                 mass: mass,
                 friction: this.groundFriction,
                 restitution: 0.1,
-                angularDamping: 0.5,
-                linearDamping: 0.1,
+                angularDamping: angDamp,
+                linearDamping: this.linearDamping,
             });
 
             // "Bone" child placed at the skeleton bone's world transform.
