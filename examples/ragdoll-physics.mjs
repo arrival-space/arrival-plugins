@@ -158,6 +158,9 @@ export class RagdollPhysics extends ArrivalScript {
         const bones = this._resolveBones(skeleton);
         if (!bones) { console.warn("[Ragdoll] Could not resolve bones"); return; }
 
+        // Capture player velocity before disabling rigidbody
+        const playerVelocity = player.rigidbody?.linearVelocity?.clone() || pc.Vec3.ZERO;
+
         // Disable player collision so ragdoll bodies don't collide with it
         this._player = player;
         this._playerCollisions = [];
@@ -198,6 +201,13 @@ export class RagdollPhysics extends ArrivalScript {
 
         // Create physics bodies
         this._createBodies(bones);
+
+        // Apply player velocity to all ragdoll bodies
+        for (const entry of this._bodies) {
+            if (entry.entity.rigidbody) {
+                entry.entity.rigidbody.linearVelocity = playerVelocity;
+            }
+        }
 
         // Log body placement
         this._logBodyPlacement();
