@@ -12,12 +12,12 @@ export class RagdollPhysics extends ArrivalScript {
 
     ragdollEnabled = true;
     activateKey = "r";
-    wakeOnMove = true;
+    wakeOnMove = false;
     bodyMass = 1;
     limbMass = 2;
-    groundFriction = 1;
-    linearDamping = 0.96;
-    angularDamping = 0.99;
+    groundFriction = 0.75;
+    linearDamping = 0.75;
+    angularDamping = 0.75;
     debugKinematic = false;
     debugGround = false;
 
@@ -96,19 +96,19 @@ export class RagdollPhysics extends ArrivalScript {
         // torso
         { a: "Body",            b: "Head",            type: "cone",  limits: [30, 30, 20] },
         // arms
-        { a: "Body",            b: "Left Arm",        type: "cone",  limits: [60, 60, 30] },
+        { a: "Body",            b: "Left Arm",        type: "cone",  limits: [95, 95, 30] },
         { a: "Left Arm",        b: "Left ForeArm",    type: "hinge", limits: [0, 130] },
         { a: "Left ForeArm",    b: "Left Hand",       type: "hinge", limits: [-30, 30] },
-        { a: "Body",            b: "Right Arm",       type: "cone",  limits: [60, 60, 30] },
+        { a: "Body",            b: "Right Arm",       type: "cone",  limits: [95, 95, 30] },
         { a: "Right Arm",       b: "Right ForeArm",   type: "hinge", limits: [0, 130] },
         { a: "Right ForeArm",   b: "Right Hand",      type: "hinge", limits: [-30, 30] },
         // legs
-        { a: "Body",            b: "Left Upper Leg",  type: "cone",  limits: [45, 45, 20] },
-        { a: "Left Upper Leg",  b: "Left Lower Leg",  type: "hinge", limits: [0, 130] },
-        { a: "Left Lower Leg",  b: "Left Foot",       type: "hinge", limits: [-30, 30] },
-        { a: "Body",            b: "Right Upper Leg", type: "cone",  limits: [45, 45, 20] },
-        { a: "Right Upper Leg", b: "Right Lower Leg", type: "hinge", limits: [0, 130] },
-        { a: "Right Lower Leg", b: "Right Foot",      type: "hinge", limits: [-30, 30] },
+        { a: "Body",            b: "Left Upper Leg",  type: "cone",  limits: [60, 60, 10] },
+        { a: "Left Upper Leg",  b: "Left Lower Leg",  type: "hinge", limits: [0, 130] },        // knee
+        { a: "Left Lower Leg",  b: "Left Foot",       type: "hinge", limits: [-80, 20] },       // ankle
+        { a: "Body",            b: "Right Upper Leg", type: "cone",  limits: [60, 60, 10] },     // 
+        { a: "Right Upper Leg", b: "Right Lower Leg", type: "hinge", limits: [0, 130] },        // knee
+        { a: "Right Lower Leg", b: "Right Foot",      type: "hinge", limits: [-80, 20] },       // ankle
     ];
 
     // ================================================================ lifecycle
@@ -458,9 +458,63 @@ export class RagdollPhysics extends ArrivalScript {
     }
 
     // ================================================================ constraints
+    //
+    // Each constraint frame is built so its axes mean what Bullet expects:
+    //   - btHingeConstraint(2-frame ctor) rotates around the frame's Z axis,
+    //     so we orient the frame so Z = anatomical hinge axis.
+    //   - btConeTwistConstraint twists around the frame's X axis, so we
+    //     orient the frame so X = bone direction (the limb's long axis).
+    //
+    // Both axes are derived purely from the rig — the bone hierarchy at
+    // activation time. We never look at character facing, world up, or any
+    // other external reference: the rigger already encoded the joint's
+    // orientation in the bone transforms.
     _createConstraints() {
         const world = this.app.systems.rigidbody.dynamicsWorld;
         if (!world) { console.warn("[Ragdoll] No dynamics world"); return; }
+
+        // Rig-only anatomical axes, derived purely from bone positions.
+        // None of this depends on getPlayerForward() or any external state.
+        //
+        //   bodyLateral = LEFT hip → RIGHT hip
+        //   bodyUp      = Hips → Head
+        //   bodyForward = bodyLateral × bodyUp   (right-handed)
+        //
+        // These give us a consistent body frame regardless of which way
+        // the avatar is facing in the world or how the rig was exported.
+        // - Knees / ankles fold around bodyLateral (sagittal-plane fold)
+        // - Elbows / wrists fold around an axis derived via bodyForward
+        //   (their fold direction is "toward the chest" = +bodyForward)
+        // - Shoulders / hips / neck use bodyUp as a natural rest direction
+        //   for the cone, decoupling them from activation pose.
+        const bodyLateral = new pc.Vec3(1, 0, 0);
+        const leftHipBody = this._bodies.find(b => b.name === "Left Upper Leg");
+        const rightHipBody = this._bodies.find(b => b.name === "Right Upper Leg");
+        if (leftHipBody && rightHipBody) {
+            const v = new pc.Vec3().sub2(
+                rightHipBody.bone.getPosition(),
+                leftHipBody.bone.getPosition()
+            );
+            if (v.lengthSq() > 1e-8) bodyLateral.copy(v).normalize();
+        }
+
+        const bodyUp = new pc.Vec3(0, 1, 0);
+        const torsoBody = this._bodies.find(b => b.name === "Body");
+        const headBody = this._bodies.find(b => b.name === "Head");
+        if (torsoBody?.bone && headBody?.bone) {
+            const v = new pc.Vec3().sub2(
+                headBody.bone.getPosition(),
+                torsoBody.bone.getPosition()
+            );
+            if (v.lengthSq() > 1e-8) bodyUp.copy(v).normalize();
+        }
+
+        const bodyForward = new pc.Vec3().cross(bodyLateral, bodyUp);
+        if (bodyForward.lengthSq() < 1e-8) bodyForward.set(0, 0, 1);
+        bodyForward.normalize();
+
+        // -bodyUp = "limbs hanging down" rest direction for shoulders/hips.
+        const bodyDown = new pc.Vec3().copy(bodyUp).mulScalar(-1);
 
         for (const def of RagdollPhysics.CONSTRAINTS) {
             const entityA = this._bodyMap[def.a];
@@ -471,45 +525,139 @@ export class RagdollPhysics extends ArrivalScript {
             const rbB = entityB.rigidbody.body;
             if (!rbA || !rbB) continue;
 
-            // Compute pivot: midpoint between the two bodies
-            // (approximation — use bone start of child body)
-            const bodyEntry = this._bodies.find(b => b.name === def.b);
-            const pivotWorld = bodyEntry.bone.getPosition();
+            const childEntry = this._bodies.find(b => b.name === def.b);
+            const parentEntry = this._bodies.find(b => b.name === def.a);
+            const pivotWorld = childEntry.bone.getPosition();
 
-            // Transform pivot into local space of each body
-            const offsetA = this._worldToLocalAmmo(entityA, pivotWorld);
-            const offsetB = this._worldToLocalAmmo(entityB, pivotWorld);
+            // Build the *world-space* rotation for each constraint frame.
+            //
+            // For hinges, the two frames are NOT the same rotation: each
+            // frame's X axis points along its own bone, and both frames
+            // share the same Z axis (the fold axis). Then Bullet's hinge
+            // angle = rotation of B's X relative to A's X around the
+            // shared Z, which equals the *current bone-to-bone bend* —
+            // and is exactly 0 when the joint is straight, regardless of
+            // the pose at activation.
+            //
+            // For cones we still use one shared rotation (twist axis =
+            // child bone direction); the cone center IS the activation
+            // pose for now.
+            let worldRotA, worldRotB;
+            if (def.type === "hinge") {
+                // Upper bone direction (parent body) at the joint.
+                const upStart = parentEntry.bone.getPosition();
+                const upEnd = (parentEntry.boneEnd || childEntry.bone).getPosition();
+                const upperDir = new pc.Vec3().sub2(upEnd, upStart);
+                if (upperDir.lengthSq() < 1e-8) upperDir.set(0, -1, 0);
+                upperDir.normalize();
 
-            // Compute constraint frame rotations so the initial pose is the
-            // rest pose (zero constraint error at start). Each frame's basis
-            // is the inverse of the body's world rotation — this maps world
-            // axes into the body's local space, making the initial relative
-            // orientation the "zero" for the constraint.
-            // Frame rotations: inverse of each body's world rotation so
-            // the initial pose is the constraint rest pose.
-            const eulerA = entityA.getRotation().clone().invert().getEulerAngles();
-            const eulerB = entityB.getRotation().clone().invert().getEulerAngles();
+                // Lower bone direction (child body) at the joint.
+                const lowStart = childEntry.bone.getPosition();
+                const lowEnd = (childEntry.boneEnd || childEntry.bone).getPosition();
+                const lowerDir = new pc.Vec3().sub2(lowEnd, lowStart);
+                if (lowerDir.lengthSq() < 1e-8) lowerDir.copy(upperDir);
+                lowerDir.normalize();
 
-            const localA = new Ammo.btTransform();
-            localA.setIdentity();
-            localA.getBasis().setEulerZYX(eulerA.x * pc.math.DEG_TO_RAD, eulerA.y * pc.math.DEG_TO_RAD, eulerA.z * pc.math.DEG_TO_RAD);
-            localA.setOrigin(offsetA);
+                // Hinge axis selection — purely rig-derived:
+                //   - Knees / ankles fold around bodyLateral. The fold
+                //     happens in the body's sagittal plane regardless of
+                //     leg orientation, and right-hand-rule rotation around
+                //     bodyLateral always moves the lower bone "backward"
+                //     (the anatomical knee fold direction).
+                //   - Elbows / wrists fold around cross(upperDir, bodyForward).
+                //     This gives the correct sign for both arms and any
+                //     pose: positive rotation around it always moves the
+                //     forearm/hand "toward the chest" (the anatomical
+                //     elbow fold direction). Verified for arms-down,
+                //     T-pose, and intermediate poses, both left and right.
+                let hingeAxis;
+                const isKnee = def.b === "Left Lower Leg" || def.b === "Right Lower Leg";
+                const isAnkle = def.b === "Left Foot" || def.b === "Right Foot";
+                const isElbow = def.b === "Left ForeArm" || def.b === "Right ForeArm";
+                const isWrist = def.b === "Left Hand" || def.b === "Right Hand";
 
-            const localB = new Ammo.btTransform();
-            localB.setIdentity();
-            localB.getBasis().setEulerZYX(eulerB.x * pc.math.DEG_TO_RAD, eulerB.y * pc.math.DEG_TO_RAD, eulerB.z * pc.math.DEG_TO_RAD);
-            localB.setOrigin(offsetB);
+                if (isKnee || isAnkle) {
+                    hingeAxis = bodyLateral.clone();
+                } else if (isElbow || isWrist) {
+                    hingeAxis = new pc.Vec3().cross(upperDir, bodyForward);
+                    if (hingeAxis.lengthSq() < 1e-4) {
+                        // Upper bone parallel to bodyForward — degenerate.
+                        // Fall back to bodyUp (perpendicular to a forward-
+                        // pointing limb) so the constraint stays valid.
+                        hingeAxis.copy(bodyUp);
+                    }
+                } else {
+                    // Unknown hinge type — use the bind pose cross product
+                    // with bone.right as a final fallback.
+                    hingeAxis = new pc.Vec3().cross(upperDir, lowerDir);
+                    if (hingeAxis.lengthSq() < 1e-4) {
+                        hingeAxis.copy(parentEntry.bone.right);
+                    }
+                }
+                hingeAxis.normalize();
+
+                // Frame A: X along upper bone, Z along hinge axis.
+                // Frame B: X along lower bone, Z along hinge axis.
+                // The angle between A.X and B.X around Z = current bend,
+                // = 0 in the bind pose, > 0 as the joint folds.
+                worldRotA = this._basisFromXZ(upperDir, hingeAxis);
+                worldRotB = this._basisFromXZ(lowerDir, hingeAxis);
+            } else {
+                // Cone twist axis selection — also rig-derived:
+                //   - Shoulders / hips: anatomical rest = limb hanging
+                //     down = bodyDown. Centering the cone here decouples
+                //     the available swing range from whatever pose the
+                //     avatar happened to be in at activation, which was
+                //     the cause of the "shoulder feels limited" issue
+                //     (the cone was sitting wherever the arm currently
+                //     was, leaving only a small swing range from there).
+                //   - Neck (Body → Head): rest = head pointing up = bodyUp.
+                //   - Anything else: fall back to the child bone direction
+                //     at activation (legacy behaviour).
+                let twistAxis;
+                if (def.b === "Left Arm" || def.b === "Right Arm" ||
+                    def.b === "Left Upper Leg" || def.b === "Right Upper Leg") {
+                    twistAxis = bodyDown.clone();
+                } else if (def.b === "Head") {
+                    twistAxis = bodyUp.clone();
+                } else {
+                    const bStart = childEntry.bone.getPosition();
+                    const bEnd = (childEntry.boneEnd || childEntry.bone).getPosition();
+                    twistAxis = new pc.Vec3().sub2(bEnd, bStart);
+                    if (twistAxis.lengthSq() < 1e-8) twistAxis.set(0, -1, 0);
+                }
+                twistAxis.normalize();
+
+                // Map +X (Bullet cone-twist axis) to the chosen rest axis.
+                worldRotA = this._quatFromUnitVectors(new pc.Vec3(1, 0, 0), twistAxis);
+                worldRotB = worldRotA;
+            }
+
+            // Express the world frames in each body's local space:
+            //   localRot = inverse(bodyWorldRot) * worldRot
+            const localRotA = new pc.Quat().mul2(entityA.getRotation().clone().invert(), worldRotA);
+            const localRotB = new pc.Quat().mul2(entityB.getRotation().clone().invert(), worldRotB);
+
+            // Local pivot positions.
+            const localPosA = new pc.Vec3();
+            const localPosB = new pc.Vec3();
+            entityA.getWorldTransform().clone().invert().transformPoint(pivotWorld, localPosA);
+            entityB.getWorldTransform().clone().invert().transformPoint(pivotWorld, localPosB);
+
+            const frameA = this._buildBtFrame(localPosA, localRotA);
+            const frameB = this._buildBtFrame(localPosB, localRotB);
 
             let constraint;
-
             if (def.type === "cone") {
-                constraint = new Ammo.btConeTwistConstraint(rbA, rbB, localA, localB);
-                const [twist, swingY, swingZ] = def.limits;
-                constraint.setLimit(3, twist * pc.math.DEG_TO_RAD);
-                constraint.setLimit(4, swingY * pc.math.DEG_TO_RAD);
-                constraint.setLimit(5, swingZ * pc.math.DEG_TO_RAD);
+                constraint = new Ammo.btConeTwistConstraint(rbA, rbB, frameA, frameB);
+                // Bullet btConeTwistConstraint::setLimit indices:
+                //   3 = swingSpan1, 4 = swingSpan2, 5 = twistSpan.
+                const [swing1, swing2, twist] = def.limits;
+                constraint.setLimit(3, swing1 * pc.math.DEG_TO_RAD);
+                constraint.setLimit(4, swing2 * pc.math.DEG_TO_RAD);
+                constraint.setLimit(5, twist * pc.math.DEG_TO_RAD);
             } else {
-                constraint = new Ammo.btHingeConstraint(rbA, rbB, localA, localB);
+                constraint = new Ammo.btHingeConstraint(rbA, rbB, frameA, frameB);
                 constraint.setLimit(
                     def.limits[0] * pc.math.DEG_TO_RAD,
                     def.limits[1] * pc.math.DEG_TO_RAD,
@@ -520,19 +668,62 @@ export class RagdollPhysics extends ArrivalScript {
             world.addConstraint(constraint, true); // disable collision between linked bodies
             this._constraints.push(constraint);
 
-            // Clean up Ammo temporaries
-            Ammo.destroy(offsetA);
-            Ammo.destroy(offsetB);
-            Ammo.destroy(localA);
-            Ammo.destroy(localB);
+            Ammo.destroy(frameA);
+            Ammo.destroy(frameB);
         }
     }
 
-    _worldToLocalAmmo(entity, worldPos) {
-        const local = new pc.Vec3();
-        const invWorld = entity.getWorldTransform().clone().invert();
-        invWorld.transformPoint(worldPos, local);
-        return new Ammo.btVector3(local.x, local.y, local.z);
+    // Build a quaternion representing an orthonormal basis whose X axis
+    // is `xAxis` and whose Z axis is `zAxis`. Y is `Z × X` (right-handed).
+    // If `xAxis` and `zAxis` aren't already perpendicular, `xAxis` is
+    // re-projected to be orthogonal to `zAxis`.
+    _basisFromXZ(xAxis, zAxis) {
+        const z = zAxis.clone().normalize();
+        const x = xAxis.clone();
+        const d = x.dot(z);
+        if (Math.abs(d) > 1e-6) {
+            // Project x perpendicular to z.
+            x.sub(new pc.Vec3().copy(z).mulScalar(d));
+        }
+        x.normalize();
+        const y = new pc.Vec3().cross(z, x);
+
+        const m = new pc.Mat4();
+        m.setIdentity();
+        const data = m.data;
+        // Column-major: column 0 = X, column 1 = Y, column 2 = Z.
+        data[0] = x.x; data[1] = x.y; data[2] = x.z;
+        data[4] = y.x; data[5] = y.y; data[6] = y.z;
+        data[8] = z.x; data[9] = z.y; data[10] = z.z;
+        return new pc.Quat().setFromMat4(m);
+    }
+
+    // Quaternion that rotates `from` (unit) to `to` (unit).
+    _quatFromUnitVectors(from, to) {
+        const d = from.dot(to);
+        if (d < -0.999999) {
+            // 180° rotation — pick any axis perpendicular to `from`.
+            const axis = Math.abs(from.x) > 0.9
+                ? new pc.Vec3(0, 1, 0)
+                : new pc.Vec3(1, 0, 0);
+            return new pc.Quat().setFromAxisAngle(axis, 180);
+        }
+        const c = new pc.Vec3().cross(from, to);
+        return new pc.Quat(c.x, c.y, c.z, 1 + d).normalize();
+    }
+
+    // Allocate an Ammo.btTransform from a PlayCanvas position + quaternion.
+    // Caller is responsible for Ammo.destroy()ing the result after use.
+    _buildBtFrame(localPos, localRot) {
+        const t = new Ammo.btTransform();
+        t.setIdentity();
+        const q = new Ammo.btQuaternion(localRot.x, localRot.y, localRot.z, localRot.w);
+        t.setRotation(q);
+        Ammo.destroy(q);
+        const v = new Ammo.btVector3(localPos.x, localPos.y, localPos.z);
+        t.setOrigin(v);
+        Ammo.destroy(v);
+        return t;
     }
 
     // ================================================================ ground
