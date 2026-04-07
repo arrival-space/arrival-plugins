@@ -516,6 +516,29 @@ Get the player's avatar mesh entity (`ReadyPlayerMe`) which has the `anim` compo
 
 **Returns:** `pc.Entity | null`
 
+#### `ArrivalSpace.getMoveInput()`
+
+Get the local player's current movement input intent. Works on desktop (W/S/A/D, arrow keys) and mobile (virtual joystick) — sourced from the same input pipeline the character controller uses, so plugins do not need to poll the keyboard or `getLeftStick()` separately.
+
+Also available as `this.getMoveInput()` on plugin instances.
+
+**Returns:** `{ forward: number, strafe: number, jump: boolean }`
+
+| Field | Range | Meaning |
+|-------|-------|---------|
+| `forward` | `-1..+1` | `> 0` = forward (W / up / joystick up), `< 0` = back (S / down / joystick down) |
+| `strafe` | `-1..+1` | `> 0` = right (D / joystick right), `< 0` = left (A / joystick left) |
+| `jump` | `boolean` | `true` while the jump action is held |
+
+```javascript
+update(dt) {
+    const move = this.getMoveInput();
+    if (move.forward > 0.1) {
+        // Player wants to walk forward — react however you like.
+    }
+}
+```
+
 #### `ArrivalSpace.setPhysicsStepRate(stepHz, maxSubSteps?)`
 
 Set the global physics simulation step rate for the current world.

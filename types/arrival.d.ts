@@ -235,6 +235,12 @@ declare class ArrivalScript extends pc.Script {
 
     /** Return the current effective post-effect parameters. */
     getPostEffects(): ArrivalSpace.PostEffectsParams | null;
+
+    /**
+     * Get the local player's current movement input intent.
+     * Works on desktop (W/S/A/D, arrows) and mobile (virtual joystick).
+     */
+    getMoveInput(): ArrivalSpace.MoveInput;
 }
 
 /**
@@ -680,6 +686,25 @@ declare namespace ArrivalSpace {
      * const pos = player?.getPosition();
      */
     function getPlayer(): pc.Entity | null;
+
+    /** Local player movement input intent (from keyboard, joystick, or gamepad). */
+    interface MoveInput {
+        /** -1..+1. > 0 = forward (W / up / joystick up), < 0 = back. */
+        forward: number;
+        /** -1..+1. > 0 = right (D / joystick right), < 0 = left. */
+        strafe: number;
+        /** True while the jump action is held. */
+        jump: boolean;
+    }
+
+    /**
+     * Get the local player's current movement input intent.
+     * Works on desktop (W/S/A/D, arrows) and mobile (virtual joystick).
+     * @example
+     * const move = ArrivalSpace.getMoveInput();
+     * if (move.forward > 0.1) { ... }
+     */
+    function getMoveInput(): MoveInput;
 
     /**
      * Get camera entity
