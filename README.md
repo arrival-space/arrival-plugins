@@ -79,6 +79,7 @@ See [Multiplayer Documentation](docs/multiplayer.md) for details.
 | [Outfit Override](examples/outfit-override.mjs) | Temporarily override avatar outfit parts |
 | [Physics Box](examples/physics-box.mjs) | Basic rigidbody/collision example |
 | [Post Process Volume](examples/post-process-volume.mjs) | Local post-effects blend volume |
+| [Ragdoll Physics](examples/ragdoll-physics.mjs) | Procedural avatar ragdoll: bone-derived capsule bodies, cone/hinge constraints, impact-triggered activation, and head-tracked camera follow |
 | [Scavenger Hunt](examples/scavenger-hunt.mjs) | Controller that discovers Scavenger Item entities, tracks collection via proximity, and shows progress/finish HUD |
 | [Scavenger Item](examples/scavenger-item.mjs) | Collectible marker with gizmo-positionable placement, default visual or custom GLB, used with Scavenger Hunt |
 | [Shooter HUD](examples/shooter-hud.mjs) | Game-style HUD overlay example |

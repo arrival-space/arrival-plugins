@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "updated_at": "2026-03-12",
+  "updated_at": "2026-04-07",
   "source": "curated",
-  "total_entries": 36,
+  "total_entries": 37,
   "entries": [
     {
       "path": "README.md",
@@ -197,6 +197,14 @@
       "summary": "Local post-effects blend volume that smoothly overrides room post-processing as the player moves through space.",
       "script_name": "PostProcessVolume",
       "keywords": ["post process", "post-processing", "volume", "bloom", "contrast", "brightness", "local effect"]
+    },
+    {
+      "path": "examples/ragdoll-physics.mjs",
+      "kind": "example",
+      "title": "Ragdoll Physics",
+      "summary": "Procedural avatar ragdoll: builds capsule rigid bodies and cone/hinge constraints from the player skeleton (RPM/Mixamo/VRM), auto-activates on velocity-delta impact with separate horizontal/vertical thresholds, transfers pre-impact velocity to bones, and tracks the head with the player capsule so the camera follows the fall.",
+      "script_name": "Ragdoll Physics",
+      "keywords": ["ragdoll", "physics", "ammo", "constraints", "cone twist", "hinge", "capsule bodies", "skeleton", "bones", "impact", "velocity delta", "wake on move", "rpm", "mixamo", "vrm"]
     },
     {
       "path": "examples/simple-chat.mjs",
