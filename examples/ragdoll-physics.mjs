@@ -12,6 +12,7 @@ export class RagdollPhysics extends ArrivalScript {
 
     ragdollEnabled = true;
     activateKey = "r";
+    wakeOnMove = true;
     bodyMass = 1;
     limbMass = 2;
     groundFriction = 1;
@@ -23,6 +24,7 @@ export class RagdollPhysics extends ArrivalScript {
     static properties = {
         ragdollEnabled: { title: "Ragdoll Enabled" },
         activateKey: { title: "Activate Key" },
+        wakeOnMove: { title: "Wake On Move" },
         bodyMass: { title: "Torso Mass", min: 1, max: 50, step: 0.5 },
         limbMass: { title: "Limb Mass", min: 0.5, max: 20, step: 0.5 },
         groundFriction: { title: "Friction", min: 0, max: 2, step: 0.05 },
@@ -126,6 +128,15 @@ export class RagdollPhysics extends ArrivalScript {
             if (this.ragdollEnabled && !this._active) this.activate();
             else if (!this.ragdollEnabled && this._active) this.deactivate();
         }
+    }
+
+    update(dt) {
+        if (!this._active || !this.wakeOnMove) return;
+        // Wake the ragdoll when the user tries to move forward.
+        const fwd = this.getMoveInput
+            ? this.getMoveInput().forward > 0.1
+            : this.app.keyboard.isPressed(pc.KEY_W); // TODO: remove fallback once getMoveInput ships
+        if (fwd) this.deactivate();
     }
 
     postUpdate(dt) {
