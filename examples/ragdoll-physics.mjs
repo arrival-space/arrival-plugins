@@ -13,6 +13,10 @@ export class RagdollPhysics extends ArrivalScript {
     ragdollEnabled = true;
     activateKey = "r";
     wakeOnMove = false;
+    impactActivation = true;
+    horizontalImpact = 4.0;
+    verticalImpact = 5.0;
+    minActiveTime = 2.0;
     bodyMass = 1;
     limbMass = 2;
     groundFriction = 0.75;
@@ -25,6 +29,10 @@ export class RagdollPhysics extends ArrivalScript {
         ragdollEnabled: { title: "Ragdoll Enabled" },
         activateKey: { title: "Activate Key" },
         wakeOnMove: { title: "Wake On Move" },
+        impactActivation: { title: "Activate On Impact" },
+        horizontalImpact: { title: "Horizontal Impact (m/s)", min: 0, max: 20, step: 0.1 },
+        verticalImpact: { title: "Vertical Impact (m/s)", min: 0, max: 20, step: 0.1 },
+        minActiveTime: { title: "Min Active Time (s)", min: 0, max: 10, step: 0.1 },
         bodyMass: { title: "Torso Mass", min: 1, max: 50, step: 0.5 },
         limbMass: { title: "Limb Mass", min: 0.5, max: 20, step: 0.5 },
         groundFriction: { title: "Friction", min: 0, max: 2, step: 0.05 },
@@ -42,6 +50,9 @@ export class RagdollPhysics extends ArrivalScript {
     _animWasPlaying = false;
     _playerMesh = null;
     _groundEntity = null;
+    _lastVelocity = null;     // player velocity sampled the previous frame
+    _activatedAt = 0;         // ms timestamp of last activation; gates wakeOnMove
+    _playerToHeadOffset = null; // (headY - playerY) captured at activation
 
     // --------------------------------------------------- bone naming variants
     static BONE_PREFIXES = ["", "mixamorig:", "mixamorig", "J_Bip_C_", "J_Bip_L_", "J_Bip_R_"];
@@ -113,6 +124,7 @@ export class RagdollPhysics extends ArrivalScript {
 
     // ================================================================ lifecycle
     initialize() {
+        this.setPhysicsStepRate(120);
         this._onKeyDown = (e) => {
             const key = this.activateKey && pc[`KEY_${this.activateKey.toUpperCase()}`];
             if (key && e.key === key) {
@@ -131,7 +143,51 @@ export class RagdollPhysics extends ArrivalScript {
     }
 
     update(dt) {
+        // Per-frame velocity-delta impact detection. We compare the player's
+        // current linear velocity to the previous frame's. The *change* in
+        // velocity (Δv, in m/s) is what matters:
+        //
+        //   - Standing still ........... Δv = 0
+        //   - Constant-speed riding .... Δv = 0  (player matches vehicle, so the
+        //                                         vehicle reference frame cancels
+        //                                         out — no need for collision-
+        //                                         event-based relative-velocity
+        //                                         math)
+        //   - Hard landing / wall slam . Δv = large spike
+        //
+        // Δv (not Δv/dt) is framerate-independent: a 5 m/s impact reads as
+        // 5 m/s no matter how long the frame took.
+        if (!this._active && this.impactActivation) {
+            const player = ArrivalSpace.getPlayer?.();
+            const v = player?.rigidbody?.linearVelocity;
+            if (v) {
+                if (this._lastVelocity) {
+                    const dvx = v.x - this._lastVelocity.x;
+                    const dvy = v.y - this._lastVelocity.y;
+                    const dvz = v.z - this._lastVelocity.z;
+                    const vert = Math.abs(dvy);
+                    const horiz = Math.sqrt(dvx * dvx + dvz * dvz);
+                    if (vert > this.verticalImpact || horiz > this.horizontalImpact) {
+                        console.log(
+                            `[Ragdoll] Impact: Δv vert=${vert.toFixed(2)} m/s, ` +
+                            `horiz=${horiz.toFixed(2)} m/s ` +
+                            `(thresholds ${this.verticalImpact}/${this.horizontalImpact})`
+                        );
+                        this.activate();
+                    }
+                }
+                if (!this._lastVelocity) this._lastVelocity = v.clone();
+                else this._lastVelocity.copy(v);
+            } else {
+                this._lastVelocity = null;
+            }
+        }
+
         if (!this._active || !this.wakeOnMove) return;
+        // Block wakeOnMove until the ragdoll has been active for at least
+        // minActiveTime — gives the body time to actually fall and land
+        // before the user can shake it off by tapping forward.
+        if (Date.now() - this._activatedAt < this.minActiveTime * 1000) return;
         // Wake the ragdoll when the user tries to move forward.
         const fwd = this.getMoveInput
             ? this.getMoveInput().forward > 0.1
@@ -142,7 +198,38 @@ export class RagdollPhysics extends ArrivalScript {
     postUpdate(dt) {
         if (!this._active) return;
         if (this._animComponent) this._animComponent.enabled = false;
+        // Move the player capsule first so the camera (which follows the
+        // player entity) tracks the ragdoll. Bone poses are written *after*
+        // moving the parent, otherwise their world positions would shift
+        // when the parent transform changes.
+        this._followRagdoll();
         this._writeBonePoses();
+    }
+
+    _followRagdoll() {
+        if (!this._player || this._player._destroyed) return;
+        const torso = this._bodyMap?.["Body"];
+        const headBody = this._bodyMap?.["Head"];
+        if (!torso || torso._destroyed || !headBody || headBody._destroyed) return;
+        if (this._playerToHeadOffset == null) return;
+
+        // Use the head body's "Bone" child (which holds the actual head bone
+        // position the body will write back this frame) so currentHeadY isn't
+        // one frame stale.
+        const headRef = headBody.findByName("Bone") || headBody;
+        const currentHeadY = headRef.getPosition().y;
+
+        // Cap: don't let the head reference dip below the player's current Y.
+        // The player Y already represents the local ground beneath the
+        // ragdoll (it's been tracking head − offset from previous frames),
+        // so this stops the camera from sinking under the body in degenerate
+        // poses without needing an explicit feet lookup.
+        const effectiveHeadY = Math.max(currentHeadY, this._player.getPosition().y);
+
+        // X/Z: torso center.
+        // Y:   effectiveHeadY - constant offset.
+        const tp = torso.getPosition();
+        this._player.setPosition(tp.x, effectiveHeadY - this._playerToHeadOffset, tp.z);
     }
 
     destroy() {
@@ -169,8 +256,23 @@ export class RagdollPhysics extends ArrivalScript {
         const bones = this._resolveBones(skeleton);
         if (!bones) { console.warn("[Ragdoll] Could not resolve bones"); return; }
 
-        // Capture player velocity before disabling rigidbody
-        const playerVelocity = player.rigidbody?.linearVelocity?.clone() || pc.Vec3.ZERO;
+        // Capture the (head − player) Y offset at activation time. This is
+        // the camera-rig offset built into the scene (player.y is at the
+        // capsule base, camera pivot is some constant distance above). We
+        // use it in _followRagdoll() to set player.y = currentHeadY − offset
+        // every frame, which keeps the camera framed on the head no matter
+        // where the ragdoll ends up — including down slopes, where a
+        // "lowestY"-based scheme would drift because the ground level
+        // beneath the ragdoll is different from the ground at trigger.
+        this._playerToHeadOffset = bones.Head.getPosition().y - player.getPosition().y;
+
+        // Capture player velocity before disabling rigidbody.
+        // Prefer the *previous* frame's velocity (sampled by impact detection)
+        // because by the time activate() runs after a crash, the solver has
+        // already clamped linearVelocity down — the bones would inherit ~0
+        // instead of the actual incoming velocity.
+        const playerVelocity = (this._lastVelocity && this._lastVelocity.clone()) ||
+            player.rigidbody?.linearVelocity?.clone() || pc.Vec3.ZERO;
 
         // Disable player collision so ragdoll bodies don't collide with it
         this._player = player;
@@ -230,6 +332,7 @@ export class RagdollPhysics extends ArrivalScript {
 
         this._active = true;
         this.ragdollEnabled = true;
+        this._activatedAt = Date.now();
         console.log("[Ragdoll] Activated");
     }
 
@@ -278,6 +381,8 @@ export class RagdollPhysics extends ArrivalScript {
 
         this._active = false;
         this.ragdollEnabled = false;
+        this._lastVelocity = null;
+        this._playerToHeadOffset = null;
         console.log("[Ragdoll] Deactivated");
     }
 
