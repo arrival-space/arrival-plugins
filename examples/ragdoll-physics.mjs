@@ -24,6 +24,7 @@ export class RagdollPhysics extends ArrivalScript {
     angularDamping = 0.75;
     debugKinematic = false;
     debugGround = false;
+    debugImpactGraph = false;
 
     static properties = {
         ragdollEnabled: { title: "Ragdoll Enabled" },
@@ -40,6 +41,7 @@ export class RagdollPhysics extends ArrivalScript {
         angularDamping: { title: "Angular Damping", min: 0, max: 1, step: 0.05 },
         debugKinematic: { title: "Debug Kinematic" },
         debugGround: { title: "Debug Ground Plane" },
+        debugImpactGraph: { title: "Debug Impact Graph" },
     };
 
     // ------------------------------------------------------------------ state
@@ -53,6 +55,10 @@ export class RagdollPhysics extends ArrivalScript {
     _lastVelocity = null;     // player velocity sampled the previous frame
     _activatedAt = 0;         // ms timestamp of last activation; gates wakeOnMove
     _playerToHeadOffset = null; // (headY - playerY) captured at activation
+    _graphCanvas = null;
+    _graphCtx = null;
+    _graphSamplesVert = [];
+    _graphSamplesHoriz = [];
 
     // --------------------------------------------------- bone naming variants
     static BONE_PREFIXES = ["", "mixamorig:", "mixamorig", "J_Bip_C_", "J_Bip_L_", "J_Bip_R_"];
@@ -140,6 +146,10 @@ export class RagdollPhysics extends ArrivalScript {
             if (this.ragdollEnabled && !this._active) this.activate();
             else if (!this.ragdollEnabled && this._active) this.deactivate();
         }
+        if (name === "debugImpactGraph") {
+            if (this.debugImpactGraph) this._createGraph();
+            else this._destroyGraph();
+        }
     }
 
     update(dt) {
@@ -160,22 +170,27 @@ export class RagdollPhysics extends ArrivalScript {
         if (!this._active && this.impactActivation) {
             const player = ArrivalSpace.getPlayer?.();
             const v = player?.rigidbody?.linearVelocity;
+            const jumped = ArrivalSpace.getMoveInput?.()?.jump;
+
             if (v) {
-                if (this._lastVelocity) {
+                if (this._lastVelocity && !jumped) {
                     const dvx = v.x - this._lastVelocity.x;
                     const dvy = v.y - this._lastVelocity.y;
                     const dvz = v.z - this._lastVelocity.z;
                     const vert = Math.abs(dvy);
                     const horiz = Math.sqrt(dvx * dvx + dvz * dvz);
+                    this._pushGraphSample(vert, horiz);
                     if (vert > this.verticalImpact || horiz > this.horizontalImpact) {
                         console.log(
                             `[Ragdoll] Impact: Δv vert=${vert.toFixed(2)} m/s, ` +
                             `horiz=${horiz.toFixed(2)} m/s ` +
-                            `(thresholds ${this.verticalImpact}/${this.horizontalImpact})`
+                            `(thresholds ${this.verticalImpact}/${this.horizontalImpact})` + 
+                            (jumped ? " [jump]" : "")
                         );
                         this.activate();
                     }
                 }
+
                 if (!this._lastVelocity) this._lastVelocity = v.clone();
                 else this._lastVelocity.copy(v);
             } else {
@@ -219,21 +234,15 @@ export class RagdollPhysics extends ArrivalScript {
         const headRef = headBody.findByName("Bone") || headBody;
         const currentHeadY = headRef.getPosition().y;
 
-        // Cap: don't let the head reference dip below the player's current Y.
-        // The player Y already represents the local ground beneath the
-        // ragdoll (it's been tracking head − offset from previous frames),
-        // so this stops the camera from sinking under the body in degenerate
-        // poses without needing an explicit feet lookup.
-        const effectiveHeadY = Math.max(currentHeadY, this._player.getPosition().y);
-
         // X/Z: torso center.
         // Y:   effectiveHeadY - constant offset.
         const tp = torso.getPosition();
-        this._player.setPosition(tp.x, effectiveHeadY - this._playerToHeadOffset, tp.z);
+        this._player.setPosition(tp.x, currentHeadY - this._playerToHeadOffset, tp.z);
     }
 
     destroy() {
         if (this._active) this.deactivate();
+        this._destroyGraph();
         if (this._onKeyDown) {
             this.app.keyboard.off(pc.EVENT_KEYDOWN, this._onKeyDown, this);
         }
@@ -310,7 +319,7 @@ export class RagdollPhysics extends ArrivalScript {
         }
 
         // Log bone hierarchy for debugging
-        this._logBoneStructure(bones);
+        //this._logBoneStructure(bones);
 
         // Create physics bodies
         this._createBodies(bones);
@@ -323,7 +332,7 @@ export class RagdollPhysics extends ArrivalScript {
         }
 
         // Log body placement
-        this._logBodyPlacement();
+        //this._logBodyPlacement();
 
         // Create constraints
         this._createConstraints();
@@ -333,7 +342,23 @@ export class RagdollPhysics extends ArrivalScript {
         this._active = true;
         this.ragdollEnabled = true;
         this._activatedAt = Date.now();
-        console.log("[Ragdoll] Activated");
+
+        ArrivalSpace.fire("ragdoll:activated", { player: this._player });
+
+        // hack to detach skateboard
+        const attachedEntity = ArrivalSpace.getLocalAttachedEntity();
+        if (attachedEntity?.rigidbody) {
+            const pos = attachedEntity.getPosition();
+            const rot = attachedEntity.getRotation();
+            // Flip it upside-down — the skateboard's own update() will call _dismount()
+            attachedEntity.rigidbody.teleport(
+                pos.x, pos.y, pos.z,
+                rot.x+180, rot.y, rot.z
+            );
+        }
+
+        console.log("[Ragdoll] Activated", this._playerToHeadOffset);
+
     }
 
     deactivate() {
@@ -384,6 +409,139 @@ export class RagdollPhysics extends ArrivalScript {
         this._lastVelocity = null;
         this._playerToHeadOffset = null;
         console.log("[Ragdoll] Deactivated");
+    }
+
+    // ============================================== impact graph overlay
+    static GRAPH_WIDTH = 300;
+    static GRAPH_HEIGHT = 120;
+    static GRAPH_MAX_SAMPLES = 300; // one per column pixel
+
+    _createGraph() {
+        if (this._graphCanvas) return;
+        const canvas = document.createElement("canvas");
+        canvas.width = RagdollPhysics.GRAPH_WIDTH;
+        canvas.height = RagdollPhysics.GRAPH_HEIGHT;
+        Object.assign(canvas.style, {
+            position: "fixed",
+            bottom: "12px",
+            left: "12px",
+            zIndex: "99999",
+            pointerEvents: "none",
+            borderRadius: "6px",
+            imageRendering: "pixelated",
+        });
+        document.body.appendChild(canvas);
+        this._graphCanvas = canvas;
+        this._graphCtx = canvas.getContext("2d");
+        this._graphSamplesVert = [];
+        this._graphSamplesHoriz = [];
+    }
+
+    _destroyGraph() {
+        if (this._graphCanvas) {
+            this._graphCanvas.remove();
+            this._graphCanvas = null;
+            this._graphCtx = null;
+        }
+        this._graphSamplesVert = [];
+        this._graphSamplesHoriz = [];
+    }
+
+    _pushGraphSample(vert, horiz) {
+        if (!this.debugImpactGraph) return;
+        if (!this._graphCanvas) this._createGraph();
+        const max = RagdollPhysics.GRAPH_MAX_SAMPLES;
+        this._graphSamplesVert.push(vert);
+        this._graphSamplesHoriz.push(horiz);
+        if (this._graphSamplesVert.length > max) this._graphSamplesVert.shift();
+        if (this._graphSamplesHoriz.length > max) this._graphSamplesHoriz.shift();
+        this._drawGraph();
+    }
+
+    _drawGraph() {
+        const ctx = this._graphCtx;
+        if (!ctx) return;
+        const W = RagdollPhysics.GRAPH_WIDTH;
+        const H = RagdollPhysics.GRAPH_HEIGHT;
+        const pad = 2;
+        const graphH = H - pad * 2;
+
+        // Auto-scale: fit the larger of thresholds or peak values
+        const peakVert = Math.max(...this._graphSamplesVert, this.verticalImpact);
+        const peakHoriz = Math.max(...this._graphSamplesHoriz, this.horizontalImpact);
+        const maxVal = Math.max(peakVert, peakHoriz, 1) * 1.15; // 15% headroom
+
+        const yForVal = (v) => H - pad - (v / maxVal) * graphH;
+
+        // Background
+        ctx.clearRect(0, 0, W, H);
+        ctx.fillStyle = "rgba(0, 0, 0, 0.75)";
+        ctx.beginPath();
+        ctx.roundRect(0, 0, W, H, 6);
+        ctx.fill();
+
+        // Zero line
+        const y0 = yForVal(0);
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.2)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(0, y0);
+        ctx.lineTo(W, y0);
+        ctx.stroke();
+
+        // Threshold lines
+        this._drawThresholdLine(ctx, W, yForVal, this.verticalImpact, "#ff6b6b");
+        this._drawThresholdLine(ctx, W, yForVal, this.horizontalImpact, "#4ecdc4");
+
+        // Draw samples — right-aligned so newest is at the right edge
+        const samplesV = this._graphSamplesVert;
+        const samplesH = this._graphSamplesHoriz;
+        const count = samplesV.length;
+        const startX = W - count; // 1px per sample from the right
+
+        // Horiz line (draw first, behind vert)
+        this._drawLine(ctx, samplesH, startX, yForVal, "#4ecdc4");
+        // Vert line
+        this._drawLine(ctx, samplesV, startX, yForVal, "#ff6b6b");
+
+        // Current value labels
+        const lastV = samplesV.length ? samplesV[samplesV.length - 1] : 0;
+        const lastH = samplesH.length ? samplesH[samplesH.length - 1] : 0;
+        ctx.font = "bold 10px monospace";
+        ctx.fillStyle = "#ff6b6b";
+        ctx.fillText(`vert  ${lastV.toFixed(2)}`, 6, 13);
+        ctx.fillStyle = "#4ecdc4";
+        ctx.fillText(`horiz ${lastH.toFixed(2)}`, 6, 25);
+        ctx.fillStyle = "rgba(255,255,255,0.4)";
+        ctx.fillText(`max ${maxVal.toFixed(1)}`, W - 62, 13);
+    }
+
+    _drawLine(ctx, samples, startX, yForVal, color) {
+        if (samples.length < 2) return;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        for (let i = 0; i < samples.length; i++) {
+            const x = startX + i;
+            const y = yForVal(samples[i]);
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+    }
+
+    _drawThresholdLine(ctx, W, yForVal, value, color) {
+        const y = yForVal(value);
+        ctx.save();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+        ctx.globalAlpha = 0.5;
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(W, y);
+        ctx.stroke();
+        ctx.restore();
     }
 
     // ================================================================ debug
