@@ -988,9 +988,182 @@ Get public URL for plugin file.
 
 ---
 
+### User Data Store (`ArrivalSpace.userData`)
+
+Per-user persistent key-value storage that works **across spaces**. Data is
+scoped by a `namespace` string — typically the plugin author's own space ID.
+Only code that knows the namespace can read/write the data.
+
+Reuses the same database table as `pluginStore`.
+
+#### `ArrivalSpace.userData.set(namespace, key, value)`
+
+Store a value for the current user. Objects/arrays are auto-JSON-stringified.
+
+| Param | Type | Description |
+|---|---|---|
+| `namespace` | `string` | Access key (e.g. your space ID). Max 64 chars. |
+| `key` | `string` | Data key (e.g. `"inventory"`). Max 64 chars. |
+| `value` | `any` | Any JSON-serialisable value. Max 1024 chars after stringification. |
+
+**Returns:** `Promise<boolean>`
+
+```javascript
+const NS = "45637586_1234"; // your space ID = your namespace
+await ArrivalSpace.userData.set(NS, 'inventory', { items: ['sword', 'shield'], gold: 100 });
+await ArrivalSpace.userData.set(NS, 'prefs', { theme: 'dark' });
+```
+
+#### `ArrivalSpace.userData.get(namespace, key, options?)`
+
+Read a value. Auto-parses JSON by default.
+
+| Param | Type | Description |
+|---|---|---|
+| `namespace` | `string` | Access key |
+| `key` | `string` | Data key |
+| `options.userId` | `string?` | Read another user's data |
+| `options.raw` | `boolean?` | Return raw string instead of parsing JSON |
+
+**Returns:** `Promise<any | null | false>` — parsed value, `null` if not found, `false` on error.
+
+```javascript
+const inv = await ArrivalSpace.userData.get(NS, 'inventory');
+console.log(inv.items); // ['sword', 'shield']
+
+// Read another user's data
+const other = await ArrivalSpace.userData.get(NS, 'inventory', { userId: '12345678' });
+```
+
+#### `ArrivalSpace.userData.delete(namespace, key)`
+
+Delete a key for the current user.
+
+**Returns:** `Promise<boolean>`
+
+#### `ArrivalSpace.userData.keys(namespace, options?)`
+
+List keys for the current user (or another user).
+
+| Param | Type | Description |
+|---|---|---|
+| `namespace` | `string` | Access key |
+| `options.prefix` | `string?` | Filter keys starting with this prefix |
+| `options.userId` | `string?` | List another user's keys |
+| `options.limit` | `number?` | Max keys (default 100) |
+
+**Returns:** `Promise<string[] | false>`
+
+```javascript
+const keys = await ArrivalSpace.userData.keys(NS);
+// → ['inventory', 'prefs']
+
+const invKeys = await ArrivalSpace.userData.keys(NS, { prefix: 'inv/' });
+```
+
+---
+
 ### Multiplayer
 
 See `docs/multiplayer.md` for `attribute()` and `ArrivalSpace.net`.
+
+---
+
+### XR / Passthrough (`ArrivalSpace.xr`)
+
+Control WebXR sessions (VR and AR passthrough) from plugins.
+
+#### `ArrivalSpace.xr.getState()`
+
+Returns the current XR state.
+
+```javascript
+const state = ArrivalSpace.xr.getState();
+// → { supported: true, active: false, mode: null, passthrough: false,
+//     availableVR: true, availableAR: true }
+```
+
+| Property      | Type                      | Description                                       |
+|---------------|---------------------------|---------------------------------------------------|
+| `supported`   | `boolean`                 | Whether WebXR is supported by the browser          |
+| `active`      | `boolean`                 | Whether an XR session is currently running         |
+| `mode`        | `"vr"` \| `"ar"` \| `null` | The active session mode, or `null` if inactive   |
+| `passthrough` | `boolean`                 | `true` when in AR passthrough mode                 |
+| `availableVR` | `boolean`                 | Whether `immersive-vr` is available on this device |
+| `availableAR` | `boolean`                 | Whether `immersive-ar` is available on this device |
+
+#### `ArrivalSpace.xr.active`
+
+Read-only boolean — `true` when any XR session is running.
+
+#### `ArrivalSpace.xr.isAvailable(mode)`
+
+Check whether a mode is available before entering.
+
+```javascript
+if (ArrivalSpace.xr.isAvailable("ar")) {
+    console.log("Passthrough AR is supported on this device");
+}
+```
+
+| Param  | Type             | Description             |
+|--------|------------------|-------------------------|
+| `mode` | `"vr"` \| `"ar"` | The mode to check for  |
+
+Returns `boolean`.
+
+#### `ArrivalSpace.xr.enter(options?)`
+
+Enter an XR session. Returns a promise.
+
+```javascript
+// Enter AR passthrough (Quest 3)
+const result = await ArrivalSpace.xr.enter({ mode: "ar" });
+
+// Enter VR
+const result = await ArrivalSpace.xr.enter({ mode: "vr" });
+
+// AR without automatic passthrough rendering (manual control)
+const result = await ArrivalSpace.xr.enter({ mode: "ar", passthrough: false });
+```
+
+| Option        | Type      | Default           | Description                                                    |
+|---------------|-----------|-------------------|----------------------------------------------------------------|
+| `mode`        | `string`  | `"vr"`            | `"vr"` for immersive-vr, `"ar"` for immersive-ar passthrough  |
+| `passthrough` | `boolean` | `true`            | When `true` (AR only): hides skybox and clears to transparent  |
+| `spaceType`   | `string`  | mode-dependent    | Override XR reference-space. Defaults: AR → `"local-floor"`, VR → `"local"` |
+
+Returns `Promise<{ success: boolean, error?: string }>`.
+
+When `passthrough` is `true` (the default for AR), the plugin API automatically:
+- Sets the camera clear colour to transparent `(0, 0, 0, 0)`
+- Hides the skybox (scales to zero)
+- Restores both on session end
+
+#### `ArrivalSpace.xr.exit()`
+
+End the current XR session.
+
+```javascript
+await ArrivalSpace.xr.exit();
+```
+
+Returns `Promise<{ success: boolean, error?: string }>`.
+
+#### `ArrivalSpace.xr.onStateChange(callback)`
+
+Listen for XR session start and end events.
+
+```javascript
+const unsub = ArrivalSpace.xr.onStateChange((state) => {
+    console.log("XR state changed:", state.active, state.mode);
+});
+
+// Later: stop listening
+unsub();
+```
+
+The callback receives the same state object as `getState()`. Returns an unsubscribe function.
 
 ---
 

@@ -1015,6 +1015,62 @@ declare namespace ArrivalSpace {
         function delete(key: string, options?: PluginStoreDeleteOptions): Promise<boolean>;
     }
 
+    /**
+     * Per-user persistent key-value storage, accessible across spaces.
+     * Data is scoped by `namespace` (typically the plugin author's space ID).
+     * Only code that knows the namespace can read/write the data.
+     *
+     * @example
+     * const NS = "45637586_1234"; // your space ID = your namespace
+     *
+     * // Save
+     * await ArrivalSpace.userData.set(NS, 'inventory', { items: ['sword'], gold: 100 });
+     *
+     * // Load (auto-parses JSON)
+     * const inv = await ArrivalSpace.userData.get(NS, 'inventory');
+     *
+     * // List keys
+     * const keys = await ArrivalSpace.userData.keys(NS, { prefix: 'inv/' });
+     *
+     * // Read another user's data
+     * const other = await ArrivalSpace.userData.get(NS, 'inventory', { userId: '12345678' });
+     */
+    namespace userData {
+        /**
+         * Store a value for the current user. Objects/arrays are auto-JSON-stringified.
+         * @param namespace - Access key / namespace (e.g. your space ID)
+         * @param key - Data key (max 64 chars)
+         * @param value - Any JSON-serialisable value
+         * @returns true on success, false on error
+         */
+        function set(namespace: string, key: string, value: any): Promise<boolean>;
+
+        /**
+         * Read a value. Returns the parsed value, null if not found, or false on error.
+         * @param namespace - Access key / namespace
+         * @param key - Data key
+         * @param options.userId - Read another user's data
+         * @param options.raw - Return raw string instead of auto-parsing JSON
+         */
+        function get(namespace: string, key: string, options?: { userId?: string; raw?: boolean }): Promise<any | null | false>;
+
+        /**
+         * Delete a key for the current user.
+         * @param namespace - Access key / namespace
+         * @param key - Data key
+         */
+        function delete(namespace: string, key: string): Promise<boolean>;
+
+        /**
+         * List keys for the current user (or another user).
+         * @param namespace - Access key / namespace
+         * @param options.prefix - Filter keys by prefix
+         * @param options.userId - List another user's keys
+         * @param options.limit - Max keys to return (default 100)
+         */
+        function keys(namespace: string, options?: { prefix?: string; userId?: string; limit?: number }): Promise<string[] | false>;
+    }
+
     // ═══════════════════════════════════════════════════════════════════════════
     // MULTIPLAYER / NETWORK API
     // ═══════════════════════════════════════════════════════════════════════════
