@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "updated_at": "2026-04-07",
+  "updated_at": "2026-04-16",
   "source": "curated",
-  "total_entries": 37,
+  "total_entries": 38,
   "entries": [
     {
       "path": "README.md",
@@ -181,6 +181,14 @@
       "summary": "Temporarily overrides the player's avatar outfit parts and shows how to restore them on cleanup.",
       "script_name": "Outfit Override",
       "keywords": ["outfit", "avatar parts", "setavatarparts", "clothing", "customization", "resetavatar"]
+    },
+    {
+      "path": "examples/persistent-inventory.mjs",
+      "kind": "example",
+      "title": "Persistent Inventory",
+      "summary": "Cross-space collectible: drop on an entity, walk near to collect, and the record follows the user into every other space that uses the same inventoryId. Demonstrates per-user persistent storage (ArrivalSpace.userData), an inventory:pickup / inventory:change event bus, a shared top-right HUD with single-owner hand-off between instances, and a toggle-as-action reset pattern.",
+      "script_name": "Persistent Inventory",
+      "keywords": ["inventory", "persistent", "cross-space", "collectible", "pickup", "userData", "event bus", "inventory:pickup", "inventory:change", "shared hud", "singleton", "convention", "reset toggle"]
     },
     {
       "path": "examples/physics-box.mjs",
