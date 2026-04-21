@@ -1,13 +1,10 @@
 /**
  * Vibes Challenge — Multiplayer co-op controller.
  *
- * Place this once in a scene alongside "Scavenger Item" collectibles
- * and a "Scavenger Start Trigger". One player starts the game,
- * becoming the host. All players on boards can collect letters.
- * Game state is synced via network messages (host authority).
- *
- * A separate "Vibes Challenge Status" plugin displays the 3D
- * timer and letter progress panel — place it wherever you like.
+ * Hardened for multiplayer stability:
+ * - runId added so network messages are idempotent per run
+ * - local state events are emitted only on meaningful changes (not every frame)
+ * - scavenger items are deduped by stable entity identity, not script object reference
  */
 export class ScavengerHunt extends ArrivalScript {
     static scriptName = "Scavenger Hunt";
@@ -33,14 +30,16 @@ export class ScavengerHunt extends ArrivalScript {
     _gameComplete = false;
     _resetTimer = 0;
     _timeRemaining = 0;
-    _slots = []; // { letter, filled, collectedBy }
-    _participants = {}; // { [userId]: { userName, letters: [] } }
+    _slots = [];
+    _participants = {};
     _isHost = false;
     _hostUserId = null;
     _stateInterval = null;
     _networkUnsubs = [];
     _finishTime = 0;
     _lastHostHeartbeat = 0;
+    _runId = null;
+    _lastStateEventKey = "";
 
     initialize() {
         this._items = [];
@@ -49,27 +48,27 @@ export class ScavengerHunt extends ArrivalScript {
         this._isHost = false;
         this._hostUserId = null;
         this._participants = {};
+        this._runId = null;
+        this._lastStateEventKey = "";
 
-        // Item discovery
+        this.log("ScavengerHunt initialized");
+
         this._onItemReady = (item) => this._registerItem(item);
         this._onItemRemoved = (item) => this._unregisterItem(item);
         ArrivalSpace.on("scavenger:item:ready", this._onItemReady);
         ArrivalSpace.on("scavenger:item:removed", this._onItemRemoved);
         this._discoverExistingItems();
 
-        // Local start trigger
-        this._onLocalStart = (data) => this._hostStartGame(data);
+        this._onLocalStart = () => this._hostStartGame();
         ArrivalSpace.on("scavenger:start", this._onLocalStart);
 
-        // Network messages
         this._sub("vibes:start", (data) => this._onNetStart(data));
         this._sub("vibes:collect-request", (data, sender) => this._onNetCollectRequest(data, sender));
         this._sub("vibes:collect-confirm", (data) => this._onNetCollectConfirm(data));
         this._sub("vibes:state", (data) => this._onNetState(data));
         this._sub("vibes:end", (data) => this._onNetEnd(data));
-        this._sub("vibes:reset", () => this._onNetReset());
+        this._sub("vibes:reset", (data) => this._onNetReset(data));
 
-        // Player join/leave
         const unJoin = ArrivalSpace.net.onPlayerJoin((player) => {
             if (this._isHost && this._started) {
                 ArrivalSpace.net.sendTo(player.userID, "vibes:state", this._buildStatePayload());
@@ -82,8 +81,8 @@ export class ScavengerHunt extends ArrivalScript {
         });
         this._networkUnsubs.push(unJoin, unLeave);
 
-        // Build finish overlay HUD
         this._buildUI();
+        this._emitStateUpdated(true);
     }
 
     _sub(type, callback) {
@@ -92,7 +91,10 @@ export class ScavengerHunt extends ArrivalScript {
     }
 
     update(dt) {
-        if (!this._started) return;
+        if (!this._started) {
+            this._updateHUD();
+            return;
+        }
 
         if (this._gameComplete) {
             if (this.autoReset) {
@@ -102,10 +104,10 @@ export class ScavengerHunt extends ArrivalScript {
                     this._resetGame();
                 }
             }
+            this._updateHUD();
             return;
         }
 
-        // Host: run timer
         if (this._isHost) {
             this._timeRemaining -= dt;
             if (this._timeRemaining <= 0) {
@@ -114,26 +116,21 @@ export class ScavengerHunt extends ArrivalScript {
                 return;
             }
         } else {
-            // Non-host: interpolate timer locally
             this._timeRemaining -= dt;
             if (this._timeRemaining < 0) this._timeRemaining = 0;
         }
 
-        // Non-host: if no host message in 6s, assume host is gone
         if (!this._isHost && this._lastHostHeartbeat > 0) {
             const silence = Date.now() - this._lastHostHeartbeat;
             if (silence > 6000) {
-                this._lastHostHeartbeat = 0; // prevent re-triggering
+                this._lastHostHeartbeat = 0;
                 this._onHostDisconnected();
-                if (this._isHost) return; // we just became host, let next frame settle
+                if (this._isHost) return;
             }
         }
 
-        // All clients: check local player proximity
         this._checkProximity();
-
-        // Fire state update for status panel
-        this._fireStateUpdated();
+        this._emitStateUpdated(false);
     }
 
     // ── Item management ──
@@ -156,14 +153,49 @@ export class ScavengerHunt extends ArrivalScript {
         return null;
     }
 
+    _getItemKey(item) {
+        const entity = item?.entity;
+        if (entity) {
+            if (typeof entity.getGuid === "function") return entity.getGuid();
+            if (entity._guid) return entity._guid;
+            if (entity.name) return entity.name;
+        }
+        const pos = item?.position;
+        return `${item?.letter || "?"}:${pos?.x ?? 0}:${pos?.y ?? 0}:${pos?.z ?? 0}`;
+    }
+
+    _cleanupItems() {
+        const latestByKey = new Map();
+        for (const item of this._items) {
+            if (!item) continue;
+            const key = this._getItemKey(item);
+            latestByKey.set(key, item);
+        }
+        this._items = [...latestByKey.values()];
+        return this._items;
+    }
+
+    _getItems() {
+        return this._cleanupItems();
+    }
+
     _registerItem(item) {
-        if (this._items.includes(item)) return;
-        this._items.push(item);
+        const key = this._getItemKey(item);
+        const existingIndex = this._items.findIndex((entry) => this._getItemKey(entry) === key);
+        if (existingIndex >= 0) {
+            if (this._items[existingIndex] === item) return;
+            this._items[existingIndex] = item;
+            this.log(`Replaced scavenger item registration: ${key}`);
+        } else {
+            this._items.push(item);
+            this.log(`Registered scavenger item: ${item.letter || item.label || "?"}`);
+        }
+        this._cleanupItems();
     }
 
     _unregisterItem(item) {
-        const idx = this._items.indexOf(item);
-        if (idx >= 0) this._items.splice(idx, 1);
+        const key = this._getItemKey(item);
+        this._items = this._items.filter((entry) => entry !== item && this._getItemKey(entry) !== key);
     }
 
     // ── Slot logic ──
@@ -199,6 +231,78 @@ export class ScavengerHunt extends ArrivalScript {
         return this._slots.filter((s) => s.filled).length;
     }
 
+    _buildFilledLetterCounts() {
+        const counts = {};
+        for (const slot of this._slots) {
+            if (!slot?.filled || !slot.letter) continue;
+            const letter = String(slot.letter).toUpperCase();
+            counts[letter] = (counts[letter] || 0) + 1;
+        }
+        return counts;
+    }
+
+    _syncItemVisualState(item, shouldBeCollected, reason = "state") {
+        if (!item) return false;
+
+        if (typeof item.syncCollectedState === "function") {
+            return !!item.syncCollectedState(shouldBeCollected, reason);
+        }
+
+        if (!shouldBeCollected && item.collected && typeof item.reset === "function") {
+            item.reset();
+            return true;
+        }
+
+        return false;
+    }
+
+    _syncItemsToFilledSlots(reason = "state") {
+        const activeGame = this._started && !this._gameComplete;
+        if (!activeGame) return 0;
+
+        const filledCounts = this._buildFilledLetterCounts();
+        const groups = new Map();
+
+        for (const item of this._getItems()) {
+            const letter = item?.letter?.toUpperCase() || "";
+            if (!groups.has(letter)) groups.set(letter, []);
+            groups.get(letter).push(item);
+        }
+
+        let changes = 0;
+        for (const [letter, items] of groups.entries()) {
+            const filledCount = filledCounts[letter] || 0;
+            for (let i = 0; i < items.length; i++) {
+                const shouldBeCollected = i < filledCount;
+                if (this._syncItemVisualState(items[i], shouldBeCollected, reason)) {
+                    changes += 1;
+                }
+            }
+        }
+
+        return changes;
+    }
+
+    // ── Run identity helpers ──
+
+    _makeRunId() {
+        return `${Date.now()}-${Math.floor(Math.random() * 1000000)}`;
+    }
+
+    _resetStateEventCache() {
+        this._lastStateEventKey = "";
+    }
+
+    _getIncomingRunId(data) {
+        return data?.runId || null;
+    }
+
+    _isRunMessageCompatible(data) {
+        const incomingRunId = this._getIncomingRunId(data);
+        if (!incomingRunId || !this._runId) return true;
+        return incomingRunId === this._runId;
+    }
+
     // ── Proximity check ──
 
     _checkProximity() {
@@ -206,24 +310,21 @@ export class ScavengerHunt extends ArrivalScript {
         if (!player) return;
         const playerPos = player.getPosition();
 
-        for (const item of this._items) {
+        for (const item of this._getItems()) {
             if (item.collected) continue;
             const dist = playerPos.distance(item.position);
             if (dist < item.collectDistance) {
                 const letter = item.letter?.toUpperCase();
                 if (!letter) continue;
 
-                // Check if slot is available locally (optimistic)
                 const slotAvailable = this._slots.some((s) => s.letter === letter && !s.filled);
                 if (!slotAvailable) continue;
 
                 if (this._isHost) {
                     this._hostProcessCollect(letter, item, player);
                 } else {
-                    // Send request to host
-                    ArrivalSpace.net.send("vibes:collect-request", { letter });
-                    // Optimistic: mark locally to avoid re-sending
-                    item.collect(player);
+                    ArrivalSpace.net.send("vibes:collect-request", { runId: this._runId, letter });
+                    item.collect(player, { reason: "local-optimistic" });
                 }
             }
         }
@@ -232,7 +333,10 @@ export class ScavengerHunt extends ArrivalScript {
     // ── Host game logic ──
 
     _hostStartGame() {
-        if (this._started) return;
+        if (this._started) {
+            this.log("Ignored duplicate local start while run already active");
+            return;
+        }
 
         const user = ArrivalSpace.getUser?.();
         this._isHost = true;
@@ -242,21 +346,23 @@ export class ScavengerHunt extends ArrivalScript {
         this._gameComplete = false;
         this._timeRemaining = this.duration;
         this._participants = {};
+        this._runId = this._makeRunId();
+        this._resetStateEventCache();
         this._buildSlots();
 
-        // Show items
-        for (const item of this._items) item.reset();
+        this.log(`Game started by host ${this._hostUserId || "unknown"}; runId=${this._runId}`);
 
-        // Broadcast start
+        for (const item of this._getItems()) item.reset();
+
         ArrivalSpace.net.send("vibes:start", {
+            runId: this._runId,
             hostUserId: this._hostUserId,
             challengeWord: this.challengeWord,
             duration: this.duration,
         });
 
-        // Periodic state broadcast
         this._startStateBroadcast();
-        this._fireStateUpdated();
+        this._emitStateUpdated(true);
     }
 
     _hostProcessCollect(letter, item, collectorEntity) {
@@ -268,28 +374,27 @@ export class ScavengerHunt extends ArrivalScript {
 
     _processCollect(letter, userId, userName, item, collectorEntity) {
         const slotIndex = this._tryFillSlot(letter, userName);
-        if (slotIndex < 0) return; // no slot available
+        if (slotIndex < 0) return;
 
-        // Add participant
         if (!this._participants[userId]) {
             this._participants[userId] = { userName, letters: [] };
         }
         this._participants[userId].letters.push(letter);
 
-        // Collect the item
-        if (item) item.collect(collectorEntity);
+        if (item) item.collect(collectorEntity, { reason: "host-confirmed" });
 
-        // Broadcast confirmation
+        this.log(`Letter collected: ${letter} by ${userName}; runId=${this._runId}`);
+
         ArrivalSpace.net.send("vibes:collect-confirm", {
+            runId: this._runId,
             letter,
             userId,
             userName,
             slotIndex,
         });
 
-        this._fireStateUpdated();
+        this._emitStateUpdated(true);
 
-        // Check win
         if (this._allSlotsFilled()) {
             this._onAllCollected();
         }
@@ -302,6 +407,7 @@ export class ScavengerHunt extends ArrivalScript {
 
         const score = this._computeScore(this._filledCount(), this._finishTime);
         const endData = {
+            runId: this._runId,
             score,
             allCollected: true,
             timeTaken: this._finishTime,
@@ -321,6 +427,7 @@ export class ScavengerHunt extends ArrivalScript {
 
         const score = this._computeScore(this._filledCount(), this._finishTime);
         const endData = {
+            runId: this._runId,
             score,
             allCollected: false,
             timeTaken: this.duration,
@@ -340,7 +447,18 @@ export class ScavengerHunt extends ArrivalScript {
     // ── Network handlers ──
 
     _onNetStart(data) {
-        if (this._started) return;
+        const incomingRunId = data?.runId || `${data?.hostUserId || "host"}:${data?.challengeWord || this.challengeWord}:${data?.duration || this.duration}`;
+
+        if (this._started && incomingRunId === this._runId) {
+            this.log(`Ignored duplicate net start for runId=${incomingRunId}`);
+            return;
+        }
+
+        if (this._started && !this._gameComplete) {
+            this.warn(`Ignored net start while another run is active; current=${this._runId}, incoming=${incomingRunId}`);
+            return;
+        }
+
         this._lastHostHeartbeat = Date.now();
         this._isHost = false;
         this._hostUserId = data.hostUserId;
@@ -348,85 +466,99 @@ export class ScavengerHunt extends ArrivalScript {
         this._gameComplete = false;
         this._timeRemaining = data.duration;
         this._participants = {};
+        this._runId = incomingRunId;
+        this._resetStateEventCache();
 
-        // Use host's challenge word
         this._slots = [...data.challengeWord.toUpperCase()].map((letter) => ({
             letter,
             filled: false,
             collectedBy: null,
         }));
 
-        // Show items
-        ArrivalSpace.fire("scavenger:start");
-        for (const item of this._items) item.reset();
+        this.log(`Accepted net start; runId=${this._runId}`);
 
-        this._fireStateUpdated();
+        ArrivalSpace.fire("scavenger:start");
+        for (const item of this._getItems()) item.reset();
+
+        this._emitStateUpdated(true);
     }
 
     _onNetCollectRequest(data, sender) {
         if (!this._isHost || this._gameComplete) return;
+        if (!this._isRunMessageCompatible(data)) {
+            this.warn(`Ignored collect-request for stale runId=${data?.runId || "none"}`);
+            return;
+        }
 
         const letter = data.letter?.toUpperCase();
         if (!letter) return;
 
-        // Find the remote player's entity for velocity
         const players = ArrivalSpace.net.getPlayers();
         const remote = (data.senderNetworkId
-            ? players.find(p => p.socketId === data.senderNetworkId)
-            : null) || players.find(p => p.userID == sender.userID);
+            ? players.find((p) => p.socketId === data.senderNetworkId)
+            : null) || players.find((p) => p.userID == sender.userID);
         const collectorEntity = remote?.entity || null;
 
-        // Find a matching uncollected item
-        const item = this._items.find(
+        const item = this._getItems().find(
             (i) => !i.collected && i.letter?.toUpperCase() === letter
         );
-        if (item) item.collect(collectorEntity);
+        if (item) item.collect(collectorEntity, { reason: "host-remote-request" });
 
         this._processCollect(letter, sender.userID, sender.userName, null, collectorEntity);
     }
 
     _onNetCollectConfirm(data) {
         this._lastHostHeartbeat = Date.now();
-        if (this._isHost) return; // host already processed
+        if (this._isHost) return;
+        if (!this._isRunMessageCompatible(data)) {
+            this.warn(`Ignored collect-confirm for stale runId=${data?.runId || "none"}`);
+            return;
+        }
 
         const { letter, userId, userName, slotIndex } = data;
 
-        // Update slot
         if (slotIndex >= 0 && slotIndex < this._slots.length) {
             this._slots[slotIndex].filled = true;
             this._slots[slotIndex].collectedBy = userName;
         }
 
-        // Add participant
         if (!this._participants[userId]) {
             this._participants[userId] = { userName, letters: [] };
         }
         this._participants[userId].letters.push(letter);
 
-        // Hide the item — find collector entity for effects
         const players = ArrivalSpace.net.getPlayers();
         const remote = (data.senderNetworkId
-            ? players.find(p => p.socketId === data.senderNetworkId)
-            : null) || players.find(p => p.userID == userId);
+            ? players.find((p) => p.socketId === data.senderNetworkId)
+            : null) || players.find((p) => p.userID == userId);
         const collectorEntity = remote?.entity || ArrivalSpace.getPlayer();
 
-        const item = this._items.find(
+        const item = this._getItems().find(
             (i) => !i.collected && i.letter?.toUpperCase() === letter?.toUpperCase()
         );
-        if (item) item.collect(collectorEntity);
+        if (item) item.collect(collectorEntity, { reason: "net-confirm" });
 
-        this._fireStateUpdated();
+        this._emitStateUpdated(true);
     }
 
     _onNetState(data) {
         this._lastHostHeartbeat = Date.now();
+        if (!this._isRunMessageCompatible(data)) {
+            this.warn(`Ignored state packet for stale runId=${data?.runId || "none"}`);
+            return;
+        }
 
-        // If another client became host (migration), step down
         if (this._isHost && data.hostUserId !== this._hostUserId) {
             this._isHost = false;
             this._stopStateBroadcast();
         }
         if (this._isHost) return;
+
+        if (!this._runId && data.runId) {
+            this._runId = data.runId;
+            this._resetStateEventCache();
+        }
+
         this._hostUserId = data.hostUserId;
         this._started = data.started;
         this._gameComplete = data.gameComplete;
@@ -434,21 +566,21 @@ export class ScavengerHunt extends ArrivalScript {
         this._slots = data.slots;
         this._participants = data.participants;
 
-        // Sync item visuals
-        for (const item of this._items) {
-            const letter = item.letter?.toUpperCase();
-            const slotFilled = this._slots.some(
-                (s) => s.letter === letter && s.filled
-            );
-            if (slotFilled && !item.collected) item.collect();
-            if (!slotFilled && item.collected) item.reset();
+        const synced = this._syncItemsToFilledSlots("net-state");
+        if (synced > 0) {
+            this.log(`Silently reconciled ${synced} collectible visual(s) from net state`);
         }
 
-        this._fireStateUpdated();
+        this._emitStateUpdated(true);
     }
 
     _onNetEnd(data) {
         if (this._isHost) return;
+        if (!this._isRunMessageCompatible(data)) {
+            this.warn(`Ignored end packet for stale runId=${data?.runId || "none"}`);
+            return;
+        }
+
         this._gameComplete = true;
         this._resetTimer = this.resetDelay;
         this._slots = data.slots || this._slots;
@@ -456,8 +588,12 @@ export class ScavengerHunt extends ArrivalScript {
         this._onGameEnd(data);
     }
 
-    _onNetReset() {
+    _onNetReset(data) {
         if (this._isHost) return;
+        if (data && !this._isRunMessageCompatible(data)) {
+            this.warn(`Ignored reset packet for stale runId=${data?.runId || "none"}`);
+            return;
+        }
         this._doReset();
     }
 
@@ -465,9 +601,6 @@ export class ScavengerHunt extends ArrivalScript {
         if (!this._started || this._gameComplete) return;
 
         const deadHostId = this._hostUserId;
-
-        // Deterministic election: lowest userID among remaining players becomes host.
-        // Explicitly exclude the dead host in case getPlayers() hasn't been pruned yet.
         const me = ArrivalSpace.getUser?.();
         if (!me?.userID) return;
         const players = ArrivalSpace.net.getPlayers();
@@ -478,23 +611,20 @@ export class ScavengerHunt extends ArrivalScript {
         ids.sort();
 
         if (ids[0] === me.userID) {
-            // This client becomes the new host
             this._isHost = true;
             this._hostUserId = me.userID;
             this._startStateBroadcast();
-            // Immediately broadcast so other clients learn the new host
             ArrivalSpace.net.send("vibes:state", this._buildStatePayload());
+            this.log(`Host migrated to ${me.userID}; runId=${this._runId}`);
         }
-        // Non-elected clients keep running with their local state;
-        // the new host's next broadcast will re-sync everyone.
     }
 
-    // ── Game end (all clients) ──
+    // ── Game end ──
 
     _onGameEnd(data) {
         this._showFinishOverlay(data);
         this._saveScore(data);
-        this._fireStateUpdated();
+        this._emitStateUpdated(true);
     }
 
     async _saveScore(data) {
@@ -515,6 +645,17 @@ export class ScavengerHunt extends ArrivalScript {
             numval: data.score,
             mode: "max",
         });
+        // Also write to this week's bucket (Monday-anchored UTC), so the
+        // leaderboard's weekly view reflects this week's best — not all-time
+        // PBs that happened to be set this week.
+        const wd = new Date();
+        const day = wd.getUTCDay(); // 0 = Sun .. 6 = Sat
+        wd.setUTCDate(wd.getUTCDate() + (day === 0 ? -6 : 1 - day));
+        const weekKey = `${this.storeKey}-weekly-${wd.toISOString().slice(0, 10)}:${participantIds}`;
+        await ArrivalSpace.pluginStore.push(weekKey, value, {
+            numval: data.score,
+            mode: "max",
+        });
         ArrivalSpace.fire("scavenger:leaderboard:updated");
         this._showFinishRanking();
     }
@@ -523,7 +664,7 @@ export class ScavengerHunt extends ArrivalScript {
 
     _resetGame() {
         if (this._isHost) {
-            ArrivalSpace.net.send("vibes:reset", {});
+            ArrivalSpace.net.send("vibes:reset", { runId: this._runId });
         }
         this._doReset();
     }
@@ -536,13 +677,15 @@ export class ScavengerHunt extends ArrivalScript {
         this._participants = {};
         this._resetSlots();
         this._stopStateBroadcast();
+        this._runId = null;
+        this._resetStateEventCache();
 
-        for (const item of this._items) item.reset();
+        for (const item of this._getItems()) item.reset();
 
         this._hideFinishOverlay();
         ArrivalSpace.fire("vibes:game-reset");
         ArrivalSpace.fire("scavenger:reset");
-        this._fireStateUpdated();
+        this._emitStateUpdated(true);
     }
 
     // ── State broadcast ──
@@ -565,6 +708,7 @@ export class ScavengerHunt extends ArrivalScript {
 
     _buildStatePayload() {
         return {
+            runId: this._runId,
             hostUserId: this._hostUserId,
             started: this._started,
             gameComplete: this._gameComplete,
@@ -576,8 +720,9 @@ export class ScavengerHunt extends ArrivalScript {
 
     // ── Local event for status panel ──
 
-    _fireStateUpdated() {
-        ArrivalSpace.fire("vibes:state-updated", {
+    _buildStateEventPayload() {
+        return {
+            runId: this._runId,
             started: this._started,
             gameComplete: this._gameComplete,
             timeRemaining: this._timeRemaining,
@@ -586,17 +731,47 @@ export class ScavengerHunt extends ArrivalScript {
             participants: this._participants,
             allCollected: this._allSlotsFilled(),
             challengeWord: this.challengeWord,
-        });
+        };
+    }
+
+    _buildStateEventKey(payload) {
+        const timeBucket = payload.started && !payload.gameComplete
+            ? Math.ceil(payload.timeRemaining)
+            : payload.timeRemaining;
+        const slotKey = (payload.slots || [])
+            .map((s) => `${s.letter}:${s.filled ? 1 : 0}:${s.collectedBy || ""}`)
+            .join("|");
+        const participantKey = Object.entries(payload.participants || {})
+            .sort((a, b) => String(a[0]).localeCompare(String(b[0])))
+            .map(([id, p]) => `${id}:${p.userName}:${(p.letters || []).join("")}`)
+            .join("|");
+        return [
+            payload.runId || "",
+            payload.started ? 1 : 0,
+            payload.gameComplete ? 1 : 0,
+            timeBucket,
+            payload.challengeWord || "",
+            slotKey,
+            participantKey,
+        ].join("~");
+    }
+
+    _emitStateUpdated(force = false) {
+        const payload = this._buildStateEventPayload();
+        const key = this._buildStateEventKey(payload);
+        if (force || key !== this._lastStateEventKey) {
+            this._lastStateEventKey = key;
+            ArrivalSpace.fire("vibes:state-updated", payload);
+        }
         this._updateHUD();
     }
 
-    // ── 2D HUD (bottom-screen slots + timer) ──
+    // ── 2D HUD ──
 
     _updateHUD() {
         const hud = this._uiContainer?.querySelector("#sh-hud");
         if (!hud) return;
 
-        // Show HUD only during active game while on a board
         if (!this._started || this._gameComplete || this._slots.length === 0 || !ArrivalSpace.getLocalAttachedEntity()) {
             hud.classList.remove("visible");
             return;
@@ -607,7 +782,6 @@ export class ScavengerHunt extends ArrivalScript {
         const slotsEl = hud.querySelector("#sh-hud-slots");
         if (!slotsEl) return;
 
-        // Rebuild only when slot count changes (avoid DOM thrash)
         let justRebuilt = false;
         const letterEls = slotsEl.querySelectorAll(".sh-hud-letter");
         if (letterEls.length !== this._slots.length) {
@@ -620,7 +794,6 @@ export class ScavengerHunt extends ArrivalScript {
             justRebuilt = true;
         }
 
-        // Update filled state
         const letters = slotsEl.querySelectorAll(".sh-hud-letter");
         for (let i = 0; i < this._slots.length; i++) {
             if (i < letters.length) {
@@ -635,7 +808,6 @@ export class ScavengerHunt extends ArrivalScript {
             }
         }
 
-        // Update timer
         const timerEl = slotsEl.querySelector("#sh-hud-timer");
         if (timerEl) {
             const t = Math.max(0, this._timeRemaining);
@@ -825,7 +997,6 @@ export class ScavengerHunt extends ArrivalScript {
         const overlay = this._uiContainer?.querySelector("#sh-finish");
         if (overlay) overlay.classList.add("visible");
 
-        // Title
         const title = this._uiContainer?.querySelector("#sh-finish-title");
         if (title) {
             title.textContent = data.allCollected
@@ -833,7 +1004,6 @@ export class ScavengerHunt extends ArrivalScript {
                 : `Time's Up! (${data.filledCount}/${this._slots.length})`;
         }
 
-        // Stats
         const stats = this._uiContainer?.querySelector("#sh-finish-stats");
         if (stats) {
             const time = data.timeTaken?.toFixed(1) || "0";
@@ -842,7 +1012,6 @@ export class ScavengerHunt extends ArrivalScript {
                 : `${data.filledCount} letters collected`;
         }
 
-        // Players
         const players = this._uiContainer?.querySelector("#sh-finish-players");
         if (players) {
             const names = Object.values(data.participants || {})
@@ -851,7 +1020,6 @@ export class ScavengerHunt extends ArrivalScript {
             players.textContent = names ? `Players: ${names}` : "";
         }
 
-        // Slots with who collected
         const slotsEl = this._uiContainer?.querySelector("#sh-finish-slots");
         if (slotsEl) {
             slotsEl.innerHTML = "";
@@ -872,7 +1040,6 @@ export class ScavengerHunt extends ArrivalScript {
             }
         }
 
-        // Show/hide play again button (host only)
         const btn = this._uiContainer?.querySelector("#sh-finish-btn");
         if (btn) btn.style.display = this._isHost ? "" : "none";
 
@@ -944,12 +1111,10 @@ export class ScavengerHunt extends ArrivalScript {
         container.innerHTML = html;
     }
 
-    // ── Property changes ──
-
     onPropertyChanged(name) {
         if (name === "challengeWord" && !this._started) {
             this._buildSlots();
-            this._fireStateUpdated();
+            this._emitStateUpdated(true);
         }
 
         if (name === "forceEnd" && this.forceEnd) {
@@ -957,8 +1122,6 @@ export class ScavengerHunt extends ArrivalScript {
             setTimeout(() => { this.forceEnd = false; }, 100);
         }
     }
-
-    // ── Cleanup ──
 
     destroy() {
         if (this._onItemReady) ArrivalSpace.off("scavenger:item:ready", this._onItemReady);
