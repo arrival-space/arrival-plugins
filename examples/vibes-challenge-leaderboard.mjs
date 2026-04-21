@@ -24,7 +24,7 @@ export class VibesLeaderboard extends ArrivalScript {
     static properties = {
         storeKey: { title: "Store Key" },
         title: { title: "Title" },
-        maxEntries: { title: "Max Entries", min: 3, max: 20, step: 1 },
+        maxEntries: { title: "Max Entries", min: 3, max: 50, step: 1 },
         panelWidth: { title: "Panel Width", min: 0.5, max: 5 },
         panelHeight: { title: "Panel Height", min: 0.5, max: 5 },
         resolution: { title: "Resolution", min: 100, max: 600, step: 50 },
@@ -36,6 +36,7 @@ export class VibesLeaderboard extends ArrivalScript {
     _panel = null;
     _entries = [];
     _refreshTimer = 0;
+    _view = "weekly"; // "weekly" | "overall"
 
     async initialize() {
         this._entries = [];
@@ -56,23 +57,63 @@ export class VibesLeaderboard extends ArrivalScript {
 
     async _fetchData() {
         if (!this.storeKey) return;
-        const data = await ArrivalSpace.pluginStore.get(this.storeKey, {
-            sort: "desc",
-            limit: this.maxEntries,
-            prefix: true,
-        });
-        if (data) {
-            console.log("== leaderboard raw entries:", data.map(e => ({ numval: e.numval, value: e.value })));
-            const seen = new Set();
-            this._entries = data.filter((e) => {
-                let name = "";
-                try { name = JSON.parse(e.value).names; } catch { name = e.value; }
-                if (seen.has(name)) return false;
-                seen.add(name);
-                return true;
+        // Colon-terminated prefixes so "<storeKey>:" won't match weekly keys
+        // that look like "<storeKey>-weekly-<mondayYYYY-MM-DD>:<participants>".
+        const overallPrefix = `${this.storeKey}:`;
+        let rows;
+
+        if (this._view === "weekly") {
+            // Hybrid: read the fresh weekly bucket AND backfill from overall
+            // entries whose updatedAt is within this week. Needed because the
+            // writer only started dual-writing recently; without the backfill
+            // the weekly view is sparse until enough runs land in the bucket.
+            const monday = this._weekKey();
+            const weeklyPrefix = `${this.storeKey}-weekly-${monday}:`;
+            const mondayStart = new Date(`${monday}T00:00:00Z`).getTime();
+
+            const [weekly, overall] = await Promise.all([
+                ArrivalSpace.pluginStore.get(weeklyPrefix, {
+                    sort: "desc",
+                    limit: this.maxEntries,
+                    prefix: true,
+                }),
+                // Wide net — the top-N all-time may not include players who
+                // ran this week at lower scores. Filter by updatedAt locally.
+                ArrivalSpace.pluginStore.get(overallPrefix, {
+                    sort: "desc",
+                    limit: 100,
+                    prefix: true,
+                }),
+            ]);
+
+            const merged = [];
+            if (weekly) merged.push(...weekly);
+            if (overall) {
+                for (const e of overall) {
+                    const t = e.updatedAt ? new Date(e.updatedAt).getTime() : 0;
+                    if (t >= mondayStart) merged.push(e);
+                }
+            }
+            merged.sort((a, b) => (b.numval || 0) - (a.numval || 0));
+            rows = merged;
+        } else {
+            const data = await ArrivalSpace.pluginStore.get(overallPrefix, {
+                sort: "desc",
+                limit: this.maxEntries,
+                prefix: true,
             });
-            this._updatePanel();
+            rows = data || [];
         }
+
+        const seen = new Set();
+        this._entries = rows.filter((e) => {
+            let name = "";
+            try { name = JSON.parse(e.value).names; } catch { name = e.value; }
+            if (seen.has(name)) return false;
+            seen.add(name);
+            return true;
+        }).slice(0, this.maxEntries);
+        this._updatePanel();
     }
 
     // -- Panel --
@@ -88,6 +129,17 @@ export class VibesLeaderboard extends ArrivalScript {
             html: this._renderHTML(),
             transparent: true,
             billboard: this.billboard,
+            onClick: (href) => {
+                if (href === "view-weekly" && this._view !== "weekly") {
+                    this._view = "weekly";
+                    this._updatePanel();
+                    this._fetchData();
+                } else if (href === "view-overall" && this._view !== "overall") {
+                    this._view = "overall";
+                    this._updatePanel();
+                    this._fetchData();
+                }
+            },
         });
 
         if (!panel) return;
@@ -128,7 +180,10 @@ export class VibesLeaderboard extends ArrivalScript {
         let rows = "";
 
         if (this._entries.length === 0) {
-            rows = `<div style="text-align:center;opacity:0.5;margin-top:30px;font-size:15px;">No times yet — be the first!</div>`;
+            const msg = this._view === "weekly"
+                ? "No runs this week — be the first!"
+                : "No times yet — be the first!";
+            rows = `<div style="text-align:center;opacity:0.5;margin-top:30px;font-size:15px;">${msg}</div>`;
         } else {
             for (let i = 0; i < this._entries.length; i++) {
                 const e = this._entries[i];
@@ -137,8 +192,8 @@ export class VibesLeaderboard extends ArrivalScript {
                 const medal = rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : "";
                 const score = e.numval || 0;
                 const filledCount = Math.round(score / 10000);
-                const timeTaken = (filledCount * 10000 - score).toFixed(1);
-                const time = filledCount >= 1 ? `${timeTaken}s` : "-";
+                const timeTaken = filledCount * 10000 - score;
+                const time = filledCount >= 1 ? this._formatTime(timeTaken) : "-";
 
                 // Parse value: JSON with { names, slots } or plain string
                 let name = "";
@@ -187,6 +242,14 @@ export class VibesLeaderboard extends ArrivalScript {
             }
         }
 
+        const tabBase =
+            "flex:1;text-align:center;padding:8px 0;font-size:13px;font-weight:bold;" +
+            "letter-spacing:2px;text-decoration:none;transition:all 0.15s;";
+        const tabActive = "color:#f5c542;border-bottom:2px solid #f5c542;";
+        const tabInactive = "color:rgba(255,255,255,0.35);border-bottom:2px solid rgba(255,255,255,0.08);";
+        const weeklyTab = tabBase + (this._view === "weekly" ? tabActive : tabInactive);
+        const overallTab = tabBase + (this._view === "overall" ? tabActive : tabInactive);
+
         return `
         <div style="
             width:calc(100% - ${m * 2}px);height:calc(100% - ${m * 2}px);
@@ -200,17 +263,41 @@ export class VibesLeaderboard extends ArrivalScript {
             <div style="
                 text-align:center;font-size:20px;font-weight:bold;
                 color:#f5c542;letter-spacing:4px;
-                margin-bottom:16px;padding-bottom:12px;
-                border-bottom:1px solid rgba(245,197,66,0.2);
+                margin-bottom:10px;
             ">${this._escapeHtml(this.title)}</div>
+            <div style="display:flex;margin-bottom:12px;">
+                <a href="view-weekly" style="${weeklyTab}">WEEK</a>
+                <a href="view-overall" style="${overallTab}">OVERALL</a>
+            </div>
             <div style="flex:1;overflow:hidden;">
                 ${rows}
             </div>
         </div>`;
     }
 
+    _formatTime(totalSeconds) {
+        if (!Number.isFinite(totalSeconds) || totalSeconds < 0) return "-";
+
+        const totalMs = Math.round(totalSeconds * 1000);
+        const minutes = Math.floor(totalMs / 60000);
+        const remainingMs = totalMs % 60000;
+        const seconds = Math.floor(remainingMs / 1000);
+        const milliseconds = remainingMs % 1000;
+
+        return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}.${String(milliseconds).padStart(3, "0")}`;
+    }
+
     _escapeHtml(str) {
         return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+
+    // Monday of the current UTC week as YYYY-MM-DD — bucket for weekly scores.
+    _weekKey() {
+        const d = new Date();
+        const day = d.getUTCDay(); // 0 = Sun .. 6 = Sat
+        const shift = day === 0 ? -6 : 1 - day;
+        d.setUTCDate(d.getUTCDate() + shift);
+        return d.toISOString().slice(0, 10);
     }
 
     // -- Property changes --
