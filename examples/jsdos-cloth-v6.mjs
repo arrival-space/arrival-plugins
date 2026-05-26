@@ -15,6 +15,16 @@
 export class JsdosClothV6 extends ArrivalScript {
     static scriptName = "JsdosClothV6";
 
+    // W/S → forward/back arrows, Space → S-key fire. A/D pass through
+    // unchanged so DOOM treats them as strafe. Applied in _handleKey
+    // before dispatching to the emulator.
+    static _KEY_REMAP = {
+        KeyW: "ArrowUp",
+        KeyS: "ArrowDown",
+        KeyE: "KeyW",
+        Space: "KeyS",
+    };
+
     // Minimal KeyboardEvent.code → { key, keyCode } lookup for the common
     // keys the virtual gamepad can map to. Extend if you need more.
     static _KEY_MAP = {
@@ -66,6 +76,11 @@ export class JsdosClothV6 extends ArrivalScript {
     // menu confirm (Enter) and fire/forward (S). Single-key works too:
     // "ControlLeft".
     tapKey = "Enter,KeyS,KeyW";
+    // The first `menuTapCount` taps after boot fire this code list instead
+    // of tapKey — DOOM's opening menu selects by letter, so an S-key tap
+    // would jump into the wrong menu item. Default is Enter only.
+    menuTapKey = "Enter";
+    menuTapCount = 2;
     // Comma-separated codes fired on long-press (no drag).
     longPressKey = "Enter";
     dragKeyLeft = "ArrowLeft";
@@ -107,6 +122,8 @@ export class JsdosClothV6 extends ArrivalScript {
         doomBundleUrl: { title: "Game Bundle URL" },
         doomCommand: { title: "DOS Command" },
         tapKey: { title: "Tap Key (code)" },
+        menuTapKey: { title: "Menu Tap Key (code)" },
+        menuTapCount: { title: "Menu Tap Count", min: 0, max: 10, step: 1 },
         longPressKey: { title: "Long-Press Key (code)" },
         dragKeyLeft: { title: "Drag Left (code)" },
         dragKeyRight: { title: "Drag Right (code)" },
@@ -183,6 +200,7 @@ export class JsdosClothV6 extends ArrivalScript {
     _pointerStartTime = 0;
     _pointerDragged = false;
     _heldDragKey = null;
+    _tapCount = 0;
 
     _gridEntity = null;
     _gridPrevEnabled = null;
@@ -757,7 +775,122 @@ export class JsdosClothV6 extends ArrivalScript {
 
     /* ── js-dos loader ────────────────────────────────────── */
 
+    _installSdlKeyboardGate() {
+        if (this._sdlGateInstalled) return;
+        this._sdlGateInstalled = true;
+
+        const plugin = this;
+        const targets = [window, document];
+        // Map<originalListener, Map<"type|capture", wrappedListener>>
+        const listenerMap = new WeakMap();
+        const originals = [];
+
+        const normalizeCapture = (options) => !!(options === true || (options && options.capture));
+
+        for (const target of targets) {
+            const origAdd = target.addEventListener;
+            const origRemove = target.removeEventListener;
+            originals.push({ target, add: origAdd, remove: origRemove });
+
+            target.addEventListener = function (type, listener, options) {
+                if (
+                    (type === "keydown" || type === "keyup" || type === "keypress") &&
+                    typeof listener === "function" &&
+                    !listener.__jsdosClothOwn
+                ) {
+                    let perListener = listenerMap.get(listener);
+                    if (!perListener) {
+                        perListener = new Map();
+                        listenerMap.set(listener, perListener);
+                    }
+                    const key = `${type}|${normalizeCapture(options)}`;
+                    let wrapped = perListener.get(key);
+                    if (!wrapped) {
+                        wrapped = function (e) {
+                            if (!plugin._engaged) return;
+                            return listener.call(this, e);
+                        };
+                        perListener.set(key, wrapped);
+                    }
+                    return origAdd.call(this, type, wrapped, options);
+                }
+                return origAdd.call(this, type, listener, options);
+            };
+
+            target.removeEventListener = function (type, listener, options) {
+                if (
+                    (type === "keydown" || type === "keyup" || type === "keypress") &&
+                    typeof listener === "function"
+                ) {
+                    const perListener = listenerMap.get(listener);
+                    const key = `${type}|${normalizeCapture(options)}`;
+                    const wrapped = perListener && perListener.get(key);
+                    if (wrapped) {
+                        origRemove.call(this, type, wrapped, options);
+                        perListener.delete(key);
+                        return;
+                    }
+                }
+                return origRemove.call(this, type, listener, options);
+            };
+        }
+
+        this._sdlGateOriginals = originals;
+        this._log("SDL keyboard gate installed");
+    }
+
+    _uninstallSdlKeyboardGate() {
+        if (!this._sdlGateInstalled) return;
+        for (const { target, add, remove } of this._sdlGateOriginals) {
+            target.addEventListener = add;
+            target.removeEventListener = remove;
+        }
+        this._sdlGateOriginals = null;
+        this._sdlGateInstalled = false;
+        this._log("SDL keyboard gate uninstalled (wrapped listeners remain gated)");
+    }
+
+    _installWebglPreserveBufferPatch() {
+        if (this._webglPatchInstalled) return;
+        this._webglPatchInstalled = true;
+
+        const proto = HTMLCanvasElement.prototype;
+        const origGetContext = proto.getContext;
+        this._webglPatchOriginal = origGetContext;
+
+        proto.getContext = function (type, attrs) {
+            if (type === "webgl" || type === "webgl2" || type === "experimental-webgl") {
+                const merged = { ...(attrs || {}), preserveDrawingBuffer: true };
+                return origGetContext.call(this, type, merged);
+            }
+            return origGetContext.call(this, type, attrs);
+        };
+
+        this._log("WebGL preserveDrawingBuffer patch installed");
+    }
+
+    _uninstallWebglPreserveBufferPatch() {
+        if (!this._webglPatchInstalled) return;
+        HTMLCanvasElement.prototype.getContext = this._webglPatchOriginal;
+        this._webglPatchOriginal = null;
+        this._webglPatchInstalled = false;
+        this._log("WebGL preserveDrawingBuffer patch uninstalled");
+    }
+
     _loadJsDos() {
+        // SDL's HTML5 backend inside js-dos-v3 attaches global key listeners
+        // to window/document during emulator init and keeps them forever.
+        // Gate them on our own _engaged state so keys only reach DOOM when
+        // the user is actively interacting with the cloth.
+        this._installSdlKeyboardGate();
+
+        // Force preserveDrawingBuffer:true on the WebGL context js-dos creates
+        // for its canvas. Without it, drawImage(doomCanvas, ...) reads garbage
+        // (usually black) once the compositor swaps — iOS Safari especially.
+        // That manifests as a pitch-black cloth on first boot that "fixes
+        // itself" on reload once timing happens to line up.
+        this._installWebglPreserveBufferPatch();
+
         const ensureJQuery = (next) => {
             if (typeof window.$ !== "undefined" && typeof window.jQuery !== "undefined") {
                 next();
@@ -847,6 +980,15 @@ export class JsdosClothV6 extends ArrivalScript {
                     this._doomStarted = true;
                     this._adoptEmulatorCanvas();
                     this._removeBootKick();
+                    // SDL has finished registering its key listeners and the
+                    // WebGL context is created — stop intercepting so any
+                    // later addEventListener / getContext calls (arrival.space,
+                    // other plugins) are untouched. Listeners/contexts we
+                    // already patched keep their patched behavior.
+                    setTimeout(() => {
+                        this._uninstallSdlKeyboardGate();
+                        this._uninstallWebglPreserveBufferPatch();
+                    }, 1000);
                 },
                 onerror: (err) => {
                     console.warn("[JsdosClothV6] Dosbox onerror:", err);
@@ -884,6 +1026,10 @@ export class JsdosClothV6 extends ArrivalScript {
             this._removeBootKick();
             this._kickJsDosSplash();
         };
+        // Must fire regardless of _engaged state — this is the very first
+        // gesture, before the user has clicked the cloth. The SDL keyboard
+        // gate would otherwise wrap it and suppress the boot kick.
+        kick.__jsdosClothOwn = true;
         this._bootKick = kick;
         window.addEventListener("touchstart", kick, { capture: true, passive: true });
         window.addEventListener("mousedown", kick, true);
@@ -1000,6 +1146,8 @@ export class JsdosClothV6 extends ArrivalScript {
         this._teardownInteraction();
         this._disengage();
         this._removeBootKick();
+        this._uninstallSdlKeyboardGate();
+        this._uninstallWebglPreserveBufferPatch();
 
         if (this._bootWatchdog) {
             clearInterval(this._bootWatchdog);
@@ -1179,6 +1327,10 @@ export class JsdosClothV6 extends ArrivalScript {
         };
         this._boundKeyDown = (e) => this._handleKey(e, "keydown");
         this._boundKeyUp = (e) => this._handleKey(e, "keyup");
+        // Mark these so the SDL keyboard gate skips wrapping them if
+        // _setupInteraction ever runs after _installSdlKeyboardGate.
+        this._boundKeyDown.__jsdosClothOwn = true;
+        this._boundKeyUp.__jsdosClothOwn = true;
 
         window.addEventListener("pointerdown", this._boundPointerDown, true);
         window.addEventListener("pointermove", this._boundPointerMove, true);
@@ -1208,6 +1360,7 @@ export class JsdosClothV6 extends ArrivalScript {
     _handlePointer(e, type) {
         if (!this._hostEl || this._dispatching) return;
 
+
         // While a virtual-gamepad drag is active, skip the raycast and
         // process the gesture purely from clientX/Y delta.
         if (this._pointerActive && (type === "mousemove" || type === "mouseup")) {
@@ -1236,10 +1389,7 @@ export class JsdosClothV6 extends ArrivalScript {
         }
 
         if (type === "mousedown") {
-            if (!this._engaged) {
-                this._engage();
-                return;
-            }
+            if (!this._engaged) this._engage();
             this._pointerActive = true;
             this._pointerStartX = e.clientX;
             this._pointerStartY = e.clientY;
@@ -1329,8 +1479,13 @@ export class JsdosClothV6 extends ArrivalScript {
         }
 
         let codeList = null;
-        if (isTap) codeList = this.tapKey;
-        else if (isLongPress) codeList = this.longPressKey;
+        if (isTap) {
+            // First menuTapCount taps fire the menu-only list (Enter) so
+            // DOOM's intro menu doesn't get a stray letter-key selection.
+            if (this._tapCount < this.menuTapCount) codeList = this.menuTapKey;
+            else codeList = this.tapKey;
+            this._tapCount++;
+        } else if (isLongPress) codeList = this.longPressKey;
         if (!codeList) return;
 
         // Parse "Enter,KeyS" → [Enter, KeyS]. Fire each in sequence, each
@@ -1430,14 +1585,18 @@ export class JsdosClothV6 extends ArrivalScript {
         e.preventDefault();
         e.stopPropagation();
 
+        // Translate WASD + Space to DOOM's native keys before dispatching.
+        const remapCode = JsdosClothV6._KEY_REMAP[e.code];
+        const mapped = remapCode ? this._resolveKey(remapCode) : null;
+
         this._dispatching = true;
         const init = {
             bubbles: true,
             cancelable: true,
-            key: e.key,
-            code: e.code,
-            keyCode: e.keyCode,
-            which: e.which,
+            key: mapped ? mapped.key : e.key,
+            code: mapped ? mapped.code : e.code,
+            keyCode: mapped ? mapped.keyCode : e.keyCode,
+            which: mapped ? mapped.keyCode : e.which,
             shiftKey: e.shiftKey,
             ctrlKey: e.ctrlKey,
             altKey: e.altKey,
@@ -1458,7 +1617,13 @@ export class JsdosClothV6 extends ArrivalScript {
 
         // Kick the js-dos splash if it's still showing — this call happens
         // inside the real user click handler, so user activation carries over.
-        if (!this._doomStarted) this._kickJsDosSplash();
+        // Remove the bootKick first: both handlers are capture-phase on window
+        // for the same mousedown, and firing both kicks the splash twice,
+        // which races two DOSBox boots and trips an Emscripten assertion.
+        if (!this._doomStarted) {
+            this._removeBootKick();
+            this._kickJsDosSplash();
+        }
     }
 
     _disengage() {

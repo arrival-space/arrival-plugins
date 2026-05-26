@@ -138,6 +138,29 @@ static properties = {
 };
 ```
 
+### For File Uploads
+
+Set `editor: 'asset'` on a string property to render an upload field in the
+editor instead of a plain text input. The stored value is the CDN URL of the
+uploaded file. Use this for GLB models, textures, audio, etc.
+
+```javascript
+export class MyPlugin extends ArrivalScript {
+
+    modelUrl = '';
+    textureUrl = '';
+
+    static properties = {
+        modelUrl:   { title: 'Model (GLB)', editor: 'asset' },
+        textureUrl: { title: 'Texture',     editor: 'asset' },
+    };
+}
+```
+
+The user can either upload a file or paste an external URL. See
+`examples/glb-model.mjs` and `examples/cloth-physics.mjs` for full plugins
+that load GLBs and textures from `editor: 'asset'` URLs at runtime.
+
 ## Reserved Names
 
 Do not use built-in script property names as plugin parameters. In particular, avoid:

@@ -43,8 +43,8 @@
       "path": "docs/properties.md",
       "kind": "doc",
       "title": "Properties",
-      "summary": "Explains supported property types, static property schema, dynamic options, vec3 fields, and runtime updates in the editor UI.",
-      "keywords": ["properties", "schema", "editor ui", "numbers", "boolean", "string", "color", "vec3"]
+      "summary": "Explains supported property types, static property schema, dynamic options, vec3 fields, file/asset upload fields (editor: 'asset'), and runtime updates in the editor UI.",
+      "keywords": ["properties", "schema", "editor ui", "numbers", "boolean", "string", "color", "vec3", "asset", "upload", "file", "url", "glb", "texture"]
     },
     {
       "path": "examples/annotation-marker.mjs",
