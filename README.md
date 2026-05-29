@@ -69,6 +69,7 @@ See [Multiplayer Documentation](docs/multiplayer.md) for details.
 | [Box Stack](examples/box-stack.mjs) | Physics pyramid of boxes and spheres |
 | [Character Scale](examples/character-scale-plugin.mjs) | Adjust character scale and movement feel |
 | [Dynamic Light](examples/dynamic-light.mjs) | Configurable cone/point light controller |
+| [Game HUD](examples/game-hud.mjs) | Game-style HUD overlay example |
 | [GLB Model](examples/glb-model.mjs) | Load and attach an external GLB model |
 | [Hello World](examples/hello-world.mjs) | Simplest possible plugin |
 | [Hover Board](examples/hover-board.mjs) | Rideable dynamic board with avatar animation, input, and physics tuning |
@@ -82,7 +83,6 @@ See [Multiplayer Documentation](docs/multiplayer.md) for details.
 | [Ragdoll Physics](examples/ragdoll-physics.mjs) | Procedural avatar ragdoll: bone-derived capsule bodies, cone/hinge constraints, impact-triggered activation, and head-tracked camera follow |
 | [Scavenger Hunt](examples/scavenger-hunt.mjs) | Controller that discovers Scavenger Item entities, tracks collection via proximity, and shows progress/finish HUD |
 | [Scavenger Item](examples/scavenger-item.mjs) | Collectible marker with gizmo-positionable placement, default visual or custom GLB, used with Scavenger Hunt |
-| [Shooter HUD](examples/shooter-hud.mjs) | Game-style HUD overlay example |
 | [Simple Chat](examples/simple-chat.mjs) | Multiplayer chat with `ArrivalSpace.net` |
 | [Snowfall](examples/snowfall.mjs) | Configurable snowfall particle effect |
 | [Splat Reveal](examples/splat-reveal.mjs) | Configurable reveal on the space's loaded unified/LOD splat via the `gsplatCustomizeVS` hook — radial/sweep/rain/scatter/dissolve/bloom patterns with a final scale bump |
