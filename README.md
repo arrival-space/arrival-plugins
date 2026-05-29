@@ -85,6 +85,7 @@ See [Multiplayer Documentation](docs/multiplayer.md) for details.
 | [Shooter HUD](examples/shooter-hud.mjs) | Game-style HUD overlay example |
 | [Simple Chat](examples/simple-chat.mjs) | Multiplayer chat with `ArrivalSpace.net` |
 | [Snowfall](examples/snowfall.mjs) | Configurable snowfall particle effect |
+| [Splat Reveal](examples/splat-reveal.mjs) | Configurable reveal on the space's loaded unified/LOD splat via the `gsplatCustomizeVS` hook — radial/sweep/rain/scatter/dissolve/bloom patterns with a final scale bump |
 | [Splat Snow](examples/splat-snow.mjs) | Flattened GSplat snow cover that raycasts onto collision surfaces |
 | [Sound Trigger](examples/sound-trigger.mjs) | Play sound on proximity |
 | [Vehicle Physics Model](examples/vehicle-physics-model.mjs) | Driveable vehicle with custom chassis/wheel GLB models, headlights, suspension, and input controls |

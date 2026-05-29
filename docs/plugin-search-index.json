@@ -2,7 +2,7 @@
   "version": 1,
   "updated_at": "2026-04-16",
   "source": "curated",
-  "total_entries": 38,
+  "total_entries": 39,
   "entries": [
     {
       "path": "README.md",
@@ -309,6 +309,14 @@
       "summary": "Loads a Gaussian Splat via loadSplat and applies custom GLSL vertex/fragment shaders with animated uniforms.",
       "script_name": "Splat Shader",
       "keywords": ["splat", "shader", "gsplat", "glsl", "custom shader", "loadSplat", "ply", "sog", "spz", "vertex shader", "fragment shader", "material", "tint", "pulse"]
+    },
+    {
+      "path": "examples/splat-reveal.mjs",
+      "kind": "example",
+      "title": "Splat Reveal",
+      "summary": "Plays a configurable reveal animation on the space's already-loaded unified / LOD-streaming Gaussian splat by overriding the engine's gsplatCustomizeVS hook (modifyCenter / modifyCovariance / modifyColor). Patterns include radial wave, sweep up/down, rain, scatter, dissolve and a brightness-driven 'bloom' where the brightest splats ignite first with a flare and twinkle; each splat grows from a dot with per-splat jitter, entrance motion (fall/scatter/rise), a settle hop, glow, and a one-shot scale bump at the end. Driven on the GPU from uProgress/uTime, disables itself when a non-looping reveal completes, and restores the original chunk on unload.",
+      "script_name": "Splat Reveal",
+      "keywords": ["splat", "reveal", "gsplat", "unified splat", "lod streaming", "shared material", "environment splat", "glsl", "custom shader", "gsplatCustomizeVS", "modifyCenter", "modifyCovariance", "modifyColor", "gsplatMakeRound", "centerasset:splatMaterialReady", "pattern", "radial", "sweep", "rain", "scatter", "dissolve", "bloom", "brightness", "luminance", "twinkle", "bump", "jitter", "animation", "wave", "intro", "appear", "grow", "loop", "effect"]
     },
     {
       "path": "types/arrival.d.ts",
