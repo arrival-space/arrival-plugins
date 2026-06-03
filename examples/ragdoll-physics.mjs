@@ -5,7 +5,9 @@
  * avatar skeleton. When activated the animation is paused and the
  * avatar collapses under gravity like a lifeless body.
  *
- * Supports RPM (short), Mixamo-prefixed, and VRM (J_Bip) bone names.
+ * Supports RPM (short), Mixamo-prefixed, VRM (J_Bip), and Blender/VRoid
+ * (".L"/".R" suffixed) bone names. Missing optional bones (fingers, toes,
+ * even whole limbs) are tolerated — only their segments are skipped.
  */
 export class RagdollPhysics extends ArrivalScript {
     static scriptName = "Ragdoll Physics";
@@ -60,31 +62,45 @@ export class RagdollPhysics extends ArrivalScript {
     _graphSamplesVert = [];
     _graphSamplesHoriz = [];
 
+    // Bones the ragdoll genuinely cannot work without. Everything else in
+    // BONE_ALIASES is optional — a missing finger, toe, hand or even a whole
+    // forearm just drops the affected segment(s) instead of aborting the
+    // build. Hips + Head are needed because the torso body spans them and
+    // the camera-follow logic tracks the head.
+    static REQUIRED_BONES = ["Hips", "Head"];
+
     // --------------------------------------------------- bone naming variants
     static BONE_PREFIXES = ["", "mixamorig:", "mixamorig", "J_Bip_C_", "J_Bip_L_", "J_Bip_R_"];
 
+    // Each entry lists every known alias for a canonical bone. The trailing
+    // "Upper Arm.L"-style names cover the Blender / VRoid Studio convention
+    // (space-separated part names with .L / .R side suffixes) used by many
+    // VRM exports — e.g. HatsuneMikuNT.vrm. VRM rigs carry an explicit
+    // standard-bone map in their glTF extensions, but that data is consumed
+    // by the offline importer and isn't available to a runtime plugin, so we
+    // match on the original node names the avatar ships with instead.
     static BONE_ALIASES = {
         Hips:          ["Hips", "mixamorig:Hips", "mixamorigHips", "J_Bip_C_Hips"],
         Spine:         ["Spine", "mixamorig:Spine", "mixamorigSpine", "J_Bip_C_Spine"],
         Head:          ["Head", "mixamorig:Head", "mixamorigHead", "J_Bip_C_Head"],
-        LeftArm:       ["LeftArm", "mixamorig:LeftArm", "mixamorigLeftArm", "J_Bip_L_UpperArm"],
-        LeftForeArm:   ["LeftForeArm", "mixamorig:LeftForeArm", "mixamorigLeftForeArm", "J_Bip_L_LowerArm"],
-        LeftHand:      ["LeftHand", "mixamorig:LeftHand", "mixamorigLeftHand", "J_Bip_L_Hand"],
-        RightArm:      ["RightArm", "mixamorig:RightArm", "mixamorigRightArm", "J_Bip_R_UpperArm"],
-        RightForeArm:  ["RightForeArm", "mixamorig:RightForeArm", "mixamorigRightForeArm", "J_Bip_R_LowerArm"],
-        RightHand:     ["RightHand", "mixamorig:RightHand", "mixamorigRightHand", "J_Bip_R_Hand"],
-        LeftMiddle1:   ["LeftHandMiddle2", "mixamorig:LeftHandMiddle2", "mixamorigLeftHandMiddle2", "J_Bip_L_Mid2"],
-        RightMiddle1:  ["RightHandMiddle2", "mixamorig:RightHandMiddle2", "mixamorigRightHandMiddle2", "J_Bip_R_Mid2"],
-        LeftUpLeg:     ["LeftUpLeg", "mixamorig:LeftUpLeg", "mixamorigLeftUpLeg", "J_Bip_L_UpperLeg"],
-        LeftLeg:       ["LeftLeg", "mixamorig:LeftLeg", "mixamorigLeftLeg", "J_Bip_L_LowerLeg"],
-        LeftFoot:      ["LeftFoot", "mixamorig:LeftFoot", "mixamorigLeftFoot", "J_Bip_L_Foot"],
-        RightUpLeg:    ["RightUpLeg", "mixamorig:RightUpLeg", "mixamorigRightUpLeg", "J_Bip_R_UpperLeg"],
-        RightLeg:      ["RightLeg", "mixamorig:RightLeg", "mixamorigRightLeg", "J_Bip_R_LowerLeg"],
+        LeftArm:       ["LeftArm", "mixamorig:LeftArm", "mixamorigLeftArm", "J_Bip_L_UpperArm", "Upper Arm.L"],
+        LeftForeArm:   ["LeftForeArm", "mixamorig:LeftForeArm", "mixamorigLeftForeArm", "J_Bip_L_LowerArm", "Lower Arm.L"],
+        LeftHand:      ["LeftHand", "mixamorig:LeftHand", "mixamorigLeftHand", "J_Bip_L_Hand", "Hand.L"],
+        RightArm:      ["RightArm", "mixamorig:RightArm", "mixamorigRightArm", "J_Bip_R_UpperArm", "Upper Arm.R"],
+        RightForeArm:  ["RightForeArm", "mixamorig:RightForeArm", "mixamorigRightForeArm", "J_Bip_R_LowerArm", "Lower Arm.R"],
+        RightHand:     ["RightHand", "mixamorig:RightHand", "mixamorigRightHand", "J_Bip_R_Hand", "Hand.R"],
+        LeftMiddle1:   ["LeftHandMiddle2", "mixamorig:LeftHandMiddle2", "mixamorigLeftHandMiddle2", "J_Bip_L_Mid2", "Middle Proximal.L"],
+        RightMiddle1:  ["RightHandMiddle2", "mixamorig:RightHandMiddle2", "mixamorigRightHandMiddle2", "J_Bip_R_Mid2", "Middle Proximal.R"],
+        LeftUpLeg:     ["LeftUpLeg", "mixamorig:LeftUpLeg", "mixamorigLeftUpLeg", "J_Bip_L_UpperLeg", "Upper Leg.L"],
+        LeftLeg:       ["LeftLeg", "mixamorig:LeftLeg", "mixamorigLeftLeg", "J_Bip_L_LowerLeg", "Lower Leg.L"],
+        LeftFoot:      ["LeftFoot", "mixamorig:LeftFoot", "mixamorigLeftFoot", "J_Bip_L_Foot", "Foot.L"],
+        RightUpLeg:    ["RightUpLeg", "mixamorig:RightUpLeg", "mixamorigRightUpLeg", "J_Bip_R_UpperLeg", "Upper Leg.R"],
+        RightLeg:      ["RightLeg", "mixamorig:RightLeg", "mixamorigRightLeg", "J_Bip_R_LowerLeg", "Lower Leg.R"],
         Neck:          ["Neck", "mixamorig:Neck", "mixamorigNeck", "J_Bip_C_Neck"],
         HeadTop:       ["HeadTop_End", "mixamorig:HeadTop_End", "mixamorigHeadTop_End", "J_Bip_C_HeadTop"],
-        RightFoot:     ["RightFoot", "mixamorig:RightFoot", "mixamorigRightFoot", "J_Bip_R_Foot"],
-        LeftToeBase:   ["LeftToeBase", "mixamorig:LeftToeBase", "mixamorigLeftToeBase", "J_Bip_L_ToeBase"],
-        RightToeBase:  ["RightToeBase", "mixamorig:RightToeBase", "mixamorigRightToeBase", "J_Bip_R_ToeBase"],
+        RightFoot:     ["RightFoot", "mixamorig:RightFoot", "mixamorigRightFoot", "J_Bip_R_Foot", "Foot.R"],
+        LeftToeBase:   ["LeftToeBase", "mixamorig:LeftToeBase", "mixamorigLeftToeBase", "J_Bip_L_ToeBase", "Toes.L"],
+        RightToeBase:  ["RightToeBase", "mixamorig:RightToeBase", "mixamorigRightToeBase", "J_Bip_R_ToeBase", "Toes.R"],
     };
 
     // ----------------------------------------- body segment definitions
@@ -585,17 +601,32 @@ export class RagdollPhysics extends ArrivalScript {
     // ================================================================ bones
     _resolveBones(skeleton) {
         const resolved = {};
+        const missing = [];
         for (const [canonical, aliases] of Object.entries(RagdollPhysics.BONE_ALIASES)) {
             let found = null;
             for (const alias of aliases) {
                 found = skeleton.findByName(alias);
                 if (found) break;
             }
-            if (!found) {
-                console.warn(`[Ragdoll] Missing bone: ${canonical}`);
-                return null;
-            }
-            resolved[canonical] = found;
+            if (found) resolved[canonical] = found;
+            else missing.push(canonical);
+        }
+
+        // Only bail out if an *essential* bone is missing. A missing finger,
+        // toe or other limb tip just means the corresponding segment gets
+        // skipped further down — the ragdoll still builds from what's there.
+        const missingRequired = RagdollPhysics.REQUIRED_BONES.filter(b => !resolved[b]);
+        if (missingRequired.length) {
+            console.warn(
+                `[Ragdoll] Missing required bone(s): ${missingRequired.join(", ")} — cannot build ragdoll`
+            );
+            return null;
+        }
+        if (missing.length) {
+            console.warn(
+                `[Ragdoll] Missing optional bone(s): ${missing.join(", ")} — ` +
+                `affected segments will be skipped`
+            );
         }
         return resolved;
     }
@@ -618,7 +649,15 @@ export class RagdollPhysics extends ArrivalScript {
 
         for (const seg of RagdollPhysics.SEGMENTS) {
             const boneStart = bones[seg.boneStart];
-            const boneEnd = seg.boneEnd ? bones[seg.boneEnd] : null;
+            // No start bone → this segment can't be placed at all; skip it.
+            // (e.g. a rig with no hands drops both hand segments.)
+            if (!boneStart) {
+                console.warn(`[Ragdoll] Skipping "${seg.name}" — missing bone "${seg.boneStart}"`);
+                continue;
+            }
+            // A missing end bone is fine: fall back to terminal-bone handling
+            // (the segment becomes a short stub sized by its radius).
+            const boneEnd = (seg.boneEnd && bones[seg.boneEnd]) ? bones[seg.boneEnd] : null;
 
             const startPos = boneStart.getPosition();
             const endPos = boneEnd ? boneEnd.getPosition() : null;
