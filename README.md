@@ -89,6 +89,7 @@ See [Multiplayer Documentation](docs/multiplayer.md) for details.
 | [Splat Snow](examples/splat-snow.mjs) | Flattened GSplat snow cover that raycasts onto collision surfaces |
 | [Sound Trigger](examples/sound-trigger.mjs) | Play sound on proximity |
 | [Vehicle Physics Model](examples/vehicle-physics-model.mjs) | Driveable vehicle with custom chassis/wheel GLB models, headlights, suspension, and input controls |
+| [VRM Tuning & Debug](examples/vrm-tuning-debug.mjs) | Live control panel + visualizer for the engine's native VRM systems (which run automatically for every loaded VRM). Sliders tune the global `window.VRMSpringBones` (ropiness, air resistance, stiffness/gravity/drag, collision iterations) and `window.VRMToonMaterial` (diffuse/emissive/ambient/specular, skybox & tonemap); debug toggles draw the engine's real colliders and bones |
 
 ## MCP Search Index Maintenance
 
