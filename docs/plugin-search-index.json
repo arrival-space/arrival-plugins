@@ -2,7 +2,7 @@
   "version": 1,
   "updated_at": "2026-04-16",
   "source": "curated",
-  "total_entries": 39,
+  "total_entries": 42,
   "entries": [
     {
       "path": "README.md",
@@ -43,8 +43,8 @@
       "path": "docs/properties.md",
       "kind": "doc",
       "title": "Properties",
-      "summary": "Explains supported property types, static property schema, dynamic options, vec3 fields, file/asset upload fields (editor: 'asset'), and runtime updates in the editor UI.",
-      "keywords": ["properties", "schema", "editor ui", "numbers", "boolean", "string", "color", "vec3", "asset", "upload", "file", "url", "glb", "texture"]
+      "summary": "Explains supported property types, static property schema, dynamic options, vec3 fields, file/asset upload fields (editor: 'asset'), restricting upload file types via the 'accept' extension list, and runtime updates in the editor UI.",
+      "keywords": ["properties", "schema", "editor ui", "numbers", "boolean", "string", "color", "vec3", "asset", "upload", "file", "url", "glb", "texture", "accept", "restrict", "extension", "file type", "file types"]
     },
     {
       "path": "examples/annotation-marker.mjs",
@@ -213,6 +213,14 @@
       "summary": "Procedural avatar ragdoll: builds capsule rigid bodies and cone/hinge constraints from the player skeleton (RPM/Mixamo/VRM), auto-activates on velocity-delta impact with separate horizontal/vertical thresholds, transfers pre-impact velocity to bones, and tracks the head with the player capsule so the camera follows the fall.",
       "script_name": "Ragdoll Physics",
       "keywords": ["ragdoll", "physics", "ammo", "constraints", "cone twist", "hinge", "capsule bodies", "skeleton", "bones", "impact", "velocity delta", "wake on move", "rpm", "mixamo", "vrm"]
+    },
+    {
+      "path": "examples/vrm-tuning-debug.mjs",
+      "kind": "example",
+      "title": "VRM Tuning & Debug",
+      "summary": "Live control panel + visualizer for the engine's native VRM systems (which run automatically for every loaded VRM). It does NOT simulate anything itself: spring-bone sliders (simulate spring bones, eye blink, ropiness/locomotion momentum, air resistance, stiffness/gravity/drag multipliers, extra drag, collision iterations) write straight into the global window.VRMSpringBones, and toon-material sliders (diffuse R/G/B, emissive, ambient, specular, shininess, reflectivity, glossiness, skybox, tonemap) write into window.VRMToonMaterial and call retuneAll() to re-shade every VRM material already in the scene. Debug Draw Colliders/Bones render the engine's actual solver state (read from VRMSpringBones._solvers) — the real world-space spheres, capsules and bone segments collision uses. Removing the plugin restores the globals to their pre-session values.",
+      "script_name": "VRM Tuning & Debug",
+      "keywords": ["vrm", "spring bone", "spring bones", "jiggle", "jiggle bones", "hair physics", "skirt", "eye blink", "blink", "debug", "visualize", "tuning", "control panel", "ropiness", "air resistance", "colliders", "collider visualizer", "VRMSpringBones", "VRMToonMaterial", "toon", "mtoon", "material", "shader", "lighting", "diffuse", "emissive", "global tuning", "skeleton", "bones", "avatar", "postUpdate"]
     },
     {
       "path": "examples/simple-chat.mjs",

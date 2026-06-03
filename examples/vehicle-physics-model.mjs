@@ -91,9 +91,9 @@ export class VehiclePhysicsModel extends ArrivalScript {
     driveSoundAccelPitch = 0.12;
 
     static properties = {
-        chassisModelUrl:       { title: "Chassis Model (GLB)", editor: "asset" },
+        chassisModelUrl:       { title: "Chassis Model (GLB)", editor: "asset", accept: [".glb"] },
         chassisScale:          { title: "Chassis Scale",          min: 0.01, max: 10,  step: 0.01 },
-        wheelModelUrl:         { title: "Wheel Model (GLB)", editor: "asset" },
+        wheelModelUrl:         { title: "Wheel Model (GLB)", editor: "asset", accept: [".glb"] },
         wheelScale:            { title: "Wheel Scale",            min: 0.01, max: 10,  step: 0.01 },
         chassisMass:           { title: "Chassis Mass",           min: 100,  max: 5000 },
         wheelRadius:           { title: "Wheel Radius",           min: 0.1,  max: 1 },

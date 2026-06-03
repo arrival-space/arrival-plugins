@@ -161,6 +161,25 @@ The user can either upload a file or paste an external URL. See
 `examples/glb-model.mjs` and `examples/cloth-physics.mjs` for full plugins
 that load GLBs and textures from `editor: 'asset'` URLs at runtime.
 
+#### Restricting file types
+
+Add an `accept` declaration of file extensions to limit which files the upload
+picker offers. Without it, the picker accepts any supported asset type (models,
+splats, images, audio, video, documents). Extensions are case-insensitive and
+the leading dot is optional. `accept` may be an array, or a single/comma-
+separated string.
+
+```javascript
+static properties = {
+    modelUrl:  { title: 'Model', editor: 'asset', accept: ['.glb', '.gltf'] },
+    splatUrl:  { title: 'Splat', editor: 'asset', accept: ['.ply', '.sog', '.spz'] },
+    audioUrl:  { title: 'MP3 File', editor: 'asset', accept: '.mp3' },
+};
+```
+
+This only filters the file picker / drag-and-drop in the editor — pasting an
+external URL is still allowed, so validate the URL at runtime if it matters.
+
 ## Reserved Names
 
 Do not use built-in script property names as plugin parameters. In particular, avoid:

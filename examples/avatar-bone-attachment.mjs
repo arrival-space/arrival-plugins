@@ -25,7 +25,7 @@ export class AvatarBoneAttachment extends ArrivalScript {
     rotationZ = 0;
 
     static properties = {
-        modelUrl: { title: "Model (GLB)", editor: "asset" },
+        modelUrl: { title: "Model (GLB)", editor: "asset", accept: [".glb"] },
         boneName: { title: "Gun Bone" },
         boneRotationX: { title: "Bone Rotation X", min: -180, max: 180, step: 1 },
         boneRotationY: { title: "Bone Rotation Y", min: -180, max: 180, step: 1 },

@@ -112,7 +112,7 @@ export class SkateboardModel extends ArrivalScript {
     indicatorBounceHeight = 0.59;
     indicatorBounceSpeed = 0.48;
     static properties = {
-        chassisModelUrl:       { title: "Chassis Model (GLB)", editor: "asset" },
+        chassisModelUrl:       { title: "Chassis Model (GLB)", editor: "asset", accept: [".glb"] },
         chassisScale:          { title: "Chassis Scale",          min: 0.01, max: 10,  step: 0.001 },
         chassisOffsetY:        { title: "Chassis Offset Y",       min: -1,   max: 1,   step: 0.001 },
         chassisRotationX:      { title: "Chassis Rotation X",     min: -180, max: 180, step: 1 },
@@ -121,7 +121,7 @@ export class SkateboardModel extends ArrivalScript {
         boardLean:             { title: "Board Lean",             min: -45,  max: 45,  step: 0.1 },
         riderLean:             { title: "Rider Lean",             min: -30,  max: 10,  step: 0.01 },
         riderLag:              { title: "Rider Lag",              min: 0,    max: 1,   step: 0.01 },
-        wheelModelUrl:         { title: "Wheel Model (GLB)", editor: "asset" },
+        wheelModelUrl:         { title: "Wheel Model (GLB)", editor: "asset", accept: [".glb"] },
         wheelScale:            { title: "Wheel Scale",            min: 0.01, max: 10,  step: 0.001 },
         wheelOffsetX:          { title: "Wheel Visual Offset X",  min: -0.4,   max: 0.4,   step: 0.001 },
         wheelOffsetY:          { title: "Wheel Visual Offset Y",  min: -0.4,   max: 0.4,   step: 0.001 },
@@ -189,7 +189,7 @@ export class SkateboardModel extends ArrivalScript {
         airStateSoundVolume:    { title: "Air State Sound Volume", min: 0, max: 10, step: 0.01 },
         soundRefDistance:       { title: "Sound Ref Distance",     min: 0.1, max: 50,  step: 0.1 },
         soundMaxDistance:       { title: "Sound Max Distance",     min: 1,   max: 200, step: 1 },
-        indicatorModelUrl:      { title: "Indicator Model (GLB)", editor: "asset" },
+        indicatorModelUrl:      { title: "Indicator Model (GLB)", editor: "asset", accept: [".glb"] },
         indicatorScale:         { title: "Indicator Scale", min: 0.01, max: 10, step: 0.001 },
         indicatorBounceHeight:  { title: "Indicator Bounce Height", min: 0, max: 5, step: 0.01 },
         indicatorBounceSpeed:   { title: "Indicator Bounce Speed", min: 0, max: 10, step: 0.01 },

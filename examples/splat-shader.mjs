@@ -178,7 +178,7 @@ export class SplatShader extends ArrivalScript {
     pulseStrength = 0.02;
 
     static properties = {
-        splatUrl: { title: "Splat URL", editor: "asset", placeholder: ".ply / .sog / .spz" },
+        splatUrl: { title: "Splat URL", editor: "asset", accept: [".ply", ".sog", ".spz"], placeholder: ".ply / .sog / .spz" },
         splatScale: { title: "Scale", min: 0.01, max: 20 },
         tintColor: { title: "Tint Color" },
         tintStrength: { title: "Tint Strength", min: 0, max: 1 },

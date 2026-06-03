@@ -53,7 +53,7 @@ export class LocalizedLightProbePlugin extends ArrivalScript {
         primaryLightIntensity: { title: "Light Intensity", min: 0, max: 20, step: 0.01, enabledBy: "overridePrimaryLight" },
         primaryShadowIntensity: { title: "Shadow Intensity", min: 0, max: 1, step: 0.01, enabledBy: "overridePrimaryLight" },
         overrideEnvironment: { title: "Override Environment" },
-        hdrUrl: { title: "HDR URL", editor: "asset", enabledBy: "overrideEnvironment" },
+        hdrUrl: { title: "HDR URL", editor: "asset", accept: [".hdr"], enabledBy: "overrideEnvironment" },
         hdrEncoding: { title: "HDR Encoding", enabledBy: "overrideEnvironment" },
         environmentRotation: { title: "Env Rotation", min: -180, max: 180, step: 1, enabledBy: "overrideEnvironment" },
         environmentIntensity: { title: "Env Intensity", min: 0, max: 20, step: 0.01, enabledBy: "overrideEnvironment" },
