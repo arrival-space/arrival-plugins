@@ -5,8 +5,9 @@
  * Demonstrates ArrivalScript.createNPC(), avatarConfig customization,
  * and simple follow steering with walkTo().
  *
- * Uses built-in avatar locomotion animations by default and can optionally
- * apply custom animations by URL or avatar animation catalog key.
+ * Each animation slot (Idle/Walk/Jump) uses a catalog clip (dropdown) by default, or a custom
+ * Mixamo .fbx you upload — the upload overrides the dropdown and is converted to a generic clip
+ * on the fly, retargeted onto the avatar (works on VRM and modular/RPM).
  *
  * Avatar part IDs (e.g. "male-shirt-11.glb") come from:
  * - ArrivalSpace.getAvatarCatalog('male' | 'female')
@@ -52,6 +53,13 @@ export class NpcCharacter extends ArrivalScript {
     walkAnimation = 'walking.glb';
     jumpAnimation = '';
 
+    // Optional custom Mixamo .fbx per slot. When set, it OVERRIDES the catalog dropdown above it:
+    // the file is converted to a generic clip on the fly and retargeted onto the avatar (VRM and
+    // modular/RPM both work). Leave empty to use the catalog animation.
+    idleFbx = '';
+    walkFbx = '';
+    jumpFbx = '';
+
     static properties = {
         followDistance: { title: 'Follow Distance', min: 0.5, max: 6, step: 0.1 },
         repathInterval: { title: 'Repath Interval', min: 0.1, max: 2, step: 0.05 },
@@ -63,9 +71,12 @@ export class NpcCharacter extends ArrivalScript {
         headLabel: { title: 'Head Label' },
         headLabelColor: { title: 'Head Label Color' },
         idleAnimation: { title: 'Idle Animation' },
+        idleFbx: { title: 'Idle — Custom FBX (Mixamo)', editor: 'asset', accept: ['.fbx'] },
         idleLoop: { title: 'Idle Loop' },
         walkAnimation: { title: 'Walk Animation' },
+        walkFbx: { title: 'Walk — Custom FBX (Mixamo)', editor: 'asset', accept: ['.fbx'] },
         jumpAnimation: { title: 'Jump Animation' },
+        jumpFbx: { title: 'Jump — Custom FBX (Mixamo)', editor: 'asset', accept: ['.fbx'] },
     };
 
     async initialize() {
@@ -112,10 +123,10 @@ export class NpcCharacter extends ArrivalScript {
 
         const animationsChanged =
             name === 'avatarConfig' ||
-            name === 'idleAnimation' ||
+            name === 'idleAnimation' || name === 'idleFbx' ||
             name === 'idleLoop' ||
-            name === 'walkAnimation' ||
-            name === 'jumpAnimation';
+            name === 'walkAnimation' || name === 'walkFbx' ||
+            name === 'jumpAnimation' || name === 'jumpFbx';
         if (animationsChanged) {
             await this._applyAnimations();
         }
@@ -125,12 +136,19 @@ export class NpcCharacter extends ArrivalScript {
         return this.avatarConfig?.gender === 'female' ? 'female' : 'male';
     }
 
+    // A custom .fbx upload (a CDN URL) overrides the catalog dropdown for that slot. The platform
+    // converts .fbx refs to a generic clip on the fly, so setAnimation takes either kind of ref.
+    _slotRef(catalogValue, fbxUrl) {
+        const f = (fbxUrl || '').trim();
+        return f || catalogValue;
+    }
+
     async _applyAnimations() {
         if (!this._npc) return;
 
-        const idle = this.idleAnimation;
-        const walk = this.walkAnimation;
-        const jump = this.jumpAnimation;
+        const idle = this._slotRef(this.idleAnimation, this.idleFbx);
+        const walk = this._slotRef(this.walkAnimation, this.walkFbx);
+        const jump = this._slotRef(this.jumpAnimation, this.jumpFbx);
 
         if (!idle && !walk && !jump) {
             this._npc.setLocomotionMode('idle');
