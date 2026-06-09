@@ -170,9 +170,9 @@
       "path": "examples/npc-character.mjs",
       "kind": "example",
       "title": "NPC Character",
-      "summary": "Spawns an NPC and makes it follow the local player, demonstrating createNPC, avatar setup, and a simple click callback.",
+      "summary": "Spawns an NPC that follows the local player — demonstrates createNPC, avatar setup, a click callback, and per-slot animations (Idle/Walk/Jump) driven by a catalog clip or a custom Mixamo .fbx upload that the platform auto-converts to a generic clip and retargets onto the avatar (VRM and modular/RPM).",
       "script_name": "NPC Character",
-      "keywords": ["npc", "character", "createNPC", "follower", "avatar", "ai character", "companion", "click", "interaction"]
+      "keywords": ["npc", "character", "createNPC", "follower", "avatar", "ai character", "companion", "click", "interaction", "animation", "setAnimation", "custom animation", "mixamo", "fbx", "retarget", "idle", "walk", "jump"]
     },
     {
       "path": "examples/outfit-override.mjs",

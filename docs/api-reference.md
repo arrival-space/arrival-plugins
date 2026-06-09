@@ -739,7 +739,7 @@ Supports:
 - spawn/transform options (`position`, `rotation`, `scale`, `parent`)
 - avatar setup (`avatarUrl`, `avatarConfig`, `avatarParts`, `avatarGender`)
 - movement tuning (`speed`, `turnSpeed`, `stopDistance`)
-- optional custom animation refs (`animations.idle`, `animations.walk`, `animations.jump`)
+- optional custom animation refs (`animations.idle`, `animations.walk`, `animations.jump`) — each accepts a catalog/GLB clip **or a raw Mixamo `.fbx` URL**, which the platform converts to a generic clip on the fly and retargets onto the avatar (VRM and modular/RPM); no pre-conversion needed
 - optional interaction callbacks (`onClick`, `onHoverEnter`, `onHoverLeave`)
 
 Interaction behavior:
@@ -752,7 +752,7 @@ Common controller methods:
 - `npc.walkTo(target, options?)`
 - `npc.stop()`
 - `npc.lookAt(target)`
-- `npc.setAnimation(state, animationRef, options?)`
+- `npc.setAnimation(state, animationRef, options?)` — `animationRef` is a catalog/GLB clip or a raw Mixamo `.fbx` URL (auto-converted and retargeted)
 - `npc.applyAvatarConfig(config, renderOptions?)`
 - `npc.setAvatarParts(parts, options?)`
 - `npc.setSpeed(value)`, `npc.setTurnSpeed(value)`, `npc.setStopDistance(value)`
