@@ -14,6 +14,13 @@
  * - male catalog: https://ugc.arrival.space/avatar-parts/catalog.json
  * - female catalog: https://ugc.arrival.space/avatar-parts-female/catalog.json
  */
+
+// First entry in every animation dropdown. Selecting it applies no override, so the avatar
+// keeps the clip it was assigned at import. The dropdown shows the option string verbatim, so
+// a plain '' would render as a blank line — this label makes the "no override" choice readable.
+// _slotRef() resolves it back to '' for all the apply/revert logic.
+const BUILTIN_ANIMATION = '<built-in>';
+
 export class NpcCharacter extends ArrivalScript {
     static scriptName = 'NPC Character';
 
@@ -51,7 +58,7 @@ export class NpcCharacter extends ArrivalScript {
     idleAnimation = 'idle.glb';
     idleLoop = true;
     walkAnimation = 'walking.glb';
-    jumpAnimation = '';
+    jumpAnimation = BUILTIN_ANIMATION;
 
     // Optional custom Mixamo .fbx per slot. When set, it OVERRIDES the catalog dropdown above it:
     // the file is converted to a generic clip on the fly and retargeted onto the avatar (VRM and
@@ -119,6 +126,9 @@ export class NpcCharacter extends ArrivalScript {
         if (name === 'avatarConfig') {
             await this._npc.applyAvatarConfig(this.avatarConfig);
             await this._syncAnimationOptions();
+            // A URL-avatar swap rebuilds the NPC with a fresh anim graph (no overrides),
+            // so clear our bookkeeping to force every active slot to be re-installed below.
+            this._animSlots = null;
         }
 
         const animationsChanged =
@@ -138,33 +148,69 @@ export class NpcCharacter extends ArrivalScript {
 
     // A custom .fbx upload (a CDN URL) overrides the catalog dropdown for that slot. The platform
     // converts .fbx refs to a generic clip on the fly, so setAnimation takes either kind of ref.
+    // BUILTIN_ANIMATION means "no override" — resolve it (and any blank) to '' so the avatar keeps
+    // its import clip and the apply/revert logic stays unaware of the dropdown label.
     _slotRef(catalogValue, fbxUrl) {
         const f = (fbxUrl || '').trim();
-        return f || catalogValue;
+        if (f) return f;
+        return catalogValue === BUILTIN_ANIMATION ? '' : catalogValue;
     }
 
     async _applyAnimations() {
         if (!this._npc) return;
 
+        // Per-slot bookkeeping so we only touch a state when it actually changes:
+        //  - `key`    : last-applied ref (plus loop for Idle); unchanged key => skip entirely,
+        //               which avoids re-loading the same clip every edit (that can freeze the
+        //               state graph on frame 0).
+        //  - `active` : whether we currently have an override installed. Only then do we issue
+        //               setAnimation(state, '') to REVERT — passing '' to a slot we never
+        //               overrode would strip its built-in clip instead of leaving it alone.
+        if (!this._animSlots) {
+            this._animSlots = {
+                Idle: { key: '', active: false },
+                Forward: { key: '', active: false },
+                Jumping: { key: '', active: false },
+            };
+        }
+
         const idle = this._slotRef(this.idleAnimation, this.idleFbx);
         const walk = this._slotRef(this.walkAnimation, this.walkFbx);
         const jump = this._slotRef(this.jumpAnimation, this.jumpFbx);
 
-        if (!idle && !walk && !jump) {
-            this._npc.setLocomotionMode('idle');
-            return;
-        }
+        const slots = [
+            { state: 'Idle', ref: idle, options: { inPlace: true, loop: this.idleLoop }, key: `${idle}|${this.idleLoop}` },
+            { state: 'Forward', ref: walk, options: { inPlace: true }, key: walk },
+            { state: 'Jumping', ref: jump, options: { inPlace: true }, key: jump },
+        ];
 
-        if (idle) await this._npc.setAnimation('Idle', idle, { inPlace: true, loop: this.idleLoop });
-        if (walk) await this._npc.setAnimation('Forward', walk, { inPlace: true });
-        if (jump) await this._npc.setAnimation('Jumping', jump, { inPlace: true });
+        for (const { state, ref, options, key } of slots) {
+            const slot = this._animSlots[state];
+            if (slot.key === key) continue;
+
+            if (ref) {
+                await this._npc.setAnimation(state, ref, options);
+                slot.active = true;
+            } else if (slot.active) {
+                // Cleared an override -> revert to the avatar's built-in (import) clip.
+                await this._npc.setAnimation(state, '');
+                slot.active = false;
+            }
+            slot.key = key;
+        }
     }
 
     async _syncAnimationOptions() {
         const animations = await ArrivalSpace.getAvatarAnimationCatalog(this._getAvatarGender());
         if (!Array.isArray(animations) || animations.length === 0) return;
 
-        const options = ['', ...animations];
+        // Show the built-in label for any blank slot (e.g. an NPC saved before this label existed)
+        // so the dropdown reads "<built-in>" instead of an empty line. Resolves back to '' in _slotRef.
+        if (!this.idleAnimation) this.idleAnimation = BUILTIN_ANIMATION;
+        if (!this.walkAnimation) this.walkAnimation = BUILTIN_ANIMATION;
+        if (!this.jumpAnimation) this.jumpAnimation = BUILTIN_ANIMATION;
+
+        const options = [BUILTIN_ANIMATION, ...animations];
         this.setParamOptions('idleAnimation', options, false);
         this.setParamOptions('walkAnimation', options, false);
         this.setParamOptions('jumpAnimation', options, false);
