@@ -1,5 +1,5 @@
 /**
- * Camera POI — overlay list of scene entities; click one to fly the free cam to it.
+ * Scene Tour Camera — overlay list of scene entities; click one to fly the free cam to it.
  * Showcase: getUIContainer(), setFreeCamPose(), setCameraMode()/getCameraMode(),
  *           lockInput()/unlockInput(), userModelEntity discovery, AABB-based framing,
  *           per-frame camera animation (smooth fly + orbit).
@@ -10,12 +10,10 @@
  * to the target and auto-rotation around it (cancelled as soon as the user
  * flies manually or leaves free cam).
  *
- * Uses ArrivalSpace.setFreeCamPose (VERSION >= 1.11.0) when available; on older
- * clients it falls back to driving the freeCamView script directly.
  * Press [F] in-game to toggle free cam off, or use the panel's "Exit free cam" button.
  */
-export class CameraPoi extends ArrivalScript {
-    static scriptName = "cameraPoi";
+export class SceneTourCamera extends ArrivalScript {
+    static scriptName = "sceneTourCamera";
 
     distanceFactor = 2.2; // camera distance = bounding radius * this
     viewHeight = 0.25;    // camera height above the target center = bounding radius * this
@@ -67,7 +65,7 @@ export class CameraPoi extends ArrivalScript {
             const k = a.t * a.t * (3 - 2 * a.t); // smoothstep
             const pos = new pc.Vec3().lerp(a.fromPos, a.toPos, k);
             const target = new pc.Vec3().lerp(a.fromTarget, a.toTarget, k);
-            this._applyFreeCamPose(pos, target);
+            ArrivalSpace.setFreeCamPose(pos, target);
             if (a.t >= 1) {
                 this._anim = null;
                 if (this.autoRotate) this._startOrbit(a.toPos, a.toTarget, this._lastView?.radius);
@@ -83,7 +81,7 @@ export class CameraPoi extends ArrivalScript {
             o.center.y + o.boundRadius * this.viewHeight,
             o.center.z + Math.sin(o.angle) * o.radius
         );
-        this._applyFreeCamPose(pos, o.center);
+        ArrivalSpace.setFreeCamPose(pos, o.center);
     }
 
     onPropertyChanged(name, value) {
@@ -169,54 +167,6 @@ export class CameraPoi extends ArrivalScript {
         return !!(fcv.forwardValue || fcv.sidewardValue || fcv.upwardValue);
     }
 
-    /** Apply a free-cam pose, falling back to driving freeCamView directly on old clients. */
-    _applyFreeCamPose(pos, target) {
-        if (typeof ArrivalSpace.setFreeCamPose === "function") {
-            return ArrivalSpace.setFreeCamPose(pos, target);
-        }
-        return this._setFreeCamPoseFallback(pos, target);
-    }
-
-    /**
-     * Fallback for clients older than 1.11.0 (no ArrivalSpace.setFreeCamPose):
-     * switch to free cam, then drive the freeCamView script directly.
-     */
-    _setFreeCamPoseFallback(pos, target) {
-        if (ArrivalSpace.getCameraMode() !== "free" && !ArrivalSpace.setCameraMode("free")) return false;
-
-        const freeCamView = this._getFreeCamView();
-        if (!freeCamView) return false;
-
-        freeCamView.setInitPosition(pos);
-
-        const dir = new pc.Vec3().sub2(target, pos);
-        if (dir.lengthSq() > 1e-6) {
-            dir.normalize();
-            const up = Math.abs(dir.y) > 0.999 ? pc.Vec3.FORWARD : pc.Vec3.UP;
-            const lookMat = new pc.Mat4().setLookAt(pos, target, up);
-            const quat = new pc.Quat().setFromMat4(lookMat);
-            if (typeof freeCamView.setRotationFromQuat === "function") {
-                freeCamView.setRotationFromQuat(quat);
-            } else {
-                freeCamView.setInitRotation(quat);
-            }
-            // Sync the pivot in the same frame as the position — freeCamView only
-            // applies pitch/yaw in its own update(), which can lag one frame behind
-            // and wobble off-center at low frame rates.
-            if (typeof freeCamView.applyRotation === "function") {
-                freeCamView.applyRotation();
-            } else if (freeCamView.cameraPivot) {
-                const euler = freeCamView.cameraPivot.getLocalEulerAngles();
-                euler.x = freeCamView.pitch;
-                euler.y = freeCamView.yaw;
-                euler.z = freeCamView.roll || 0;
-                freeCamView.cameraPivot.setLocalEulerAngles(euler);
-            }
-        }
-        this.app.needsRedraw = true;
-        return true;
-    }
-
     _jumpTo(poi) {
         if (!poi.entity || poi.entity._destroying) {
             this._refresh();
@@ -246,7 +196,7 @@ export class CameraPoi extends ArrivalScript {
         if (this.smoothFly && cam && camPos) {
             // Start the look sweep from where the camera currently aims
             const fromTarget = camPos.clone().add(cam.forward.clone().mulScalar(camPos.distance(center)));
-            this._applyFreeCamPose(camPos, fromTarget); // enter free cam at the current pose
+            ArrivalSpace.setFreeCamPose(camPos, fromTarget); // enter free cam at the current pose
             this._anim = {
                 fromPos: camPos,
                 fromTarget,
@@ -256,7 +206,7 @@ export class CameraPoi extends ArrivalScript {
                 duration: pc.math.clamp(camPos.distance(toPos) / 15, 0.6, 2.5),
             };
         } else {
-            this._applyFreeCamPose(toPos, center);
+            ArrivalSpace.setFreeCamPose(toPos, center);
             if (this.autoRotate) this._startOrbit(toPos, center, radius);
         }
         this._setActiveRow(poi.id);
@@ -362,7 +312,7 @@ export class CameraPoi extends ArrivalScript {
 
         <div id="poi-panel">
             <div class="poi-head">
-                <span>Points of Interest</span>
+                <span>Scene Tour</span>
                 <button class="js-refresh" title="Refresh list">⟳</button>
             </div>
             <div class="poi-list js-list"></div>
