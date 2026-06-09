@@ -600,6 +600,44 @@ Get camera entity. Use this for the player's **viewing direction** (heading/yaw)
 
 > **3rd-person note:** The camera orbits the player character, so `getCamera().getPosition()` is NOT the character's position. Use `getPlayer()` for position and `getCamera()` for heading.
 
+#### `ArrivalSpace.setCameraMode(mode)`
+
+Switch the camera mode. Also available as `this.setCameraMode(mode)`.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `mode` | `"free" \| "third" \| "first" \| "orbital"` | Camera mode to switch to |
+
+**Returns:** `boolean` — true if the mode was set
+
+```javascript
+ArrivalSpace.setCameraMode("free");
+ArrivalSpace.setCameraMode("third");
+```
+
+#### `ArrivalSpace.getCameraMode()`
+
+Get the current camera mode. Also available as `this.getCameraMode()`.
+
+**Returns:** `"free" | "third" | "first" | "orbital" | null`
+
+#### `ArrivalSpace.setFreeCamPose(position, lookAt?)`
+
+Position the free camera and optionally aim it at a target. Switches to free cam mode first if it is not already active. The horizon is kept level (roll = 0). Also available as `this.setFreeCamPose(position, lookAt)`. *(VERSION ≥ 1.11.0)*
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `position` | `pc.Vec3 \| {x, y, z}` | World position for the camera |
+| `lookAt` | `pc.Vec3 \| {x, y, z}` | Optional world position to aim at |
+
+**Returns:** `boolean` — true if the pose was applied
+
+```javascript
+// Jump the free cam to a viewpoint framing an entity
+const target = entity.getPosition();
+ArrivalSpace.setFreeCamPose({ x: target.x + 4, y: target.y + 2, z: target.z + 4 }, target);
+```
+
 #### `ArrivalSpace.getUser()`
 
 Get current user profile summary.

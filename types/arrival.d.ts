@@ -714,6 +714,35 @@ declare namespace ArrivalSpace {
     function getCamera(): pc.Entity | null;
 
     /**
+     * Set camera mode.
+     * @example
+     * ArrivalSpace.setCameraMode("free");
+     * ArrivalSpace.setCameraMode("third");
+     */
+    function setCameraMode(mode: "free" | "third" | "first" | "orbital"): boolean;
+
+    /**
+     * Get the current camera mode.
+     * @example
+     * const mode = ArrivalSpace.getCameraMode(); // "third"
+     */
+    function getCameraMode(): "free" | "third" | "first" | "orbital" | null;
+
+    /**
+     * Position the free camera and optionally aim it at a target.
+     * Switches to free cam mode first if it is not already active.
+     * The horizon is kept level (roll = 0).
+     * @example
+     * // Jump the free cam to a viewpoint framing an entity
+     * const target = entity.getPosition();
+     * ArrivalSpace.setFreeCamPose({ x: target.x + 4, y: target.y + 2, z: target.z + 4 }, target);
+     */
+    function setFreeCamPose(
+        position: pc.Vec3 | { x: number; y: number; z: number },
+        lookAt?: pc.Vec3 | { x: number; y: number; z: number }
+    ): boolean;
+
+    /**
      * Get current user profile data
      * @example
      * const user = ArrivalSpace.getUser();
