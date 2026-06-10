@@ -638,6 +638,34 @@ const target = entity.getPosition();
 ArrivalSpace.setFreeCamPose({ x: target.x + 4, y: target.y + 2, z: target.z + 4 }, target);
 ```
 
+#### `ArrivalSpace.setFreeCamSpeed(speed, maxSpeed?)`
+
+Set the free camera's movement speed and/or raise its maximum. The scroll-wheel speed adjustment clamps to the max (default 50 m/s, good for room-scale spaces) — raise it for large streamed worlds, e.g. flying across a Google 3D Tiles city. Requires free cam mode to be active. Also available as `this.setFreeCamSpeed(speed, maxSpeed)`. *(VERSION ≥ 1.11.2)*
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `speed` | `number \| null` | New current speed in m/s, or `null` to leave the current speed unchanged |
+| `maxSpeed` | `number` | Optional new maximum for the scroll-wheel speed clamp |
+
+**Returns:** `boolean` — true if applied, false if the free cam is not available
+
+```javascript
+ArrivalSpace.setCameraMode("free");
+ArrivalSpace.setFreeCamSpeed(200, 2000); // fly at 200 m/s, scroll up to 2 km/s
+ArrivalSpace.setFreeCamSpeed(null, 2000); // only raise the cap
+```
+
+#### `ArrivalSpace.getFreeCamSpeed()`
+
+Get the free camera's current movement speed and maximum. Lets plugins that drive the speed (e.g. altitude-proportional flying) detect the user's scroll-wheel adjustments instead of stomping them. Also available as `this.getFreeCamSpeed()`. *(VERSION ≥ 1.11.2)*
+
+**Returns:** `{ speed, maxSpeed } | null` — null if the free cam is not available (not in free cam mode yet)
+
+```javascript
+const info = ArrivalSpace.getFreeCamSpeed();
+if (info) console.log(`flying at ${info.speed} m/s (max ${info.maxSpeed})`);
+```
+
 #### `ArrivalSpace.getUser()`
 
 Get current user profile summary.

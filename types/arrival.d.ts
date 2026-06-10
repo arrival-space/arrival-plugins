@@ -772,6 +772,26 @@ declare namespace ArrivalSpace {
     function getCutsceneScript(entityId: string): CutsceneScript | null;
 
     /**
+     * Set the free camera's movement speed and/or raise its max speed cap.
+     * The scroll-wheel speed adjustment clamps to the max (default 50 m/s) —
+     * raise it for large streamed worlds. Requires free cam mode to be active.
+     * @param speed - New current speed in m/s, or null to leave unchanged
+     * @param maxSpeed - New maximum for the scroll-wheel speed clamp
+     * @example
+     * ArrivalSpace.setCameraMode("free");
+     * ArrivalSpace.setFreeCamSpeed(200, 2000); // 200 m/s now, scroll up to 2 km/s
+     */
+    function setFreeCamSpeed(speed: number | null, maxSpeed?: number): boolean;
+
+    /**
+     * Get the free camera's current movement speed and maximum.
+     * Lets plugins that drive the speed (e.g. altitude-proportional flying)
+     * detect the user's scroll-wheel adjustments instead of stomping them.
+     * Returns null if the free cam is not available (not in free cam mode yet).
+     */
+    function getFreeCamSpeed(): { speed: number; maxSpeed: number } | null;
+
+    /**
      * Get current user profile data
      * @example
      * const user = ArrivalSpace.getUser();

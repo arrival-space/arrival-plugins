@@ -2,7 +2,7 @@
   "version": 1,
   "updated_at": "2026-06-16",
   "source": "curated",
-  "total_entries": 45,
+  "total_entries": 47,
   "entries": [
     {
       "path": "README.md",
@@ -125,6 +125,14 @@
       "summary": "Loads and attaches an external GLB model as a child of the plugin entity.",
       "script_name": "GLB Model",
       "keywords": ["glb", "model", "loadglb", "3d model", "attach model", "asset loading"]
+    },
+    {
+      "path": "examples/google-3d-tiles.mjs",
+      "kind": "example",
+      "title": "Google 3D Tiles",
+      "summary": "Streams Google Photorealistic 3D Tiles (the Google Earth dataset) as a full globe with distance-based LOD, re-centered on a configurable lat/lon so the chosen city builds up around the player; supports ground altitude tuning, detail factor, miniature-globe scaling, and camera far-clip override.",
+      "script_name": "Google 3D Tiles",
+      "keywords": ["google 3d tiles", "photorealistic 3d tiles", "3d tiles", "google earth", "globe", "geospatial", "map", "city", "streaming tiles", "latitude longitude", "ecef", "lod", "earthatile", "map tiles api"]
     },
     {
       "path": "examples/hello-world.mjs",
@@ -269,6 +277,14 @@
       "summary": "Gizmo-positionable collectible marker that announces itself via the plugin event bus. Supports a default box visual or custom GLB model with bob and rotate animation.",
       "script_name": "Scavenger Item",
       "keywords": ["scavenger item", "collectible", "marker", "event bus", "gizmo", "glb model", "bob", "pickup", "inter-plugin"]
+    },
+    {
+      "path": "examples/scene-tour-camera.mjs",
+      "kind": "example",
+      "title": "Scene Tour Camera",
+      "summary": "Overlay panel listing every user-placed entity; clicking one switches to free cam and frames it via setFreeCamPose with AABB-based distance, optional smooth flight, and auto-orbit. Showcases getCameraMode/setCameraMode, getUIContainer, and userModelEntity discovery.",
+      "script_name": "Scene Tour Camera",
+      "keywords": ["scene tour", "camera", "free cam", "setFreeCamPose", "fly to", "points of interest", "poi", "framing", "orbit", "userModelEntity", "camera mode"]
     },
     {
       "path": "examples/sound-trigger.mjs",
