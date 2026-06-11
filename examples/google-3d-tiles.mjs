@@ -608,9 +608,18 @@ export class GoogleTiles extends ArrivalScript {
     }
 
     /**
-     * loadGLB container assets aren't referenced via render.asset, so
-     * disposeEntity({ destroyAssets }) misses them and tile geometry/textures
-     * would pile up in the asset registry — remove the container explicitly.
+     * Free BOTH the scene entity and its container asset.
+     *
+     * Each tile's geometry is resident twice: PlayCanvas keeps the client-side
+     * ArrayBuffer (VertexBuffer/IndexBuffer.storage) after uploading to the GPU
+     * and only releases it on the buffer's destroy() — true on both the WebGL
+     * and WebGPU backends (neither nulls .storage post-upload), so a tile costs
+     * ~2x its GPU footprint plus its textures. Destroying only the entity tears
+     * down the mesh instances but leaves the container asset — and thus both the
+     * CPU copies and the GPU buffers/textures — alive in app.assets. (loadGLB
+     * containers aren't referenced via render.asset, so disposeEntity({
+     * destroyAssets }) misses them too.) Across a long flight that double pool
+     * balloons; remove and unload the container explicitly to reclaim it.
      */
     _disposeTile(entity, asset) {
         try { entity?.destroy(); } catch (_) { /* already gone */ }
