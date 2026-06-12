@@ -44,6 +44,40 @@ const TILE_API = "https://tile.googleapis.com/";
 
 const len3 = (x, y, z) => Math.sqrt(x * x + y * y + z * z);
 
+// ── Patch-region carve (Splat Crop integration) ──
+// A "Splat Crop" vibe with Cull Google Tiles on publishes its box via the
+// googletiles:patch-region app event; we discard tile fragments inside that box
+// so a cropped splat can replace the tiles in the same region. Uniforms are
+// declared in the global litUserDeclarationPS hook; the discard runs in
+// litUserMainEndPS (inside fragment main), where vPositionW (world pos) is in
+// scope. Single region for v1. GLSL + WGSL so it works on WebGL2 and WebGPU.
+const PATCH_DECL_CHUNK = "litUserDeclarationPS";
+const PATCH_MAIN_CHUNK = "litUserMainEndPS";
+
+const PATCH_DECL_GLSL = /* glsl */ `
+uniform mat4  uPatchInv;     // world -> box-local
+uniform vec3  uPatchHalf;    // box half-extents (m)
+uniform float uPatchEnable;  // 0 = off, 1 = carve
+`;
+const PATCH_MAIN_GLSL = /* glsl */ `
+if (uPatchEnable > 0.5) {
+    vec3 lp = (uPatchInv * vec4(vPositionW, 1.0)).xyz;
+    if (all(lessThanEqual(abs(lp), uPatchHalf))) discard;
+}
+`;
+
+const PATCH_DECL_WGSL = /* wgsl */ `
+uniform uPatchInv: mat4x4f;
+uniform uPatchHalf: vec3f;
+uniform uPatchEnable: f32;
+`;
+const PATCH_MAIN_WGSL = /* wgsl */ `
+if (uniform.uPatchEnable > 0.5) {
+    let lp = (uniform.uPatchInv * vec4f(vPositionW, 1.0)).xyz;
+    if (all(abs(lp) <= uniform.uPatchHalf)) { discard; }
+}
+`;
+
 /**
  * Minimal Google 3D Tiles tree — traversal adapted from playcanvas/earthatile
  * (MIT). Nodes expand while the camera is within `lodFactor` times their
@@ -262,6 +296,13 @@ export class GoogleTiles extends ArrivalScript {
     _speedMult = 1;          // user's scroll preference relative to the auto speed
     _lastAutoSpeed = null;
 
+    // Patch-region carve (Splat Crop integration)
+    _patchRegions = new Map();      // id -> { inv: number[16], half: [x,y,z] }
+    _patchedMaterials = new Set();
+    _patchActive = false;
+    _onPatchRegion = null;
+    _onPatchClear = null;
+
     // Concurrent GLB downloads. Movement triggers expand cascades; without a
     // cap, hundreds of parallel loads choke the main thread and the stream
     // appears to stall.
@@ -282,6 +323,23 @@ export class GoogleTiles extends ArrivalScript {
         this._applyOrigin();
 
         this._makeAttribution();
+
+        // Listen for Splat Crop carve regions
+        this._onPatchRegion = (id, region) => {
+            if (!id || !region) return;
+            this._patchRegions.set(id, region);
+            if (!this._patchActive) {
+                this._patchActive = true;
+                this._patchAllTiles();
+            }
+            this._applyPatchUniforms();
+        };
+        this._onPatchClear = (id) => {
+            this._patchRegions.delete(id);
+            this._applyPatchUniforms();
+        };
+        this.app.on("googletiles:patch-region", this._onPatchRegion, this);
+        this.app.on("googletiles:patch-region-clear", this._onPatchClear, this);
 
         if (!this.apiKey) {
             this._status("Enter a Google Maps Platform API key\n(\"Map Tiles API\" must be enabled)");
@@ -383,6 +441,8 @@ export class GoogleTiles extends ArrivalScript {
 
     destroy() {
         this._sessionId++;
+        if (this._onPatchRegion) this.app.off("googletiles:patch-region", this._onPatchRegion, this);
+        if (this._onPatchClear) this.app.off("googletiles:patch-region-clear", this._onPatchClear, this);
         this._tree = null;
         this._clearTiles();
         const cam = ArrivalSpace.getCamera()?.camera;
@@ -588,6 +648,7 @@ export class GoogleTiles extends ArrivalScript {
 
                 rec.entity = entity;
                 rec.asset = asset;
+                if (this._patchActive) this._patchEntity(entity);
             } finally {
                 this._releaseSlot();
             }
@@ -642,6 +703,67 @@ export class GoogleTiles extends ArrivalScript {
         }
         // Wake queued waiters — they bail on the session/tombstone check
         for (const resolve of this._loadQueue.splice(0)) resolve();
+    }
+
+    // ────────────────────────────────────────────
+    // Patch-region carve
+    // ────────────────────────────────────────────
+
+    _shaderLang() {
+        return this.app.graphicsDevice?.isWebGPU ? "wgsl" : "glsl";
+    }
+
+    _patchMaterial(mat) {
+        if (!mat || this._patchedMaterials.has(mat)) return;
+        const lang = this._shaderLang();
+        try {
+            const chunks = mat.getShaderChunks(lang);
+            chunks.set(PATCH_DECL_CHUNK, lang === "wgsl" ? PATCH_DECL_WGSL : PATCH_DECL_GLSL);
+            chunks.set(PATCH_MAIN_CHUNK, lang === "wgsl" ? PATCH_MAIN_WGSL : PATCH_MAIN_GLSL);
+            mat.update();
+        } catch (e) { return; }
+        this._patchedMaterials.add(mat);
+    }
+
+    _patchEntity(entity) {
+        if (!this._patchActive || !entity) return;
+        const renders = entity.findComponents("render") || [];
+        for (const r of renders) {
+            for (const mi of r.meshInstances || []) {
+                if (mi.material) this._patchMaterial(mi.material);
+            }
+        }
+        this._applyPatchUniforms();
+    }
+
+    _patchAllTiles() {
+        for (const rec of this._records.values()) {
+            if (rec.entity) this._patchEntity(rec.entity);
+        }
+    }
+
+    // Single active region drives the carve (v1). Last-inserted wins.
+    _activeRegion() {
+        let region = null;
+        for (const r of this._patchRegions.values()) region = r;
+        return region;
+    }
+
+    _applyPatchUniforms() {
+        const region = this._activeRegion();
+        const enable = region ? 1 : 0;
+        for (const mat of this._patchedMaterials) {
+            if (region) {
+                mat.setParameter("uPatchInv", region.inv);
+                mat.setParameter("uPatchHalf", region.half);
+            }
+            mat.setParameter("uPatchEnable", enable);
+        }
+        if (this._patchRegions.size > 1) {
+            console.warn(
+                `GoogleTiles: ${this._patchRegions.size} patch regions active; v1 carves only the most recent.`
+            );
+        }
     }
 
     // ────────────────────────────────────────────
