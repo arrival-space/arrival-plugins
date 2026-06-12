@@ -35,11 +35,15 @@ void modifySplatRotationScale(vec3 originalCenter, vec3 modifiedCenter, inout ve
     bool hide = (uInvert > 0.5) ? inside : !inside;
     if (hide) { scale = vec3(0.0); return; }
 
+    // Soft edge: shrink splats whose 3-sigma extent would cross the kept
+    // boundary. Uses the box signed-distance magnitude, so it is correct on
+    // both the inside (default) and outside (invert) of the box. The multiplier
+    // is clamped to [0,1] so it can only ever shrink — never enlarge.
+    vec3 q = abs(p) - uHalfExtents;
+    float dist = abs(length(max(q, vec3(0.0))) + min(max(q.x, max(q.y, q.z)), 0.0));
     float maxRadius = length(scale) * 3.0;
-    vec3 d = uHalfExtents - abs(p);          // distance to nearest face (kept side)
-    float minDist = min(min(d.x, d.y), d.z);
-    if (maxRadius > minDist) {
-        scale *= (minDist / maxRadius) * uEdgeScaleFactor;
+    if (maxRadius > dist) {
+        scale *= clamp((dist / maxRadius) * uEdgeScaleFactor, 0.0, 1.0);
     }
 }
 
@@ -60,11 +64,13 @@ fn modifySplatRotationScale(originalCenter: vec3f, modifiedCenter: vec3f, rotati
     let hide = select(!inside, inside, uniform.uInvert > 0.5);
     if (hide) { *scale = vec3f(0.0); return; }
 
+    // Box signed-distance magnitude — correct soften on both sides of the box.
+    // Clamped to [0,1] so it can only shrink, never enlarge.
+    let q = abs(p) - uniform.uHalfExtents;
+    let dist = abs(length(max(q, vec3f(0.0))) + min(max(q.x, max(q.y, q.z)), 0.0));
     let maxRadius = length(*scale) * 3.0;
-    let d = uniform.uHalfExtents - abs(p);
-    let minDist = min(min(d.x, d.y), d.z);
-    if (maxRadius > minDist) {
-        *scale = (*scale) * ((minDist / maxRadius) * uniform.uEdgeScaleFactor);
+    if (maxRadius > dist) {
+        *scale = (*scale) * clamp((dist / maxRadius) * uniform.uEdgeScaleFactor, 0.0, 1.0);
     }
 }
 
