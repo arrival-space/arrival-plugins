@@ -104,7 +104,10 @@ export class SplatCrop extends ArrivalScript {
     }
 
     onPropertyChanged(name) {
-        // uniform updates wired up in Task 3
+        // Uniforms are refreshed every frame in update(); this gives immediate
+        // feedback when the splat isn't moving and centralizes any future
+        // re-acquire triggers.
+        if (this._materials.size > 0) this._updateAllUniforms();
     }
 
     destroy() {
