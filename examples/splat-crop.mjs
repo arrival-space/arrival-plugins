@@ -84,12 +84,14 @@ export class SplatCrop extends ArrivalScript {
     invert = false;
     edgeScaleFactor = 0.5;
     showBox = true;
+    cullTiles = false;
 
     static properties = {
         size: { title: "Box Size (m)", min: 0.1, max: 1000, step: 0.1 },
         invert: { title: "Invert (carve hole)" },
         edgeScaleFactor: { title: "Edge Softness", min: 0.01, max: 1, step: 0.01 },
         showBox: { title: "Show Box" },
+        cullTiles: { title: "Cull Google Tiles" },
     };
 
     // ── internal state ──
@@ -99,6 +101,10 @@ export class SplatCrop extends ArrivalScript {
     _entries = new Map(); // mat -> { comp: gsplatComponent|null }
     _destroyed = false;
     _acquireTimer = 0;
+    // Google-tiles carve publishing (cullTiles)
+    _patchId = null;
+    _patchPublished = false;
+    _lastPatchKey = "";
 
     initialize() {
         this._destroyed = false;
@@ -115,6 +121,7 @@ export class SplatCrop extends ArrivalScript {
         }
         if (this._materials.size > 0) this._updateAllUniforms();
         if (this.showBox) this._drawBox();
+        this._syncTilePatch();
     }
 
     onPropertyChanged(name) {
@@ -126,6 +133,10 @@ export class SplatCrop extends ArrivalScript {
 
     destroy() {
         this._destroyed = true;
+        if (this._patchPublished) {
+            this.app.fire("googletiles:patch-region-clear", this._patchId || this.entity.getGuid());
+            this._patchPublished = false;
+        }
         this._restoreMaterials();
     }
 
@@ -244,6 +255,30 @@ export class SplatCrop extends ArrivalScript {
 
     _updateAllUniforms() {
         for (const [mat, e] of this._entries) this._setUniforms(mat, e.comp);
+    }
+
+    // ────────────────────────────────────────────
+    // Google Tiles carve (cullTiles)
+    // ────────────────────────────────────────────
+
+    // Publishes this box to a Google 3D Tiles vibe so it carves a matching hole
+    // (one box drives both — see google-3d-tiles.mjs). Fires only on change.
+    _syncTilePatch() {
+        if (!this._patchId) this._patchId = this.entity.getGuid();
+        if (this.cullTiles) {
+            const inv = this._boxWorldInv().data;
+            const half = [this.size.x / 2, this.size.y / 2, this.size.z / 2];
+            const key = Array.from(inv).map(v => v.toFixed(3)).join(",") + "|" + half.join(",");
+            if (key !== this._lastPatchKey) {
+                this._lastPatchKey = key;
+                this._patchPublished = true;
+                this.app.fire("googletiles:patch-region", this._patchId, { inv: Array.from(inv), half });
+            }
+        } else if (this._patchPublished) {
+            this._patchPublished = false;
+            this._lastPatchKey = "";
+            this.app.fire("googletiles:patch-region-clear", this._patchId);
+        }
     }
 
     // ────────────────────────────────────────────
