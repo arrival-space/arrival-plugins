@@ -92,6 +92,7 @@ export class SplatCrop extends ArrivalScript {
     _touched = new Map();
     _entries = new Map(); // mat -> { comp: gsplatComponent|null }
     _destroyed = false;
+    _acquireTimer = 0;
 
     initialize() {
         this._destroyed = false;
@@ -99,6 +100,13 @@ export class SplatCrop extends ArrivalScript {
     }
 
     update(dt) {
+        // Cheap periodic re-acquire: catches splats that streamed in after init
+        // and any new non-unified gsplat materials. Idempotent for known mats.
+        this._acquireTimer += dt;
+        if (this._acquireTimer > 1) {
+            this._acquireTimer = 0;
+            this._acquire();
+        }
         if (this._materials.size > 0) this._updateAllUniforms();
         if (this.showBox) this._drawBox();
     }
