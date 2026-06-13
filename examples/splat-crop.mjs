@@ -87,7 +87,7 @@ export class SplatCrop extends ArrivalScript {
     cullTiles = false;
 
     static properties = {
-        size: { title: "Box Size (m)", min: 0.1, max: 1000, step: 0.1 },
+        size: { title: "Box Size (m)", min: 0.1, max: 100000, step: 0.1 },
         invert: { title: "Invert (carve hole)" },
         edgeScaleFactor: { title: "Edge Softness", min: 0.01, max: 1, step: 0.01 },
         showBox: { title: "Show Box" },
