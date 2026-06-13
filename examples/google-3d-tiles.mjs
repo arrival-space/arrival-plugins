@@ -100,7 +100,16 @@ class TileTree {
 
     async fetchJson(url) {
         const res = await fetch(url);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (!res.ok) {
+            // Keep Google's error body — the status alone can't tell an EEA
+            // region block apart from a bad key or disabled API (both 403).
+            let detail = "";
+            try { detail = (await res.json())?.error?.message || ""; } catch (_) { /* non-JSON body */ }
+            const err = new Error(detail || `HTTP ${res.status}`);
+            err.status = res.status;
+            err.detail = detail;
+            throw err;
+        }
         return res.json();
     }
 
@@ -595,9 +604,16 @@ export class GoogleTiles extends ArrivalScript {
         } catch (err) {
             if (session !== this._sessionId) return;
             this._tree = null;
+            // Google blocks satellite + 3D tiles for keys on an EEA-billing
+            // project (effective 8 Jul 2025), with this exact 403 message.
+            const eeaBlocked = err.status === 403 &&
+                /not available for your account and region/i.test(err.detail || "");
             this._status(
-                `Failed to load root tileset: ${err.message}\n` +
-                `Check the API key and that "Map Tiles API" is enabled.`
+                eeaBlocked
+                    ? "Google blocked 3D tiles for this key's billing region (EEA).\n" +
+                      "Use an API key from a non-EEA-billing Google Cloud project."
+                    : `Failed to load root tileset: ${err.message}\n` +
+                      `Check the API key and that "Map Tiles API" is enabled.`
             );
         }
     }
