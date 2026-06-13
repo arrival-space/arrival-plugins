@@ -101,6 +101,24 @@ node index.js config                                             # show stored c
 
 Default server is `https://user.arrival.space`. Config and bearer token are stored in `tools/plugin-upload/.arrival-api.json`. Space IDs are 8-digit-userid + `_` + 4 digits (e.g. `45637586_1234`).
 
+### Updating a placed plugin via the Arrival MCP (alternative to the CLI)
+
+When driving a space through the Arrival MCP server instead of the CLI, the flow is **upload → repoint the entity's `glbUrl`**:
+
+1. `upload_file_from_url({ source_url, file_name })` (or `upload_text_file`) — uploads the `.mjs` and returns a `resource_key` like `api_uploads/<md5>_<name>.mjs`. Prefer `upload_file_from_url` with a **pinned raw GitHub URL** (`raw.githubusercontent.com/arrival-space/arrival-plugins/<sha>/examples/<file>.mjs`) so the published artifact maps to an exact commit — and to avoid pasting the whole file inline.
+2. `update_entity({ spaceId, entityId, entity_data: { glbUrl, hidden: false } })` — point the placed `UserModelEntity` (the one whose `scriptName` matches) at the uploaded file.
+
+**The URL gotcha (this is easy to get wrong and silently breaks the entity):** the returned `resource_key` is **not** a usable URL on its own — the bare `ugc.arrival.space/api_uploads/...` path is private and 403s. The public URL is the key **under the user folder**:
+
+```
+https://ugc.arrival.space/{userId}/{resource_key}
+# e.g. https://ugc.arrival.space/42485456/api_uploads/<md5>_<name>.mjs  -> 200, content-type: text/javascript
+```
+
+`{userId}` is the 8-digit prefix of the spaceId. Set `glbUrl` to that full URL, not the raw key.
+
+**Why a plain CORS URL also works:** the client loader (`client …/scripts/user-model-entity.js` → `loadPlugin`) does `import(glbUrl)` first, then **falls back to `fetch(glbUrl)` + `new Blob([src], { type: "text/javascript" })` + import** when the MIME isn't a module type. So a raw GitHub URL (served `text/plain`) loads via the fallback, while the proper ugc URL (`text/javascript`) takes the clean primary path. A glbUrl change can also leave the entity `hidden: true` — pass `hidden: false` in the same update or the plugin won't run. Always reload the space in a browser to verify; don't trust the API echo.
+
 ## When Adding/Renaming/Removing Examples
 
 This is easy to forget and breaks the MCP search:
