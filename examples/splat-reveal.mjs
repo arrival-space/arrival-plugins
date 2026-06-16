@@ -12,32 +12,40 @@
  *
  * --- How it hooks the UNIFIED LOD-streaming splat (the important part) ---
  * Arrival.Space renders the environment splat through PlayCanvas' unified,
- * LOD-streaming gsplat pipeline (engine 2.14.x), which pre-transforms splats
- * into a GPU work buffer. REPLACING the vertex shader (`gsplatVS`) on the shared
- * material therefore breaks rendering and the splat vanishes.
+ * LOD-streaming gsplat pipeline (engine 2.19.x), which pre-transforms splats
+ * into a GPU work buffer. REPLACING the vertex shader on the shared material
+ * therefore breaks rendering and the splat vanishes.
  *
  * Instead this plugin overrides the engine's OFFICIAL per-splat customization
- * hook — the `gsplatCustomizeVS` chunk — whose three functions are called by the
- * work-buffer vertex shader itself (engine chunks gsplat/vert/gsplat.js +
- * gsplatCorner.js):
- *   modifyCenter(inout vec3 center)                          // move splats
- *   modifyCovariance(orig, mod, inout covA, inout covB)      // scale / hide
- *   modifyColor(vec3 center, inout vec4 color)               // recolor / fade
- * gsplatApplyUniformScale / gsplatMakeRound come from gsplatHelpersVS, included
- * just before this chunk. Because the work-buffer machinery is untouched, this
- * works on unified LOD splats and the per-component case, and leaves the space's
- * own brightness/contrast pixel shader intact.
+ * hook — the `gsplatModifyVS` chunk — whose three functions are called by the
+ * splat pipeline itself (work-buffer copy pass `gsplatCopyToWorkbuffer`, and the
+ * per-vertex `gsplat` / `gsplatCorner` chunks):
+ *   modifySplatCenter(inout vec3 center)                                  // move splats
+ *   modifySplatRotationScale(orig, mod, inout vec4 rot, inout vec3 scale) // scale / hide
+ *   modifySplatColor(vec3 center, inout vec4 color)                       // recolor / fade
+ * Because the work-buffer machinery is untouched, this works on unified LOD
+ * splats and the per-component case, and leaves the space's own
+ * brightness/contrast pixel shader intact.
  *
- * The three hooks run in order within a single vertex-shader invocation, so we
- * compute the per-splat reveal value once in modifyCenter and stash it in a GLSL
- * global (gReveal) that modifyCovariance and modifyColor reuse.
+ * --- WebGL AND WebGPU (the "work for both" part) ---
+ * The engine renders splats with GLSL on a WebGL2 device and with WGSL on a
+ * WebGPU device, drawing the hook from the matching shader-chunk set. So we
+ * override `gsplatModifyVS` in BOTH languages — `getShaderChunks("glsl")` and
+ * `getShaderChunks("wgsl")` — with two source twins that implement identical
+ * logic. The device only ever compiles the language it uses; setting the other
+ * is harmless, so the plugin is device-agnostic with no runtime branching.
+ *
+ * The three hooks run in order within a single shader invocation, so we compute
+ * the per-splat reveal value once in modifySplatCenter and stash it in a shader
+ * global (gReveal) that modifySplatRotationScale and modifySplatColor reuse.
  *
  * Driven by one `uProgress` uniform; the original chunk is restored on unload.
  */
 
-// ─── Custom per-splat hooks (gsplatCustomizeVS) ──────────────────────────────
+// ─── Custom per-splat hooks (gsplatModifyVS) ─────────────────────────────────
 
-const REVEAL_CUSTOMIZE = /* glsl */ `
+// GLSL twin — used on WebGL2 devices.
+const REVEAL_GLSL = /* glsl */ `
 uniform float uProgress;     // overall reveal 0..1
 uniform float uTime;         // seconds since reveal start (for the bloom twinkle)
 uniform float uBand;         // per-splat overlap / softness (0..1)
@@ -87,32 +95,37 @@ vec3 revealEntrance(vec3 c) {
     return vec3(0.0, -uMotion * 0.5, 0.0);                         // gently rise from below
 }
 
-void modifyCenter(inout vec3 center) {
+// reveal value (0..1) for a splat from its original center
+float revealValue(vec3 c) {
+    float a = revealArrival(c) + (hash13(c + 7.0) - 0.5) * uJitter;
+    return smoothstep(0.0, 1.0, (uProgress * (1.0 + uBand) - a) / max(uBand, 0.001));
+}
+
+void modifySplatCenter(inout vec3 center) {
     // Color-driven modes (>= 6) leave geometry untouched and reveal in
-    // modifyColor, which is where the splat color is available.
+    // modifySplatColor, which is where the splat color is available.
     if (uPattern >= 6) {
         gReveal = 1.0;
         return;
     }
 
     vec3 c0 = center;
-    float a = revealArrival(c0) + (hash13(c0 + 7.0) - 0.5) * uJitter;
-    gReveal = smoothstep(0.0, 1.0, (uProgress * (1.0 + uBand) - a) / max(uBand, 0.001));
+    gReveal = revealValue(c0);
 
     center += revealEntrance(c0) * (1.0 - gReveal);     // travel into place
     center.y += sin(gReveal * 3.14159265) * uLift;      // settle hop
 }
 
-void modifyCovariance(vec3 originalCenter, vec3 modifiedCenter, inout vec3 covA, inout vec3 covB) {
+void modifySplatRotationScale(vec3 originalCenter, vec3 modifiedCenter, inout vec4 rotation, inout vec3 scale) {
     if (gReveal <= 0.0) {
-        gsplatMakeRound(covA, covB, 0.0);               // hidden until reached
+        scale = vec3(0.0);                              // hidden until reached
         return;
     }
     // grow from dot to full, then a one-shot "bump" overshoot at the very end
-    gsplatApplyUniformScale(covA, covB, mix(uDotScale, 1.0, gReveal) * (1.0 + uBump));
+    scale *= mix(uDotScale, 1.0, gReveal) * (1.0 + uBump);
 }
 
-void modifyColor(vec3 center, inout vec4 color) {
+void modifySplatColor(vec3 center, inout vec4 color) {
     if (uPattern >= 6) {
         // ── brightness-driven "bloom": bright splats ignite first ──
         float lum = dot(max(color.rgb, 0.0), vec3(0.2126, 0.7152, 0.0722));
@@ -142,7 +155,122 @@ void modifyColor(vec3 center, inout vec4 color) {
 }
 `;
 
-const CUSTOMIZE_CHUNK = "gsplatCustomizeVS";
+// WGSL twin — used on WebGPU devices. Identical logic to REVEAL_GLSL. PlayCanvas
+// WGSL declares uniforms as `uniform name: type;` and reads them via `uniform.name`;
+// inout params become `ptr<function, T>` (deref with `*p`); module globals use
+// `var<private>`; multi-component swizzles can be read but not assigned, so colors
+// are rebuilt with `vec4f(...)` instead of writing `color.rgb`.
+const REVEAL_WGSL = /* wgsl */ `
+uniform uProgress: f32;       // overall reveal 0..1
+uniform uTime: f32;           // seconds since reveal start (for the bloom twinkle)
+uniform uBand: f32;           // per-splat overlap / softness (0..1)
+uniform uPattern: i32;        // 0 radial, 1 sweep-up, 2 sweep-down, 3 rain, 4 scatter, 5 dissolve, 6 bloom
+uniform uJitter: f32;         // per-splat random timing offset (0..1)
+uniform uDotScale: f32;       // initial dot size (fraction of full size)
+uniform uMotion: f32;         // entrance travel distance (fall / scatter / rise)
+uniform uLift: f32;           // settle hop height as a splat finishes growing
+uniform uBump: f32;           // end-of-reveal scale overshoot (0 = none), pulses once
+uniform uCenter: vec3f;       // wave origin for the radial pattern (world space)
+uniform uMaxDist: f32;        // farthest splat distance from uCenter (for normalising)
+uniform uBoundsMin: vec3f;    // world AABB min
+uniform uBoundsMax: vec3f;    // world AABB max
+uniform uTint: vec3f;         // glow color while a splat appears
+uniform uTintStrength: f32;   // strength of the appear glow
+
+// per-splat reveal value, shared between the three hooks (same shader invocation)
+var<private> gReveal: f32 = 0.0;
+
+fn hash13(p0: vec3f) -> f32 {
+    var p = fract(p0 * 0.1031);
+    p += vec3f(dot(p, p.yzx + vec3f(33.33)));
+    return fract((p.x + p.y) * p.z);
+}
+
+fn hash33(p0: vec3f) -> vec3f {
+    var p = fract(p0 * vec3f(0.1031, 0.1030, 0.0973));
+    p += vec3f(dot(p, p.yxz + vec3f(33.33)));
+    return fract((p.xxy + p.yxx) * p.zyx);
+}
+
+// 0..1 "arrival" value for a splat — when (scaled) progress passes it, it shows.
+fn revealArrival(c: vec3f) -> f32 {
+    let span = max(uniform.uBoundsMax - uniform.uBoundsMin, vec3f(0.001));
+    let n = clamp((c - uniform.uBoundsMin) / span, vec3f(0.0), vec3f(1.0));
+    if (uniform.uPattern == 0) { return clamp(length(c - uniform.uCenter) / max(uniform.uMaxDist, 0.001), 0.0, 1.0); }
+    if (uniform.uPattern == 1) { return n.y; }          // sweep up   (bottom first)
+    if (uniform.uPattern == 2) { return 1.0 - n.y; }    // sweep down (top first)
+    if (uniform.uPattern == 3) { return 1.0 - n.y; }    // rain       (top first, falls in)
+    return hash13(c);                                   // scatter / dissolve (random)
+}
+
+// entrance offset a splat travels from while it grows in.
+fn revealEntrance(c: vec3f) -> vec3f {
+    if (uniform.uPattern == 3) { return vec3f(0.0, uniform.uMotion, 0.0); }             // drop from above
+    if (uniform.uPattern == 4) { return (hash33(c) - vec3f(0.5)) * 2.0 * uniform.uMotion; } // scatter in
+    return vec3f(0.0, -uniform.uMotion * 0.5, 0.0);                                     // gently rise from below
+}
+
+// reveal value (0..1) for a splat from its original center
+fn revealValue(c: vec3f) -> f32 {
+    let a = revealArrival(c) + (hash13(c + vec3f(7.0)) - 0.5) * uniform.uJitter;
+    return smoothstep(0.0, 1.0, (uniform.uProgress * (1.0 + uniform.uBand) - a) / max(uniform.uBand, 0.001));
+}
+
+fn modifySplatCenter(center: ptr<function, vec3f>) {
+    // Color-driven modes (>= 6) leave geometry untouched and reveal in
+    // modifySplatColor, which is where the splat color is available.
+    if (uniform.uPattern >= 6) {
+        gReveal = 1.0;
+        return;
+    }
+
+    let c0 = *center;
+    gReveal = revealValue(c0);
+
+    *center += revealEntrance(c0) * (1.0 - gReveal);    // travel into place
+    (*center).y += sin(gReveal * 3.14159265) * uniform.uLift; // settle hop
+}
+
+fn modifySplatRotationScale(originalCenter: vec3f, modifiedCenter: vec3f, rotation: ptr<function, vec4f>, scale: ptr<function, vec3f>) {
+    if (gReveal <= 0.0) {
+        *scale = vec3f(0.0);                            // hidden until reached
+        return;
+    }
+    // grow from dot to full, then a one-shot "bump" overshoot at the very end
+    *scale *= mix(uniform.uDotScale, 1.0, gReveal) * (1.0 + uniform.uBump);
+}
+
+fn modifySplatColor(center: vec3f, color: ptr<function, vec4f>) {
+    if (uniform.uPattern >= 6) {
+        // ── brightness-driven "bloom": bright splats ignite first ──
+        let lum = dot(max((*color).rgb, vec3f(0.0)), vec3f(0.2126, 0.7152, 0.0722));
+        let b = lum / (lum + 0.5);                       // soft 0..1 normalise
+        let a = (1.0 - b) + (hash13((*color).rgb * 131.0) - 0.5) * uniform.uJitter; // bright = early
+        let rv = smoothstep(0.0, 1.0, (uniform.uProgress * (1.0 + uniform.uBand) - a) / max(uniform.uBand, 0.001));
+        if (rv <= 0.0) {
+            (*color).a = 0.0;
+            return;
+        }
+        let glow = 4.0 * rv * (1.0 - rv);
+        var rgb = (*color).rgb + ((*color).rgb + uniform.uTint) * (glow * uniform.uTintStrength); // ignite flare
+        // gentle ongoing twinkle on the brightest splats
+        let tw = 0.5 + 0.5 * sin(uniform.uTime * 4.0 + hash13(rgb * 53.0) * 6.2831);
+        rgb += rgb * (tw * 0.12 * b * rv);
+        *color = vec4f(rgb, (*color).a * rv);
+        return;
+    }
+
+    if (gReveal <= 0.0) {
+        (*color).a = 0.0;
+        return;
+    }
+    let glow = 4.0 * gReveal * (1.0 - gReveal);         // flash, brightest mid-appearance
+    let rgb = mix((*color).rgb, uniform.uTint, glow * uniform.uTintStrength);
+    *color = vec4f(rgb, (*color).a * gReveal);
+}
+`;
+
+const MODIFY_CHUNK = "gsplatModifyVS";
 
 const PATTERNS = {
     radial: 0,
@@ -206,7 +334,7 @@ export class SplatReveal extends ArrivalScript {
     };
 
     _materials = new Set();   // materials we currently drive
-    _touched = new Map();     // material -> { had, orig } for restore
+    _touched = new Map();     // material -> { glsl, wgsl } restore records ({ had, orig } or null)
     _center = [0, 0, 0];
     _min = [-25, -25, -25];
     _max = [25, 25, 25];
@@ -306,23 +434,35 @@ export class SplatReveal extends ArrivalScript {
         }
     }
 
+    // Fetch a material's shader-chunk map for one language, or null if the
+    // material/device doesn't expose it.
+    _getChunks(mat, lang) {
+        try {
+            return mat.getShaderChunks(lang);
+        } catch (e) {
+            return null;
+        }
+    }
+
     _applyToMaterial(mat) {
         if (!mat) return;
-        let chunks;
-        try {
-            chunks = mat.getShaderChunks("glsl");
-        } catch (e) {
-            return;
-        }
+
+        // GLSL is the baseline (WebGL2); WGSL is added when the material exposes
+        // it (WebGPU). We set both so the plugin is device-agnostic.
+        const glsl = this._getChunks(mat, "glsl");
+        if (!glsl) return;
+        const wgsl = this._getChunks(mat, "wgsl");
 
         if (!this._touched.has(mat)) {
             this._touched.set(mat, {
-                had: chunks.has(CUSTOMIZE_CHUNK),
-                orig: chunks.get(CUSTOMIZE_CHUNK),
+                glsl: { had: glsl.has(MODIFY_CHUNK), orig: glsl.get(MODIFY_CHUNK) },
+                wgsl: wgsl ? { had: wgsl.has(MODIFY_CHUNK), orig: wgsl.get(MODIFY_CHUNK) } : null,
             });
         }
 
-        chunks.set(CUSTOMIZE_CHUNK, REVEAL_CUSTOMIZE);
+        glsl.set(MODIFY_CHUNK, REVEAL_GLSL);
+        if (wgsl) wgsl.set(MODIFY_CHUNK, REVEAL_WGSL);
+
         this._setUniforms(mat);
         mat.update();
         this._materials.add(mat);
@@ -491,18 +631,26 @@ export class SplatReveal extends ArrivalScript {
 
     // ── teardown ──────────────────────────────────────────────────────────────
 
-    // Restore every material we touched to its original shader chunk and let the
-    // client rebuild its splat pipeline. Used by both _finish() and destroy().
+    // Restore one language's chunk map for a material to its original state.
+    _restoreLang(mat, lang, rec) {
+        if (!rec) return;
+        try {
+            const chunks = mat.getShaderChunks(lang);
+            if (rec.had) chunks.set(MODIFY_CHUNK, rec.orig);
+            else chunks.delete(MODIFY_CHUNK);
+            mat.update();
+        } catch (e) {
+            /* material may already be gone */
+        }
+    }
+
+    // Restore every material we touched to its original shader chunks (both
+    // languages) and let the client rebuild its splat pipeline. Used by both
+    // _finish() and destroy().
     _restoreMaterials() {
         for (const [mat, info] of this._touched) {
-            try {
-                const chunks = mat.getShaderChunks("glsl");
-                if (info.had) chunks.set(CUSTOMIZE_CHUNK, info.orig);
-                else chunks.delete(CUSTOMIZE_CHUNK);
-                mat.update();
-            } catch (e) {
-                /* material may already be gone */
-            }
+            this._restoreLang(mat, "glsl", info.glsl);
+            this._restoreLang(mat, "wgsl", info.wgsl);
         }
         this._touched.clear();
         this._materials.clear();
