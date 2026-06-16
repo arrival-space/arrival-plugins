@@ -48,6 +48,8 @@ export class MyPlugin extends ArrivalScript {
 - For dynamic dropdowns, call:
   - `this.setParamOptions(paramName, options, false)`
   - `this.refreshParamSchema()`
+- Entity picker: a string property with `editor: "entity"` (optionally `filterTypes: ["cutscene"]`, `["custom-sound-entity"]`, `["glb"]`, `["splat"]`, `["all"]`). The stored value is the picked entity id — resolve it at runtime and guard for `null`.
+- Editor button: a schema key with `editor: "action"` whose name matches a method on the plugin; pressing it calls that method.
 
 ## API Selection Guide
 
@@ -64,6 +66,7 @@ export class MyPlugin extends ArrivalScript {
 - Player input hooks: `this.onKeyDown`, `this.onKeyUp`
 - Standing-object detection: `ArrivalSpace.getStandingObject`, `ArrivalSpace.onStandingObjectChanged`
 - NPC behavior: `ArrivalSpace.createNPC`
+- Cutscenes: `ArrivalSpace.getCutsceneScript(entityId)` → `playCutscene()` / `on("sequence:marker", ...)` (see `docs/sequences.md`)
 - Multiplayer state: `attribute(default, { sync: true, authority: ... })`
 - Multiplayer events: `ArrivalSpace.net.send/on/...`
 - Plugin event bus (local inter-plugin communication): `ArrivalSpace.fire/on/off/once`
@@ -96,6 +99,8 @@ export class MyPlugin extends ArrivalScript {
 - `examples/avatar-animation.mjs`: animation override + dynamic dropdown options.
 - `examples/hover-board.mjs`: standing-object hooks, avatar offset, animation triggers, and dynamic physics.
 - `examples/outfit-override.mjs`: avatar parts override + reset.
+- `examples/firework-marker-fx.mjs`: pick a cutscene entity, listen for its `sequence:marker` events, and spawn particle bursts on each cue.
+- `examples/floating-cutscene-button.mjs`: a floating 3D button that plays a selected cutscene entity via `getCutsceneScript().playCutscene()`, with cooldown and range checks.
 - `examples/post-process-volume.mjs`: local post-effects blending.
 - `examples/cloth-physics.mjs`: simple soft-body curtain with Ammo.js cloth simulation, anchored top edge, texture/shadow controls, and nearby collision proxying.
 - `examples/splat-fire.mjs`, `examples/splat-fog.mjs`, `examples/splat-grass.mjs`: procedural GSplat examples for animated fire, volumetric fog, and dense grass using editable effect parameters.

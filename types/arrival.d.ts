@@ -26,6 +26,19 @@ declare namespace pc {
         distance(rhs: Vec3): number;
     }
 
+    class Quat {
+        x: number;
+        y: number;
+        z: number;
+        w: number;
+        constructor(x?: number, y?: number, z?: number, w?: number);
+        set(x: number, y: number, z: number, w: number): Quat;
+        copy(src: Quat): Quat;
+        clone(): Quat;
+        setFromEulerAngles(x: number, y: number, z: number): Quat;
+        normalize(): Quat;
+    }
+
     class Color {
         r: number;
         g: number;
@@ -49,6 +62,10 @@ declare namespace pc {
         setLocalPosition(x: number, y: number, z: number): void;
         getEulerAngles(): Vec3;
         setEulerAngles(x: number, y: number, z: number): void;
+        getRotation(): Quat;
+        setRotation(x: number | Quat, y?: number, z?: number, w?: number): void;
+        getLocalRotation(): Quat;
+        setLocalRotation(x: number | Quat, y?: number, z?: number, w?: number): void;
         getLocalEulerAngles(): Vec3;
         setLocalEulerAngles(x: number, y: number, z: number): void;
         getLocalScale(): Vec3;
@@ -165,6 +182,10 @@ interface AttributeOptions {
     group?: string;
     /** UI editor hint (for example: 'asset' for upload-backed string fields) */
     editor?: string;
+    /** Optional file picker accept map for asset-backed string fields */
+    acceptedFiles?: Record<string, string[]>;
+    /** Optional editor placeholder */
+    placeholder?: string;
     /** Enable network synchronization with automatic late-joiner sync (default: false) */
     sync?: boolean;
     /** Who can modify synced values: 'any' | 'owner' | 'self' (default: 'any') */
@@ -743,6 +764,14 @@ declare namespace ArrivalSpace {
     ): boolean;
 
     /**
+     * Get the cutscene script attached to a cutscene entity.
+     * @example
+     * const cutscene = ArrivalSpace.getCutsceneScript(cutsceneEntityId);
+     * cutscene?.playCutscene();
+     */
+    function getCutsceneScript(entityId: string): CutsceneScript | null;
+
+    /**
      * Get current user profile data
      * @example
      * const user = ArrivalSpace.getUser();
@@ -1240,6 +1269,239 @@ declare namespace ArrivalSpace {
          * @returns Unsubscribe function
          */
         function onDisconnect(callback: () => void): () => void;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // SEQUENCE PLAYER
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Sequence data types used by the SequencePlayer for keyframe animation,
+     * cutscenes, and camera fly-throughs.
+     */
+
+    interface SequenceVec3 { x: number; y: number; z: number; }
+    interface SequenceQuat { x: number; y: number; z: number; w: number; }
+    type SequenceKeyframeData = SequenceVec3 | SequenceQuat | number;
+
+    interface SequenceKeyframe {
+        id: string;
+        frameNumber: number;
+        keyframeData: SequenceKeyframeData;
+    }
+
+    interface SequenceMarker {
+        id: string;
+        frameNumber: number;
+        label: string;
+        color: string;
+        event?: string | null;
+        payload?: Record<string, any> | null;
+    }
+
+    interface SequenceProperty {
+        id?: string;
+        label: string;
+        type: "vec3" | "quat" | "number";
+        keyframes: SequenceKeyframe[];
+        minValue?: number | null;
+        maxValue?: number | null;
+    }
+
+    interface SequenceEntityProperties {
+        [propertyKey: string]: SequenceProperty;
+    }
+
+    interface SequenceData {
+        fps: number;
+        entities: Record<string, SequenceEntityProperties>;
+        markers: SequenceMarker[];
+        /** Legacy single-entity shape still understood by the runtime. */
+        properties?: Record<string, SequenceProperty>;
+    }
+
+    interface Sequence {
+        id: string;
+        disabled?: boolean;
+        name?: string;
+        description?: string;
+        data: SequenceData;
+    }
+
+    interface SequencePlayerAdapterOptions {
+        entityId?: string | null;
+        type?: "vec3" | "quat" | "number" | string | null;
+        label?: string | null;
+        minValue?: number | null;
+        maxValue?: number | null;
+    }
+
+    interface SequencePlayerGetterOptions {
+        entityId?: string | null;
+    }
+
+    interface SequencePlayerAdapterDescriptor {
+        type?: "vec3" | "quat" | "number" | string | null;
+        label: string;
+        minValue?: number | null;
+        maxValue?: number | null;
+    }
+
+    interface SequencePlayerAdapter {
+        applyFn: (value: SequenceKeyframeData) => void;
+        type?: "vec3" | "quat" | "number" | string | null;
+        label?: string | null;
+        entityId?: string | null;
+        minValue?: number | null;
+        maxValue?: number | null;
+    }
+
+    /**
+     * Built-in PlayCanvas script for playing keyframe sequences.
+     *
+     * Create on any entity: `entity.script.create("sequencePlayer")`
+     *
+     * See docs/sequences.md for the usage guide. Cutscenes are usually authored
+     * in the visual Sequence Editor and reached via `getCutsceneScript(id)` — see
+     * examples/firework-marker-fx.mjs and examples/floating-cutscene-button.mjs.
+     */
+    interface SequencePlayer {
+        /** Load a sequence without starting playback. */
+        setSequence(sequence: Sequence): void;
+
+        /** Set and start playing a sequence from its first keyframe. */
+        playSequence(sequence: Sequence): void;
+
+        /** Pause at the current frame. */
+        pauseSequence(): void;
+
+        /** Resume playback. Restarts if at the last frame. */
+        resumeSequence(): void;
+
+        /** Jump to the last frame, apply it, and fire completion. Use for skip/cancel. */
+        endSequence(): void;
+
+        /** Set the playhead to a specific frame. Applies adapters if `apply` is true (default). */
+        setFrame(frame: number, apply?: boolean): void;
+
+        /** Whether the sequence is currently playing. */
+        isPlaying(): boolean;
+
+        /**
+         * Register an adapter — called each frame with the interpolated value
+         * for the given property key.
+         */
+        setAdapter(
+            propertyKey: string,
+            applyFn: (value: SequenceKeyframeData) => void,
+            options?: SequencePlayerAdapterOptions,
+        ): void;
+
+        /** Remove a previously registered adapter. */
+        removeAdapter(propertyKey: string, entityId?: string | null): void;
+
+        /** Read a previously registered adapter. */
+        getAdapter(propertyKey: string, entityId?: string | null): SequencePlayerAdapter | null;
+
+        /** Adapter metadata exposed to the Sequence Editor. */
+        getAdapterDescriptors(entityId?: string | null): Record<string, SequencePlayerAdapterDescriptor>;
+
+        /**
+         * Register a getter — returns the current live value for a property.
+         * Used by the Sequence Editor to read back state when recording keyframes.
+         */
+        setGetter(propertyKey: string, getFn: () => SequenceKeyframeData, options?: SequencePlayerGetterOptions): void;
+
+        /** Remove a previously registered getter. */
+        removeGetter(propertyKey: string, entityId?: string | null): void;
+
+        /** Get the current value for one or all properties via registered getters. */
+        getCurrentKeyframeData(
+            propertyKey?: string,
+            entityId?: string | null,
+        ): SequenceKeyframeData | Record<string, SequenceKeyframeData> | null;
+
+        /** Clear all adapters and getters. */
+        clearAdaptersAndGetters(): void;
+
+        /** Set or read the primary target entity associated with the loaded sequence. */
+        setTargetEntity(entity: pc.Entity | null): void;
+        getTargetEntity(): pc.Entity | null;
+
+        /** Debug helpers for visualizing the selected entity position path. */
+        showPath(options?: { color?: pc.Color | null; samplesPerFrame?: number }): void;
+        hidePath(): void;
+        isPathActive(): boolean;
+        setSelectedEntity(options: { entityId?: string | null; color?: pc.Color | null }): void;
+
+        /** Set a callback for when the sequence finishes or endSequence() is called. */
+        setOnComplete(callback: () => void): void;
+
+        /**
+         * Listen for sequence events.
+         * - `"sequence:marker"` — `{ marker: SequenceMarker, sequence: Sequence }`
+         * - `"sequence:complete"` — no payload
+         * - `"sequencePlayerScript:currentFrameChange"` — current frame number
+         */
+        on(event: "sequence:marker", callback: (data: { marker: SequenceMarker; sequence: Sequence }) => void, scope?: any): { off(): void };
+        on(event: "sequence:complete", callback: () => void, scope?: any): { off(): void };
+        on(event: "sequencePlayerScript:currentFrameChange", callback: (frame: number) => void, scope?: any): { off(): void };
+
+        /** Remove an event listener. */
+        off(event: string, callback: Function, scope?: any): void;
+
+        /** Fire an event. */
+        fire(event: string, ...args: any[]): void;
+    }
+
+    interface CutscenePlaybackOptions {
+        /** Marks this run as the auto-playing intro (skips the seamless "in" keyframe). */
+        isIntro?: boolean;
+        /** Called once when the cutscene finishes or is skipped. */
+        onComplete?: () => void;
+    }
+
+    /**
+     * Cutscene controller attached to a cutscene entity (`cutsceneScript`).
+     *
+     * Cutscenes are authored in the visual Sequence Editor and saved on an
+     * entity. Resolve the controller with `ArrivalSpace.getCutsceneScript(id)`
+     * — typically from an `editor: "entity"` property with
+     * `filterTypes: ["cutscene"]` — then start playback or react to markers.
+     *
+     * See docs/sequences.md and examples/floating-cutscene-button.mjs /
+     * examples/firework-marker-fx.mjs.
+     */
+    interface CutsceneScript {
+        /** Play from the start. No-op if the cutscene has no keyframes or is disabled. */
+        playCutscene(options?: CutscenePlaybackOptions): void;
+
+        /** Open the visual Sequence Editor for this cutscene (desktop only). */
+        editCutscene(options?: CutscenePlaybackOptions): void;
+
+        /** Play in render/recording mode with the editor open. */
+        renderCutscene(options?: CutscenePlaybackOptions): void;
+
+        /** Skip the running cutscene with a short fade. */
+        skipIntroCutscene(): void;
+
+        /** Merge partial config (e.g. `{ loop, triggerWithPosition }`) into the cutscene. */
+        setData(data: Record<string, any>): void;
+
+        /** Retarget the sequence's primary entity track. */
+        setTarget(targetEntityId: string, entityIndex?: number): void;
+
+        /** Whether the cutscene is set to loop. */
+        getLoop(): boolean;
+
+        /**
+         * Subscribe to the cutscene's timeline markers. The controller re-fires
+         * each `sequence:marker` from its SequencePlayer as `{ marker, sequence }`.
+         * Unsubscribe with `off(...)` in `destroy()`.
+         */
+        on(event: "sequence:marker", callback: (data: { marker: SequenceMarker; sequence: Sequence }) => void, scope?: any): { off(): void } | void;
+        on(event: string, callback: Function, scope?: any): { off(): void } | void;
+        off(event: string, callback: Function, scope?: any): void;
     }
 
     // ═══════════════════════════════════════════════════════════════════════════

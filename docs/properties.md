@@ -180,6 +180,48 @@ static properties = {
 This only filters the file picker / drag-and-drop in the editor — pasting an
 external URL is still allowed, so validate the URL at runtime if it matters.
 
+### For Entity References
+
+Set `editor: 'entity'` on a string property to render an **entity picker**. The
+stored value is the picked entity's id, which you resolve to a live entity at
+runtime (e.g. `ArrivalSpace.getCutsceneScript(id)`, or
+`app.root.findByName("GateServer")?.script?.gateServer?.getEntity(id)`).
+Restrict the list with `filterTypes`:
+
+```javascript
+cutsceneEntityId = "";
+soundEntityId = "";
+
+static properties = {
+    cutsceneEntityId: { title: "Cutscene", editor: "entity", filterTypes: ["cutscene"] },
+    soundEntityId:    { title: "Sound",    editor: "entity", filterTypes: ["custom-sound-entity"] },
+};
+```
+
+Common `filterTypes`: `"all"`, `"glb"`, `"splat"`, `"cutscene"`,
+`"custom-sound-entity"`. The id may be empty (nothing picked) or point at an
+entity that hasn't loaded yet, so always guard for `null` after resolving it.
+
+See `examples/floating-cutscene-button.mjs`, `examples/firework-marker-fx.mjs`,
+and `examples/sound-press-button.mjs`.
+
+### For Action Buttons
+
+Set `editor: 'action'` to render a **button** in the editor instead of a value
+field. The schema key is the name of a method on your plugin — pressing the
+button calls that method. Use it for "Play", "Reset", or "Rebuild" style
+editor actions.
+
+```javascript
+static properties = {
+    playCutscene: { title: "Play Cutscene", editor: "action" },
+};
+
+playCutscene() {
+    // runs when the editor button is pressed
+}
+```
+
 ## Reserved Names
 
 Do not use built-in script property names as plugin parameters. In particular, avoid:

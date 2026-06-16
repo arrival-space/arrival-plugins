@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "updated_at": "2026-04-16",
+  "updated_at": "2026-06-16",
   "source": "curated",
-  "total_entries": 42,
+  "total_entries": 45,
   "entries": [
     {
       "path": "README.md",
@@ -151,20 +151,20 @@
       "keywords": ["info panel", "iframe", "html panel", "world-space ui", "dashboard", "panel"]
     },
     {
-      "path": "examples/lamp.mjs",
-      "kind": "example",
-      "title": "Lamp",
-      "summary": "Combines a lamp GLB, simple rigidbody collision, and a configurable point or cone light.",
-      "script_name": "Lamp",
-      "keywords": ["lamp", "light", "glb", "model", "rigidbody", "collision", "spotlight", "point light", "physics"]
-    },
-    {
       "path": "examples/localized-light-probe.mjs",
       "kind": "example",
       "title": "Localized Light Probe",
       "summary": "Spatial light probe volume with radius-based falloff that can override primary light direction/color, environment HDR, and post-effects as the player enters the volume.",
       "script_name": "Light Probe",
       "keywords": ["light probe", "localized", "volume", "environment", "hdr", "primary light", "post-effects", "falloff", "radius", "lighting", "createLocalizedLightProbe"]
+    },
+    {
+      "path": "examples/firework-marker-fx.mjs",
+      "kind": "example",
+      "title": "Firework Marker FX",
+      "summary": "Listens to a picked cutscene entity's timeline markers and spawns firework effects — ascent flames on launch/trail cues and a particle burst on the explode cue. Matches markers by explicit event name or by keyword in the marker label/id, and can hide a chosen rocket entity on detonation.",
+      "script_name": "Firework Marker FX",
+      "keywords": ["firework", "fireworks", "marker", "markers", "sequence:marker", "marker reactive", "cutscene", "getCutsceneScript", "particles", "burst", "explosion", "flames", "rocket", "event", "vfx", "fx"]
     },
     {
       "path": "examples/npc-character.mjs",
@@ -197,6 +197,14 @@
       "summary": "Basic rigidbody and collision example for a simple physics-enabled object.",
       "script_name": "Physics Box",
       "keywords": ["physics box", "rigidbody", "collision", "basic physics", "box", "ammo"]
+    },
+    {
+      "path": "examples/floating-cutscene-button.mjs",
+      "kind": "example",
+      "title": "Floating Cutscene Button",
+      "summary": "A floating 3D button built from PlayCanvas primitives that plays a selected cutscene entity when clicked. Demonstrates the entity picker (filterTypes: ['cutscene']), getCutsceneScript().playCutscene(), an editor action button, billboard facing, bob animation, click cooldown, max-distance check, and an error flash.",
+      "script_name": "Floating Cutscene Button",
+      "keywords": ["cutscene", "button", "play cutscene", "trigger cutscene", "getCutsceneScript", "entity picker", "filterTypes", "action button", "3d button", "billboard", "raycast", "click", "cooldown", "interaction"]
     },
     {
       "path": "examples/post-process-volume.mjs",
@@ -269,6 +277,22 @@
       "summary": "Plays a sound when the player gets close to the object, demonstrating proximity-based audio behavior.",
       "script_name": "Sound Trigger",
       "keywords": ["sound", "audio", "proximity", "trigger", "play sound", "distance", "interaction"]
+    },
+    {
+      "path": "examples/sound-press-button.mjs",
+      "kind": "example",
+      "title": "Sound Press Button",
+      "summary": "Clickable 3D HTML button that plays, pauses, stops, or toggles a referenced Custom Sound entity via entity picker, with optional keyboard shortcut and editor action buttons.",
+      "script_name": "Sound Press Button",
+      "keywords": ["sound", "audio", "button", "press", "click", "play", "pause", "stop", "toggle", "custom sound entity", "entity picker", "keyboard shortcut", "interaction"]
+    },
+    {
+      "path": "examples/scene-tour-camera.mjs",
+      "kind": "example",
+      "title": "Scene Tour Camera",
+      "summary": "Overlay list of every user-placed entity; click an entry to switch to free cam and fly/frame it. Demonstrates getUIContainer, setFreeCamPose, setCameraMode/getCameraMode, lockInput/unlockInput, AABB-based framing, smooth fly-to, and optional auto-orbit cancelled by manual input.",
+      "script_name": "sceneTourCamera",
+      "keywords": ["camera", "tour", "free cam", "fly to", "setFreeCamPose", "camera mode", "frame entity", "orbit", "overlay", "ui", "scene", "navigation", "showcase"]
     },
     {
       "path": "examples/splat-fire.mjs",
