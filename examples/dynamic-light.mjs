@@ -103,11 +103,9 @@ export class DynamicLight extends ArrivalScript {
         light.normalOffsetBias = 0.05;
         light.shadowType = pc.SHADOW_PCF3;
 
-		/// 1005 == splat layer
 		if(this.affectSplats)
 		{
-        	light.layers = [0, 1005];
-        	ArrivalSpace.enableSplatLightMaterial();
+        	ArrivalSpace.addSplatLight(light);
 		}
 
         if (this.lightType === "cone") {
