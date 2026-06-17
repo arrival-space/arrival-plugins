@@ -198,9 +198,21 @@ static properties = {
 };
 ```
 
-Common `filterTypes`: `"all"`, `"glb"`, `"splat"`, `"cutscene"`,
-`"custom-sound-entity"`. The id may be empty (nothing picked) or point at an
-entity that hasn't loaded yet, so always guard for `null` after resolving it.
+`filterTypes` accepts a single string or an array — combine several to allow
+more than one kind. Valid values:
+
+- `"all"` — every pickable entity. This is the default, and also the fallback
+  if every value you pass is unrecognized.
+- Model (`UserModelEntity`) subtypes, matched against the entity's `dataType`:
+  `"glb"`, `"splat"`, `"image"`, `"cutscene"`, `"plugin"`.
+- Top-level entity types: `"custom-sound-entity"`, `"annotation"`, `"voicey"`,
+  `"dynamic-gate"`, `"center-asset"`.
+- `"camera"` — also offers the room's main camera. When the camera is chosen the
+  stored value is a reserved camera id rather than a scene entity, so it won't
+  resolve to a real entity — special-case it if you allow `"camera"`.
+
+The stored id may be empty `""` (nothing picked / cleared) or point at an entity
+that hasn't loaded yet, so always guard for `null` after resolving it.
 
 See `examples/floating-cutscene-button.mjs`, `examples/firework-marker-fx.mjs`,
 and `examples/sound-press-button.mjs`.

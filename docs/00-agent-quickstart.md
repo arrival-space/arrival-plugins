@@ -48,7 +48,7 @@ export class MyPlugin extends ArrivalScript {
 - For dynamic dropdowns, call:
   - `this.setParamOptions(paramName, options, false)`
   - `this.refreshParamSchema()`
-- Entity picker: a string property with `editor: "entity"` (optionally `filterTypes: ["cutscene"]`, `["custom-sound-entity"]`, `["glb"]`, `["splat"]`, `["all"]`). The stored value is the picked entity id — resolve it at runtime and guard for `null`.
+- Entity picker: a string property with `editor: "entity"`. Optional `filterTypes` (string or array) restricts the list — `"all"` (default), model subtypes `"glb"`/`"splat"`/`"image"`/`"cutscene"`/`"plugin"`, top-level `"custom-sound-entity"`/`"annotation"`/`"voicey"`/`"dynamic-gate"`/`"center-asset"`, or `"camera"` to also offer the room's main camera. Combine types in an array; unknown values fall back to `"all"`. The stored value is the picked entity id (`""` when cleared) — resolve it at runtime and guard for `null`. Full list in `docs/properties.md`.
 - Editor button: a schema key with `editor: "action"` whose name matches a method on the plugin; pressing it calls that method.
 
 ## API Selection Guide
