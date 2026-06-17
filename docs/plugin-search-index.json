@@ -2,7 +2,7 @@
   "version": 1,
   "updated_at": "2026-06-16",
   "source": "curated",
-  "total_entries": 47,
+  "total_entries": 48,
   "entries": [
     {
       "path": "README.md",
@@ -365,6 +365,14 @@
       "summary": "Plays a configurable reveal animation on the space's already-loaded unified / LOD-streaming Gaussian splat by overriding the engine's gsplatCustomizeVS hook (modifyCenter / modifyCovariance / modifyColor). Patterns include radial wave, sweep up/down, rain, scatter, dissolve and a brightness-driven 'bloom' where the brightest splats ignite first with a flare and twinkle; each splat grows from a dot with per-splat jitter, entrance motion (fall/scatter/rise), a settle hop, glow, and a one-shot scale bump at the end. Driven on the GPU from uProgress/uTime, disables itself when a non-looping reveal completes, and restores the original chunk on unload.",
       "script_name": "Splat Reveal",
       "keywords": ["splat", "reveal", "gsplat", "unified splat", "lod streaming", "shared material", "environment splat", "glsl", "custom shader", "gsplatCustomizeVS", "modifyCenter", "modifyCovariance", "modifyColor", "gsplatMakeRound", "centerasset:splatMaterialReady", "pattern", "radial", "sweep", "rain", "scatter", "dissolve", "bloom", "brightness", "luminance", "twinkle", "bump", "jitter", "animation", "wave", "intro", "appear", "grow", "loop", "effect"]
+    },
+    {
+      "path": "examples/splat-crop.mjs",
+      "kind": "example",
+      "title": "Splat Crop",
+      "summary": "A movable, rotatable oriented crop box for the space's already-loaded Gaussian splat(s). The vibe's own entity IS the box: set dimensions with Box Size and keep only splats inside it (or carve a hole with Invert), with a soft edge fade. Applies to the unified splat material and every non-unified gsplat material at once via a gsplatModifyVS shader chunk (GLSL + WGSL, WebGL + WebGPU). The Crop Splats toggle (default on) can be turned off to use the box purely as a selector, and Cull Google Tiles publishes the same box to a Google 3D Tiles vibe so it carves a matching hole.",
+      "script_name": "Splat Crop",
+      "keywords": ["splat", "crop", "clip", "cull", "gsplat", "unified splat", "oriented box", "bounding box", "crop box", "box size", "half-extents", "invert", "carve hole", "edge softness", "soft edge", "signed distance", "selector", "gsplatModifyVS", "modifySplatRotationScale", "glsl", "wgsl", "webgl", "webgpu", "shader chunk", "google 3d tiles", "cull google tiles", "googletiles:patch-region", "hide", "mask", "region"]
     },
     {
       "path": "types/arrival.d.ts",

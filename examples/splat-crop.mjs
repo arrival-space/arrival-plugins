@@ -11,6 +11,10 @@
  * once — the box is the only selector (a per-entity reference is meaningless for
  * the shared unified material). Implemented as a gsplatModifyVS shader chunk
  * (GLSL + WGSL) so it works on WebGL and WebGPU.
+ *
+ * Splat cropping is on by default (Crop Splats). Turn it off to use this box
+ * purely as a selector for something else — e.g. carving a matching hole in a
+ * Google 3D Tiles vibe (Cull Google Tiles) without touching the splats.
  */
 
 const len3 = (x, y, z) => Math.sqrt(x * x + y * y + z * z);
@@ -81,6 +85,7 @@ export class SplatCrop extends ArrivalScript {
     static scriptName = "Splat Crop";
 
     size = { x: 10, y: 10, z: 10 };
+    cropSplats = true;
     invert = false;
     edgeScaleFactor = 0.5;
     showBox = true;
@@ -88,6 +93,7 @@ export class SplatCrop extends ArrivalScript {
 
     static properties = {
         size: { title: "Box Size (m)", min: 0.1, max: 100000, step: 0.1 },
+        cropSplats: { title: "Crop Splats" },
         invert: { title: "Invert (carve hole)" },
         edgeScaleFactor: { title: "Edge Softness", min: 0.01, max: 1, step: 0.01 },
         showBox: { title: "Show Box" },
@@ -108,23 +114,34 @@ export class SplatCrop extends ArrivalScript {
 
     initialize() {
         this._destroyed = false;
-        if (!this._acquire()) this._retryAcquire(120);
+        if (this.cropSplats && !this._acquire()) this._retryAcquire(120);
     }
 
     update(dt) {
         // Cheap periodic re-acquire: catches splats that streamed in after init
         // and any new non-unified gsplat materials. Idempotent for known mats.
-        this._acquireTimer += dt;
-        if (this._acquireTimer > 1) {
-            this._acquireTimer = 0;
-            this._acquire();
+        if (this.cropSplats) {
+            this._acquireTimer += dt;
+            if (this._acquireTimer > 1) {
+                this._acquireTimer = 0;
+                this._acquire();
+            }
+            if (this._materials.size > 0) this._updateAllUniforms();
         }
-        if (this._materials.size > 0) this._updateAllUniforms();
         if (this.showBox) this._drawBox();
         this._syncTilePatch();
     }
 
     onPropertyChanged(name) {
+        if (name === "cropSplats") {
+            // Toggle the splat crop on/off without affecting the tile carve.
+            if (this.cropSplats) {
+                if (!this._acquire()) this._retryAcquire(120);
+            } else {
+                this._restoreMaterials();
+            }
+            return;
+        }
         // Uniforms are refreshed every frame in update(); this gives immediate
         // feedback when the splat isn't moving and centralizes any future
         // re-acquire triggers.
@@ -172,6 +189,7 @@ export class SplatCrop extends ArrivalScript {
 
     // Returns true if at least one splat material was found and patched.
     _acquire() {
+        if (!this.cropSplats) return false;
         let found = false;
         const unified = this._getUnifiedMaterial();
         if (unified) { this._applyToMaterial(unified, null); found = true; }
@@ -183,8 +201,8 @@ export class SplatCrop extends ArrivalScript {
     }
 
     _retryAcquire(framesLeft) {
-        if (this._destroyed || framesLeft <= 0) {
-            if (!this._destroyed && this._materials.size === 0) {
+        if (this._destroyed || !this.cropSplats || framesLeft <= 0) {
+            if (!this._destroyed && this.cropSplats && this._materials.size === 0) {
                 console.warn("SplatCrop: no splat material found in this space.");
             }
             return;
