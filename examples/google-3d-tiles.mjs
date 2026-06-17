@@ -1,9 +1,9 @@
 /**
- * Google Photorealistic 3D Tiles
+ * Google Photorealistic 3D Tiles — Atmosphere
  *
- * Includes a ground-to-space atmosphere: an analytic
- * single-scattering sky shell + aerial-perspective haze on the tiles + a real
- * solar position (lat/lon + day-of-year + UTC hour). The maths run in the tile
+ * Atmosphere variant of the Google 3D Tiles plugin: adds an analytic
+ * single-scattering sky shell + aerial-perspective haze on the tiles + a sun
+ * disc at a real solar position (lat/lon + day-of-year + UTC hour). The maths run in the tile
  * frame (planet-centred, real metres) so it is scale-invariant: a ground-to-
  * space sky at full scale, a glowing halo around a tabletop globe when scaled
  * down. First cut is LUT-free (ray-marched in-shader), not the precomputed
@@ -51,6 +51,13 @@
  *     far reaches the millions, keeping the depth ratio healthy everywhere.
  *     Toggle OFF and the camera simply uses Near/Far Clip as fixed values
  *     with scroll-only speed control.
+ *   - The atmosphere follows the room's render mode automatically: in HDR (a
+ *     CameraFrame is active) the sky and sun disc are emitted as linear
+ *     scene-referred radiance, so the later compose pass does the roll-off and
+ *     the sun reads as an HDR highlight that bloom can pick up (raise "Sun Disc
+ *     Brightness" for a stronger bloom). With no CameraFrame the atmosphere
+ *     applies its own display tonemap so it doesn't blow out. "Sky Exposure"
+ *     scales either path.
  */
 
 const TILE_API = "https://tile.googleapis.com/";
@@ -61,7 +68,42 @@ const CESIUM_ION_API = "https://api.cesium.com/v1/";
 // way to stream the tiles from an EEA-billing account, which Google blocks.
 const CESIUM_GOOGLE_ASSET_ID = 2275207;
 
+// Where to actually obtain the two credentials the plugin needs. Surfaced as
+// clickable links in the status prompt so a new user isn't left guessing.
+const GOOGLE_KEY_DOCS = "https://developers.google.com/maps/documentation/tile/get-api-key";
+const CESIUM_ION_TOKENS = "https://ion.cesium.com/tokens";
+
+const escapeHTML = (s) => String(s).replace(/[&<>"']/g, (c) => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
+));
+
+const statusLink = (href, text) =>
+    `<a href="${href}" target="_blank" rel="noopener noreferrer" ` +
+    `style="color:#7fd4ff;text-decoration:underline;pointer-events:auto;">${text}</a>`;
+
+// The "no credentials yet" prompt, in plain-text (fallback) and linked variants.
+const KEY_PROMPT_TEXT =
+    "Enter a Google Maps API key (Map Tiles API enabled), " +
+    "or a Cesium Ion token for EEA accounts";
+const KEY_PROMPT_HTML =
+    `Enter a ${statusLink(GOOGLE_KEY_DOCS, "Google Maps API key")} ` +
+    `(with the Map Tiles API enabled), or a ` +
+    `${statusLink(CESIUM_ION_TOKENS, "Cesium Ion token")} for EEA accounts`;
+
 const len3 = (x, y, z) => Math.sqrt(x * x + y * y + z * z);
+
+// Squared distance from the camera to a tile's bounding-box centre, used to
+// drain the load queue nearest-first. Box is Z-up ECEF [bx,by,bz,...]; the
+// camera is the Y-up flip (x, z, -y) — same mapping inRange uses. Squared is
+// enough for ordering (no sqrt). No box (rare, structural) -> 0 = load now.
+const boxCamDistSq = (node, cam) => {
+    const box = node.boundingVolume?.box;
+    if (!box) return 0;
+    const dx = box[0] - cam[0];
+    const dy = box[2] - cam[1];
+    const dz = -box[1] - cam[2];
+    return dx * dx + dy * dy + dz * dz;
+};
 
 // ── Atmosphere (analytic single-scattering) ──
 // A first-cut, LUT-free port of the look the takram/Bruneton demos achieve:
@@ -81,7 +123,9 @@ uniform float uPlanetRadius;  // ground geocentric radius (m)
 uniform float uAtmoRadius;    // atmosphere top radius (m)
 uniform float uSunIntensity;
 uniform float uAtmoEnable;    // 0 = off, 1 = carve in aerial perspective
-uniform float uSkyExposure;   // tonemap exposure for the haze (matches the sky)
+uniform float uSkyExposure;   // haze exposure (tonemap curve, or linear scale)
+uniform float uTonemap;       // 1 = tonemap the haze in-shader, 0 = emit linear
+uniform float uAirPollution;  // Mie/aerosol scale: 0 = clear, 1 = normal, >1 hazy
 `;
 
 const ATMO_FUNC_GLSL = /* glsl */ `
@@ -90,7 +134,7 @@ const ATMO_FUNC_GLSL = /* glsl */ `
 // inscattered radiance for ray (P, dir) integrated over [0, maxLen];
 // view transmittance returned in 'trans'. P/dir in tile frame, real metres.
 vec3 gtAtmosphere(vec3 P, vec3 dir, float maxLen, vec3 sunDir,
-                  float planetR, float atmoR, float sunI, out vec3 trans) {
+                  float planetR, float atmoR, float sunI, float mieMul, out vec3 trans) {
     const int MAX_SAMPLES = 32;
     const int LIGHT_SAMPLES = 8;
     const float STEP0 = 200.0;      // first view step (m), small near the camera
@@ -98,7 +142,7 @@ vec3 gtAtmosphere(vec3 P, vec3 dir, float maxLen, vec3 sunDir,
     const float Hr = 8000.0;        // Rayleigh scale height
     const float Hm = 1200.0;        // Mie scale height
     const vec3  betaR = vec3(5.8e-6, 13.5e-6, 33.1e-6);
-    const float betaM = 21e-6;
+    float betaM = 21e-6 * mieMul;   // Mie (aerosol) scattering, scaled by air pollution
     const float g = 0.76;           // Mie anisotropy
     const float PI = 3.14159265359;
 
@@ -177,12 +221,14 @@ uniform uAtmoRadius: f32;
 uniform uSunIntensity: f32;
 uniform uAtmoEnable: f32;
 uniform uSkyExposure: f32;
+uniform uTonemap: f32;
+uniform uAirPollution: f32;
 `;
 
 const ATMO_FUNC_WGSL = /* wgsl */ `
 struct GtAtmo { inscatter: vec3f, trans: vec3f };
 fn gtAtmosphere(P: vec3f, dir: vec3f, maxLen: f32, sunDir: vec3f,
-                planetR: f32, atmoR: f32, sunI: f32) -> GtAtmo {
+                planetR: f32, atmoR: f32, sunI: f32, mieMul: f32) -> GtAtmo {
     var res: GtAtmo;
     res.inscatter = vec3f(0.0);
     res.trans = vec3f(1.0);
@@ -190,7 +236,7 @@ fn gtAtmosphere(P: vec3f, dir: vec3f, maxLen: f32, sunDir: vec3f,
     let Hr = 8000.0;
     let Hm = 1200.0;
     let betaR = vec3f(5.8e-6, 13.5e-6, 33.1e-6);
-    let betaM = 21e-6;
+    let betaM = 21e-6 * mieMul;   // Mie (aerosol) scattering, scaled by air pollution
     let g = 0.76;
     let PI = 3.14159265359;
 
@@ -260,18 +306,20 @@ fn gtAtmosphere(P: vec3f, dir: vec3f, maxLen: f32, sunDir: vec3f,
 }
 `;
 
-// ── Tile shader chunks (Splat Crop carve + saturation) ──
+// ── Tile shader chunks (Splat Crop carve + colour grade) ──
 // Two features share the global litUserDeclarationPS / litUserMainEndPS hooks:
 //   1. Patch-region carve: a "Splat Crop" vibe with Cull Google Tiles on
 //      publishes its box via the googletiles:patch-region app event; we discard
 //      tile fragments inside that box so a cropped splat can replace the tiles
 //      in the same region. The discard runs in litUserMainEndPS (inside fragment
 //      main) where vPositionW (world pos) is in scope. Single region for v1.
-//   2. Saturation: a per-pixel saturation tweak of the composed output, part of
-//      the Direct Light material tuning. uSaturation = 1 is a no-op, so it does
-//      nothing until the user dials it.
+//   2. Colour grade: brightness, tint, and saturation applied to the composed
+//      output. Because it operates on the final pixel it works whether the tile
+//      is lit (Direct Light on) or left as Google's unlit baked photo. Each is a
+//      no-op at its default (brightness 1, tint white, saturation 1), so the
+//      grade does nothing until the user dials it.
 // Because chunks.set() replaces, both live in one combined string per hook. The
-// saturation op runs on the final colour (gl_FragColor / output.color, already
+// grade ops run on the final colour (gl_FragColor / output.color, already
 // tonemapped + gamma corrected). GLSL + WGSL so it works on WebGL2 and WebGPU.
 const CHUNK_DECL_NAME = "litUserDeclarationPS";
 const CHUNK_MAIN_NAME = "litUserMainEndPS";
@@ -280,6 +328,9 @@ const CHUNK_DECL_GLSL = /* glsl */ `
 uniform mat4  uPatchInv;     // world -> box-local
 uniform vec3  uPatchHalf;    // box half-extents (m)
 uniform float uPatchEnable;  // 0 = off, 1 = carve
+uniform float uBrightness;   // 1 = unchanged
+uniform vec3  uTint;         // (1,1,1) = unchanged
+uniform float uContrast;     // 1 = unchanged
 uniform float uSaturation;   // 1 = unchanged
 ${ATMO_DECL_GLSL}
 ${ATMO_FUNC_GLSL}
@@ -289,9 +340,14 @@ if (uPatchEnable > 0.5) {
     vec3 lp = (uPatchInv * vec4(vPositionW, 1.0)).xyz;
     if (all(lessThanEqual(abs(lp), uPatchHalf))) discard;
 }
-// Saturation writes the composed colour, so it must run in the forward pass
-// only — gl_FragColor holds depth/pick IDs in the shadow/pick/prepass.
+// The colour grade writes the composed colour, so it must run in the forward
+// pass only — gl_FragColor holds depth/pick IDs in the shadow/pick/prepass.
 #ifdef FORWARD_PASS
+// Brightness + tint multiply the final pixel, so they apply whether the tile is
+// lit or left as Google's unlit baked photo. Then contrast (around mid-grey),
+// then saturation.
+gl_FragColor.rgb *= uTint * uBrightness;
+gl_FragColor.rgb = (gl_FragColor.rgb - 0.5) * uContrast + 0.5;
 if (abs(uSaturation - 1.0) > 0.001) {
     float luma = dot(gl_FragColor.rgb, vec3(0.2126, 0.7152, 0.0722));
     gl_FragColor.rgb = mix(vec3(luma), gl_FragColor.rgb, uSaturation);
@@ -311,10 +367,13 @@ if (uAtmoEnable > 0.5) {
         aL = length(av);
         vec3 aTr;
         vec3 aIn = gtAtmosphere(uCamTile, av / aL, aL, uSunDirTile,
-                                uPlanetRadius, uAtmoRadius, uSunIntensity, aTr);
-        // tonemap the inscatter to display space (same curve as the sky) so far
-        // tiles fade toward the bright horizon colour instead of going dark
-        gl_FragColor.rgb = gl_FragColor.rgb * aTr + (vec3(1.0) - exp(-aIn * uSkyExposure));
+                                uPlanetRadius, uAtmoRadius, uSunIntensity, uAirPollution, aTr);
+        // Extinguish the tile by transmittance and add the inscattered haze.
+        // uTonemap on: map the haze through the sky's curve (the tile colour is
+        // already display-referred). Off: add linear radiance so a later HDR
+        // tonemapper sees the same scene-referred values as the tile.
+        vec3 haze = (uTonemap > 0.5) ? (vec3(1.0) - exp(-aIn * uSkyExposure)) : (aIn * uSkyExposure);
+        gl_FragColor.rgb = gl_FragColor.rgb * aTr + haze;
     }
 }
 #endif
@@ -324,6 +383,9 @@ const CHUNK_DECL_WGSL = /* wgsl */ `
 uniform uPatchInv: mat4x4f;
 uniform uPatchHalf: vec3f;
 uniform uPatchEnable: f32;
+uniform uBrightness: f32;
+uniform uTint: vec3f;
+uniform uContrast: f32;
 uniform uSaturation: f32;
 ${ATMO_DECL_WGSL}
 ${ATMO_FUNC_WGSL}
@@ -336,6 +398,10 @@ if (uniform.uPatchEnable > 0.5) {
 // Forward pass only — output.color is the composed colour here; the shadow/
 // pick/prepass don't define it and write depth/pick IDs instead.
 #ifdef FORWARD_PASS
+// Brightness + tint apply to the final pixel (lit or unlit); then contrast
+// (around mid-grey), then saturation.
+output.color = vec4f(output.color.rgb * uniform.uTint * uniform.uBrightness, output.color.a);
+output.color = vec4f((output.color.rgb - vec3f(0.5)) * uniform.uContrast + vec3f(0.5), output.color.a);
 if (abs(uniform.uSaturation - 1.0) > 0.001) {
     let luma = dot(output.color.rgb, vec3f(0.2126, 0.7152, 0.0722));
     output.color = vec4f(mix(vec3f(luma), output.color.rgb, uniform.uSaturation), output.color.a);
@@ -350,8 +416,11 @@ if (uniform.uAtmoEnable > 0.5) {
         let av = ap - uniform.uCamTile;
         let aL = length(av);
         let r = gtAtmosphere(uniform.uCamTile, av / aL, aL, uniform.uSunDirTile,
-                             uniform.uPlanetRadius, uniform.uAtmoRadius, uniform.uSunIntensity);
-        let haze = vec3f(1.0) - exp(-r.inscatter * uniform.uSkyExposure);
+                             uniform.uPlanetRadius, uniform.uAtmoRadius, uniform.uSunIntensity, uniform.uAirPollution);
+        // uTonemap on: tonemap the haze (tile is display-referred). Off: linear
+        // radiance for a later HDR tonemapper (see GLSL note).
+        var haze = r.inscatter * uniform.uSkyExposure;
+        if (uniform.uTonemap > 0.5) { haze = vec3f(1.0) - exp(-r.inscatter * uniform.uSkyExposure); }
         output.color = vec4f(output.color.rgb * r.trans + haze, output.color.a);
     }
 }
@@ -389,18 +458,33 @@ uniform float uPlanetRadius;
 uniform float uAtmoRadius;
 uniform float uSunIntensity;
 uniform float uSkyExposure;
+uniform float uSunDiscBrightness;
+uniform float uTonemap;
+uniform float uAirPollution;
 varying vec3 vWorld;
 void main() {
     vec3 p = (uWorldToTile * vec4(vWorld, 1.0)).xyz;
     vec3 dir = normalize(p - uCamTile);
     vec3 tr;
     vec3 ins = gtAtmosphere(uCamTile, dir, 1.0e20, uSunDirTile,
-                            uPlanetRadius, uAtmoRadius, uSunIntensity, tr);
-    vec3 col = vec3(1.0) - exp(-ins * uSkyExposure);
+                            uPlanetRadius, uAtmoRadius, uSunIntensity, uAirPollution, tr);
+    // Solar disc: where the view ray aligns with the sun, add solar radiance
+    // (uSunDiscBrightness) attenuated by the view transmittance, so the disc
+    // reddens toward the horizon and is occluded (tr -> 0) when the line of
+    // sight crosses the planet. The Mie forward peak supplies the surrounding
+    // glow. With the tonemap off the disc keeps its raw value (> 1) for an HDR
+    // target / bloom; with it on it saturates to white through the sky curve.
+    float mu = dot(dir, uSunDirTile);
+    float disc = smoothstep(0.99986, 0.99996, mu);  // ~0.5° core, soft to ~1°
+    ins += tr * uSunDiscBrightness * disc;
+    // uTonemap on: self-contained display tonemap. Off: emit linear radiance so
+    // a later HDR tonemapper handles roll-off (sky and sun can exceed 1).
+    vec3 col = (uTonemap > 0.5) ? (vec3(1.0) - exp(-ins * uSkyExposure)) : (ins * uSkyExposure);
     // Premultiplied: emit the inscatter and let the background through by the
     // transmittance — identical compositing to the tile haze, so sky and ground
     // match at the horizon instead of the sky self-darkening to col².
     float a = 1.0 - dot(tr, vec3(0.2126, 0.7152, 0.0722));
+    a = max(a, disc);                                // the disc itself is opaque
     gl_FragColor = vec4(col, a);
 }
 `;
@@ -433,6 +517,9 @@ uniform uPlanetRadius: f32;
 uniform uAtmoRadius: f32;
 uniform uSunIntensity: f32;
 uniform uSkyExposure: f32;
+uniform uSunDiscBrightness: f32;
+uniform uTonemap: f32;
+uniform uAirPollution: f32;
 varying vWorld: vec3f;
 @fragment
 fn fragmentMain(input: FragmentInput) -> FragmentOutput {
@@ -440,9 +527,18 @@ fn fragmentMain(input: FragmentInput) -> FragmentOutput {
     let p = (uniform.uWorldToTile * vec4f(input.vWorld, 1.0)).xyz;
     let dir = normalize(p - uniform.uCamTile);
     let r = gtAtmosphere(uniform.uCamTile, dir, 1.0e20, uniform.uSunDirTile,
-                         uniform.uPlanetRadius, uniform.uAtmoRadius, uniform.uSunIntensity);
-    let col = vec3f(1.0) - exp(-r.inscatter * uniform.uSkyExposure);
-    let a = 1.0 - dot(r.trans, vec3f(0.2126, 0.7152, 0.0722));
+                         uniform.uPlanetRadius, uniform.uAtmoRadius, uniform.uSunIntensity, uniform.uAirPollution);
+    // Solar disc (see GLSL note): solar radiance (uSunDiscBrightness) added where
+    // dir aligns with the sun, attenuated by the view transmittance.
+    let mu = dot(dir, uniform.uSunDirTile);
+    let disc = smoothstep(0.99986, 0.99996, mu);
+    let ins = r.inscatter + r.trans * uniform.uSunDiscBrightness * disc;
+    // uTonemap on: self-contained tonemap. Off: linear radiance for a later HDR
+    // tonemapper (sky and sun can exceed 1).
+    var col = ins * uniform.uSkyExposure;
+    if (uniform.uTonemap > 0.5) { col = vec3f(1.0) - exp(-ins * uniform.uSkyExposure); }
+    var a = 1.0 - dot(r.trans, vec3f(0.2126, 0.7152, 0.0722));
+    a = max(a, disc);
     output.color = vec4f(col, a);
     return output;
 }
@@ -628,8 +724,8 @@ class TileTree {
     }
 }
 
-export class GoogleTiles extends ArrivalScript {
-    static scriptName = "Google 3D Tiles";
+export class GoogleTilesAtmosphere extends ArrivalScript {
+    static scriptName = "Google 3D Tiles (Atmosphere)";
 
     apiKey = "";
     cesiumIonToken = "";
@@ -637,33 +733,50 @@ export class GoogleTiles extends ArrivalScript {
     longitude = 16.37208;
     groundAltitude = 216;
     detail = 4;
-    tileScale = 1.0;
+    tileScale = 0.7;
     altitudeAdaptive = true;
     cameraNearClip = 0.1;
     cameraFarClip = 30000;
-    freeCamMaxSpeed = 1000;
+    freeCamMaxSpeed = 1000000;
     showStatus = true;
 
-    // Material tuning. Direct Light is the master gate: while OFF the plugin
-    // touches no tile material at all (tiles render exactly as Google's loader
-    // produced them — effectively unlit baked photogrammetry — at zero per-tile
-    // cost) and every knob below is inert. While ON, each tile is switched to
-    // lit and the knobs apply.
-    directLight = false;
+    // Colour grade — brightness, contrast, saturation, and tint. These ride the
+    // shader chunk and operate on the final composed pixel, so they apply whether
+    // tiles are lit (Direct Light on) or left as Google's unlit baked photo. Each
+    // is a no-op at its default, so an untouched plugin still pays nothing.
     materialBrightness = 1.0;
-    diffuseTint = "#ffffff";
+    contrast = 1.0;
     saturation = 1.0;
+    diffuseTint = "#ffffff";
+
+    // Direct Light re-lights the tiles with the scene sun. It is the master gate
+    // for LIGHTING only: while OFF the plugin never switches a tile to lit (they
+    // render exactly as Google's loader produced them, at zero per-tile lighting
+    // cost) and Gloss / Ambient Response are inert. While ON each tile is
+    // switched to lit and those two knobs apply. The colour grade above is
+    // independent of this gate.
+    directLight = false;
     gloss = 0.5;
-    metalness = 0.0;
     ambientResponse = 1.0;
-    emissiveBoost = 0.0;
 
     // Atmosphere (analytic single-scattering sky + aerial perspective).
     atmosphere = true;
-    timeUTC = 12;        // hour of day, UTC (0..24)
-    dayOfYear = 172;     // 1..366 (172 ≈ summer solstice) — drives sun declination
+    timeUTC = 8;        // hour of day, UTC (0..24)
+    dayOfYear = 140;     // 1..366 (172 ≈ summer solstice) — drives sun declination
     sunIntensity = 22;
     skyExposure = 1.0;
+    // Aerosol (Mie) density — "air pollution". 0 = pristine clear air (pure
+    // Rayleigh: deep-blue sky, tight sun, sharp distant tiles); 1 = normal city
+    // haze; higher = smoggy, washed-out, big white aureole. Rayleigh (the blue)
+    // is unaffected, so only the haziness changes.
+    airPollution = 1.0;
+    // Linear radiance of the sun disc. When the room renders in HDR the disc
+    // stays above 1 as an HDR highlight (bloom picks it up); 0 hides the disc.
+    sunDiscBrightness = 64;
+    // The atmosphere tonemaps in-shader only when nothing tonemaps later (no HDR
+    // CameraFrame). Turn this ON to force the in-shader tonemap regardless — e.g.
+    // when the HDR auto-detect is wrong, or to keep the self-contained look.
+    forceTonemap = false;
 
     static properties = {
         apiKey: { title: "Google Maps API Key" },
@@ -672,25 +785,27 @@ export class GoogleTiles extends ArrivalScript {
         longitude: { title: "Longitude", min: -180, max: 180, step: 0.00001 },
         groundAltitude: { title: "Ground Altitude (m)", min: -500, max: 9000, step: 1 },
         detail: { title: "Detail", min: 2, max: 6, step: 0.5 },
-        tileScale: { title: "Scale", min: 0.000001, max: 1, step: 0.000001 },
+        tileScale: { title: "Scale", min: 0.000001, max: 10, step: 0.000001 },
         altitudeAdaptive: { title: "Altitude Adaptive Cam" },
         cameraNearClip: { title: "Near Clip (m)", min: 0.01, max: 100, step: 0.01 },
         cameraFarClip: { title: "Far Clip (m)", min: 1000, max: 20000000, step: 1000 },
         freeCamMaxSpeed: { title: "Free Cam Max Speed (m/s)", min: 50, max: 1000000, step: 50 },
         showStatus: { title: "Show Status" },
-        directLight: { title: "Direct Light (scene sun)" },
         materialBrightness: { title: "Brightness", min: 0, max: 3, step: 0.05 },
-        diffuseTint: { title: "Tint" },
+        contrast: { title: "Contrast", min: 0, max: 3, step: 0.05 },
         saturation: { title: "Saturation", min: 0, max: 2, step: 0.05 },
+        diffuseTint: { title: "Tint" },
+        directLight: { title: "Direct Light (scene sun)" },
         gloss: { title: "Gloss (lit)", min: 0, max: 1, step: 0.01 },
-        metalness: { title: "Metalness (lit)", min: 0, max: 1, step: 0.01 },
         ambientResponse: { title: "Ambient Response (lit)", min: 0, max: 2, step: 0.05 },
-        emissiveBoost: { title: "Emissive Boost (lit)", min: 0, max: 2, step: 0.05 },
         atmosphere: { title: "Atmosphere" },
         timeUTC: { title: "Time UTC (h)", min: 0, max: 24, step: 0.25 },
         dayOfYear: { title: "Day of Year", min: 1, max: 366, step: 1 },
         sunIntensity: { title: "Sun Intensity", min: 0, max: 100, step: 1 },
         skyExposure: { title: "Sky Exposure", min: 0.1, max: 5, step: 0.1 },
+        airPollution: { title: "Air Pollution (haze)", min: 0, max: 5, step: 0.05 },
+        forceTonemap: { title: "Force Tonemap On" },
+        sunDiscBrightness: { title: "Sun Disc Brightness (HDR)", min: 0, max: 200, step: 1 },
     };
 
     // ── Internal state ──
@@ -701,7 +816,8 @@ export class GoogleTiles extends ArrivalScript {
     _sessionId = 0;
     _updateTimer = 0;
     _loadSlots = 0;
-    _loadQueue = [];
+    _loadQueue = [];       // parked loads: { node, resolve }, drained nearest-first
+    _camTile = null;       // last camera position in the tile frame (for load priority)
     _statusEl = null;
     _lastStatus = "";
     _origNearClip = null;
@@ -731,6 +847,14 @@ export class GoogleTiles extends ArrivalScript {
     // cap, hundreds of parallel loads choke the main thread and the stream
     // appears to stall.
     static MAX_CONCURRENT_LOADS = 10;
+
+    // loadGLB never settles if its request stalls (it only resolves on the
+    // asset's load/error event), which pins the slot forever — 10 stalled loads
+    // deadlock the whole streamer. Time each load out so the slot is always
+    // reclaimed; a timeout rejects like a load error, so the node is collapsed
+    // and retried by a later update(). Generous enough that only genuinely hung
+    // requests trip it (Google tiles are small and normally load in <2 s).
+    static LOAD_TIMEOUT_MS = 20000;
 
     // ────────────────────────────────────────────
     // Lifecycle
@@ -768,7 +892,7 @@ export class GoogleTiles extends ArrivalScript {
         this.app.on("googletiles:patch-region-clear", this._onPatchClear, this);
 
         if (!this.apiKey && !this.cesiumIonToken) {
-            this._status("Enter a Google Maps API key, or a Cesium Ion token for EEA accounts");
+            this._status(KEY_PROMPT_TEXT, KEY_PROMPT_HTML);
             return;
         }
         this._start();
@@ -815,7 +939,8 @@ export class GoogleTiles extends ArrivalScript {
             this._applyCameraClips();
         }
 
-        this._tree.update([local.x, local.y, local.z]);
+        this._camTile = [local.x, local.y, local.z];
+        this._tree.update(this._camTile);
 
         if (this.atmosphere) this._updateAtmosphereUniforms(local);
 
@@ -866,24 +991,24 @@ export class GoogleTiles extends ArrivalScript {
                     this._statusEl.style.display = this.showStatus ? "block" : "none";
                 }
                 break;
+            case "materialBrightness":
+            case "contrast":
+            case "saturation":
+            case "diffuseTint":
+                // colour grade: always live (lit or unlit). Inject the chunk if a
+                // knob left its default and nothing else had turned it on yet.
+                if (this._colorGradeActive()) this._chunkAllTiles();
+                this._applyColorGradeUniforms();
+                break;
             case "directLight":
-                // master gate: switch every loaded tile to/from lit
+                // master gate for re-lighting only; the colour grade is independent
                 if (this.directLight) this._tuneAllTiles();
                 else this._restoreAllTiles();
-                this._applySaturationUniform();
                 break;
-            case "materialBrightness":
-            case "diffuseTint":
             case "gloss":
-            case "metalness":
             case "ambientResponse":
-            case "emissiveBoost":
-                // unlit does nothing — only re-tune while Direct Light is on
+                // lit-only — re-tune only while Direct Light is on
                 if (this.directLight) this._tuneAllTiles();
-                break;
-            case "saturation":
-                // live uniform, no recompile; inert while unlit
-                if (this.directLight) this._applySaturationUniform();
                 break;
             case "atmosphere":
                 if (this.atmosphere && !this._skyEntity) this._buildSky();
@@ -899,6 +1024,9 @@ export class GoogleTiles extends ArrivalScript {
                 break;
             case "sunIntensity":
             case "skyExposure":
+            case "sunDiscBrightness":
+            case "airPollution":
+            case "forceTonemap":
                 // live uniforms, picked up by the next _updateAtmosphereUniforms
                 break;
         }
@@ -1065,12 +1193,16 @@ export class GoogleTiles extends ArrivalScript {
         } catch (err) {
             if (session !== this._sessionId) return;
             this._tree = null;
-            this._status(`Cesium Ion handshake failed: ${err.message}\nCheck the Cesium Ion token.`);
+            this._status(
+                `Cesium Ion handshake failed: ${err.message}\nCheck the Cesium Ion token.`,
+                `Cesium Ion handshake failed: ${escapeHTML(err.message)}<br>` +
+                `Check the ${statusLink(CESIUM_ION_TOKENS, "Cesium Ion token")}.`
+            );
             return;
         }
         if (session !== this._sessionId) return;   // re-entered while awaiting Ion
         if (!apiKey) {
-            this._status("Enter a Google Maps API key, or a Cesium Ion token for EEA accounts");
+            this._status(KEY_PROMPT_TEXT, KEY_PROMPT_HTML);
             return;
         }
 
@@ -1097,7 +1229,12 @@ export class GoogleTiles extends ArrivalScript {
                     ? "Google blocked 3D tiles for this key's billing region (EEA).\n" +
                       "Provide a Cesium Ion token instead to stream the tiles."
                     : `Failed to load root tileset: ${err.message}\n` +
-                      `Check the API key and that "Map Tiles API" is enabled.`
+                      `Check the API key and that "Map Tiles API" is enabled.`,
+                eeaBlocked
+                    ? "Google blocked 3D tiles for this key's billing region (EEA).<br>" +
+                      `Provide a ${statusLink(CESIUM_ION_TOKENS, "Cesium Ion token")} instead to stream the tiles.`
+                    : `Failed to load root tileset: ${escapeHTML(err.message)}<br>` +
+                      `Check the ${statusLink(GOOGLE_KEY_DOCS, "API key")} and that the Map Tiles API is enabled.`
             );
         }
     }
@@ -1134,23 +1271,36 @@ export class GoogleTiles extends ArrivalScript {
     }
 
     /**
-     * Wait for a download slot. The queue is drained newest-first (LIFO):
-     * while the player moves, the most recent expands are the nearest tiles,
-     * and stale queued loads usually get tombstoned before they ever run.
+     * Wait for a download slot. Overflow loads park in _loadQueue tagged with
+     * their tile node, and _releaseSlot drains the one NEAREST the camera first,
+     * so the tiles around the player stream in ahead of distant ones. Loads that
+     * drift out of range while parked get tombstoned before they ever run.
      */
-    _acquireSlot() {
-        if (this._loadSlots < GoogleTiles.MAX_CONCURRENT_LOADS) {
+    _acquireSlot(node) {
+        if (this._loadSlots < GoogleTilesAtmosphere.MAX_CONCURRENT_LOADS) {
             this._loadSlots++;
             return Promise.resolve();
         }
-        return new Promise(resolve => this._loadQueue.push(resolve))
+        return new Promise(resolve => this._loadQueue.push({ node, resolve }))
             .then(() => { this._loadSlots++; });
     }
 
     _releaseSlot() {
         this._loadSlots--;
-        const next = this._loadQueue.pop();
-        if (next) next();
+        const q = this._loadQueue;
+        if (!q.length) return;
+        // Pick the queued tile closest to the camera; fall back to most-recent
+        // (LIFO) before the first update() has cached a camera position.
+        let idx = q.length - 1;
+        const cam = this._camTile;
+        if (cam) {
+            let best = Infinity;
+            for (let i = 0; i < q.length; i++) {
+                const d = boxCamDistSq(q[i].node, cam);
+                if (d < best) { best = d; idx = i; }
+            }
+        }
+        q.splice(idx, 1)[0].resolve();
     }
 
     async _loadTile(node, tree, session) {
@@ -1162,15 +1312,37 @@ export class GoogleTiles extends ArrivalScript {
         const rec = { entity: null, asset: null, dead: false };
         this._records.set(node, rec);
         try {
-            await this._acquireSlot();
+            await this._acquireSlot(node);
             try {
                 if (session !== this._sessionId || rec.dead) return;
                 const url = tree.buildTileUrl(node.content.uri);
-                const { entity, asset } = await ArrivalSpace.loadGLB(url, {
+
+                // Race the load against a timeout so a stalled request can't pin
+                // this slot forever. loadGLB can't be cancelled, so if a timed-out
+                // load still finishes later, dispose its orphaned entity.
+                const loadPromise = ArrivalSpace.loadGLB(url, {
                     parent: this._tileRoot,
                     name: "google-tile",
                     castShadows: false,
                 });
+                let timer = null;
+                const timeout = new Promise((_, reject) => {
+                    timer = setTimeout(
+                        () => reject(new Error("tile load timed out")),
+                        GoogleTilesAtmosphere.LOAD_TIMEOUT_MS
+                    );
+                });
+                let entity, asset;
+                try {
+                    ({ entity, asset } = await Promise.race([loadPromise, timeout]));
+                } catch (err) {
+                    // timed out or failed — clean up a late arrival, then let the
+                    // rejection collapse the node so a later update() retries it
+                    loadPromise.then(r => this._disposeTile(r.entity, r.asset), () => {});
+                    throw err;
+                } finally {
+                    clearTimeout(timer);
+                }
 
                 if (session !== this._sessionId || rec.dead) {
                     this._disposeTile(entity, asset);
@@ -1179,7 +1351,9 @@ export class GoogleTiles extends ArrivalScript {
 
                 rec.entity = entity;
                 rec.asset = asset;
-                if (this._patchActive || this.atmosphere) this._chunkEntity(entity);
+                if (this._patchActive || this.atmosphere || this._colorGradeActive()) {
+                    this._chunkEntity(entity);
+                }
                 if (this.directLight) this._tuneEntity(entity);
             } finally {
                 this._releaseSlot();
@@ -1235,7 +1409,7 @@ export class GoogleTiles extends ArrivalScript {
             this._unloadTile(node);
         }
         // Wake queued waiters — they bail on the session/tombstone check
-        for (const resolve of this._loadQueue.splice(0)) resolve();
+        for (const { resolve } of this._loadQueue.splice(0)) resolve();
     }
 
     // ────────────────────────────────────────────
@@ -1258,19 +1432,22 @@ export class GoogleTiles extends ArrivalScript {
         } catch (e) { return; }
         this._chunkedMaterials.add(mat);
         // Declared uniforms read as 0 until set — seed them so a freshly chunked
-        // material isn't carved (uPatchEnable) or forced to greyscale (uSaturation).
+        // material isn't carved (uPatchEnable), blacked out (uBrightness/uTint),
+        // or forced to greyscale (uSaturation).
         const region = this._activeRegion();
         if (region) {
             mat.setParameter("uPatchInv", region.inv);
             mat.setParameter("uPatchHalf", region.half);
         }
         mat.setParameter("uPatchEnable", region ? 1 : 0);
-        mat.setParameter("uSaturation", this.directLight ? this.saturation : 1.0);
+        this._setColorGradeOn(mat);
         // Atmosphere seeds — per-frame values (uWorldToTile/uCamTile/uSunDirTile)
         // are refreshed in _updateAtmosphereUniforms.
         mat.setParameter("uAtmoEnable", this.atmosphere ? 1 : 0);
         mat.setParameter("uSunIntensity", this.sunIntensity);
         mat.setParameter("uSkyExposure", this.skyExposure);
+        mat.setParameter("uTonemap", this._tonemapMode());
+        mat.setParameter("uAirPollution", this.airPollution);
         mat.setParameter("uPlanetRadius", this._targetRadius);
         mat.setParameter("uAtmoRadius", this._targetRadius + ATMO_THICKNESS);
     }
@@ -1328,9 +1505,26 @@ export class GoogleTiles extends ArrivalScript {
         }
     }
 
-    _applySaturationUniform() {
-        const s = this.directLight ? this.saturation : 1.0;
-        for (const mat of this._chunkedMaterials) mat.setParameter("uSaturation", s);
+    /** True while any colour-grade knob has left its no-op default. */
+    _colorGradeActive() {
+        return this.materialBrightness !== 1.0 ||
+               this.contrast !== 1.0 ||
+               this.saturation !== 1.0 ||
+               this.diffuseTint.toLowerCase() !== "#ffffff";
+    }
+
+    /** Push the current brightness/contrast/saturation/tint onto one chunked material. */
+    _setColorGradeOn(mat) {
+        this._tintColor.fromString(this.diffuseTint);
+        const t = this._tintColor;
+        mat.setParameter("uBrightness", this.materialBrightness);
+        mat.setParameter("uTint", [t.r, t.g, t.b]);
+        mat.setParameter("uContrast", this.contrast);
+        mat.setParameter("uSaturation", this.saturation);
+    }
+
+    _applyColorGradeUniforms() {
+        for (const mat of this._chunkedMaterials) this._setColorGradeOn(mat);
     }
 
     // ────────────────────────────────────────────
@@ -1385,7 +1579,7 @@ export class GoogleTiles extends ArrivalScript {
             });
         } catch (e) {
             // Haze (chunk layer) still works without the sky shell.
-            console.warn("GoogleTiles: sky material unavailable:", e.message);
+            console.warn("GoogleTilesAtmosphere: sky material unavailable:", e.message);
             return;
         }
         mat.cull = pc.CULLFACE_NONE;    // visible from inside (sky) and outside (halo)
@@ -1403,7 +1597,7 @@ export class GoogleTiles extends ArrivalScript {
             mi = new pc.MeshInstance(pc.Mesh.fromGeometry(this.app.graphicsDevice, geom), mat);
             mi.castShadows = false;
         } catch (e) {
-            console.warn("GoogleTiles: hi-res sphere unavailable, using primitive:", e.message);
+            console.warn("GoogleTilesAtmosphere: hi-res sphere unavailable, using primitive:", e.message);
         }
 
         const sky = new pc.Entity("google-tiles-atmosphere-sky");
@@ -1416,6 +1610,26 @@ export class GoogleTiles extends ArrivalScript {
         this._skyMaterial = mat;
     }
 
+    /**
+     * The room renders through a CameraFrame (HDR) when this is present: the
+     * scene draws to a linear render target and a later compose pass does the
+     * tonemap + gamma. The atmosphere then has to emit linear scene-referred
+     * radiance (so the sky and sun disc can exceed 1 and bloom); without a
+     * CameraFrame there is no later tonemap, so it applies its own. Mirrors the
+     * check the dome-shader sky uses (app.customTravelCenter.cameraFrame).
+     */
+    _hdrActive() {
+        return !!this.app.customTravelCenter?.cameraFrame;
+    }
+
+    /**
+     * uTonemap value (1 = tonemap in-shader, 0 = emit linear). Auto: tonemap only
+     * when nothing tonemaps later (no HDR CameraFrame). forceTonemap pins it on.
+     */
+    _tonemapMode() {
+        return (this.forceTonemap || !this._hdrActive()) ? 1 : 0;
+    }
+
     /** Refresh the per-frame atmosphere uniforms on the tiles and the sky shell. */
     _updateAtmosphereUniforms(camLocal) {
         const m = this._invTileMat.data;          // world → tile frame
@@ -1423,6 +1637,8 @@ export class GoogleTiles extends ArrivalScript {
         const sun = this._sunDirTile;
         const pr = this._targetRadius;
         const ar = this._targetRadius + ATMO_THICKNESS;
+        // 0 in HDR (compose tonemaps later, keep radiance linear), 1 otherwise
+        const tonemap = this._tonemapMode();
 
         for (const mat of this._chunkedMaterials) {
             mat.setParameter("uWorldToTile", m);
@@ -1432,6 +1648,8 @@ export class GoogleTiles extends ArrivalScript {
             mat.setParameter("uAtmoRadius", ar);
             mat.setParameter("uSunIntensity", this.sunIntensity);
             mat.setParameter("uSkyExposure", this.skyExposure);
+            mat.setParameter("uTonemap", tonemap);
+            mat.setParameter("uAirPollution", this.airPollution);
             mat.setParameter("uAtmoEnable", 1);
         }
         const sky = this._skyMaterial;
@@ -1443,6 +1661,9 @@ export class GoogleTiles extends ArrivalScript {
             sky.setParameter("uAtmoRadius", ar);
             sky.setParameter("uSunIntensity", this.sunIntensity);
             sky.setParameter("uSkyExposure", this.skyExposure);
+            sky.setParameter("uSunDiscBrightness", this.sunDiscBrightness);
+            sky.setParameter("uTonemap", tonemap);
+            sky.setParameter("uAirPollution", this.airPollution);
         }
     }
 
@@ -1451,9 +1672,11 @@ export class GoogleTiles extends ArrivalScript {
     // ────────────────────────────────────────────
     //
     // Master-gated by directLight. While OFF nothing here runs, so tiles keep
-    // Google's stock (effectively unlit) materials at zero per-tile cost. While
-    // ON each tile material is switched to lit and the knobs applied; the
-    // pre-tune state is stashed on the material so toggling off restores it.
+    // Google's stock (effectively unlit) materials at zero per-tile lighting
+    // cost. While ON each tile material is switched to lit and Gloss / Ambient
+    // Response applied; the pre-tune state is stashed on the material so toggling
+    // off restores it. The colour grade (brightness/tint/saturation) is separate
+    // — it rides the shader chunk and applies in either lighting mode.
 
     _tuneMaterial(mat) {
         if (!mat) return;
@@ -1475,26 +1698,24 @@ export class GoogleTiles extends ArrivalScript {
             mat._gtBaseMap = mat.emissiveMap || mat.diffuseMap || null;
         }
 
-        const b = this.materialBrightness;
-        this._tintColor.fromString(this.diffuseTint);
-        const t = this._tintColor;
-
+        // Re-light: the baked photo becomes the lit albedo and self-illumination
+        // is switched off, so the tile is shaded purely by the scene sun.
+        // Brightness/Tint live in the colour-grade chunk (final pixel), so the
+        // albedo stays neutral white here.
         mat.useLighting = true;
         if (mat._gtBaseMap) mat.diffuseMap = mat._gtBaseMap;
-        mat.diffuse.set(t.r * b, t.g * b, t.b * b);
+        mat.diffuse.set(1, 1, 1);
         mat.useMetalness = true;
-        mat.metalness = this.metalness;
+        mat.metalness = 0;
         mat.gloss = this.gloss;
         mat.ambient.set(this.ambientResponse, this.ambientResponse, this.ambientResponse);
-        // self-illumination — 0 boost keeps tiles purely lit (no glow in shadow)
-        if (mat._gtBaseMap) mat.emissiveMap = mat._gtBaseMap;
-        mat.emissive.set(t.r, t.g, t.b);
-        mat.emissiveIntensity = this.emissiveBoost;
+        mat.emissiveMap = null;
+        mat.emissive.set(0, 0, 0);
+        mat.emissiveIntensity = 0;
         mat.update();
 
         this._tunedMaterials.add(mat);
-        this._ensureChunks(mat);                 // saturation rides the chunk layer
-        mat.setParameter("uSaturation", this.saturation);
+        this._ensureChunks(mat);   // colour grade + atmosphere ride the chunk layer
     }
 
     _restoreMaterial(mat) {
@@ -1512,7 +1733,8 @@ export class GoogleTiles extends ArrivalScript {
         mat.ambient.copy(o.ambient);
         mat.update();
         this._tunedMaterials.delete(mat);
-        mat.setParameter("uSaturation", 1.0);    // neutralize (chunk persists for carve)
+        // The colour grade is independent of lighting, so it stays as set —
+        // restoring to unlit still grades Google's baked photo.
     }
 
     _tuneEntity(entity) {
@@ -1539,9 +1761,11 @@ export class GoogleTiles extends ArrivalScript {
     // UI
     // ────────────────────────────────────────────
 
-    _status(msg) {
-        if (msg === this._lastStatus) return;
-        this._lastStatus = msg;
+    _status(msg, html = null) {
+        // Dedupe on whatever actually gets rendered (the html when present).
+        const key = html ?? msg;
+        if (key === this._lastStatus) return;
+        this._lastStatus = key;
         try {
             if (!this._statusEl) {
                 this._statusEl = this.createUI("div");
@@ -1567,7 +1791,17 @@ export class GoogleTiles extends ArrivalScript {
                     this._statusEl.style.display = this.showStatus ? "block" : "none";
                 }
             }
-            if (this._statusEl) this._statusEl.textContent = msg;
+            if (this._statusEl) {
+                if (html) {
+                    this._statusEl.innerHTML = html;
+                    // Plain status is click-through (pointerEvents none); a linked
+                    // prompt has to capture clicks so the links are reachable.
+                    this._statusEl.style.pointerEvents = "auto";
+                } else {
+                    this._statusEl.textContent = msg;
+                    this._statusEl.style.pointerEvents = "none";
+                }
+            }
         } catch (_) { /* UI not available */ }
     }
 
