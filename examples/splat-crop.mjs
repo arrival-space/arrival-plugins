@@ -114,7 +114,26 @@ export class SplatCrop extends ArrivalScript {
 
     initialize() {
         this._destroyed = false;
+        // Honor visibility. Our crop is a chunk on the SHARED splat material, so
+        // it keeps cropping while merely hidden (update() stops when disabled but
+        // the patch stays). React to the script component's enable/disable state:
+        // undo the patch when hidden, re-apply when shown again.
+        this._onVisibilityState = (enabled) => this._onVisibilityChange(enabled);
+        this.entity.script?.on("state", this._onVisibilityState, this);
         if (this.cropSplats && !this._acquire()) this._retryAcquire(120);
+    }
+
+    _onVisibilityChange(enabled) {
+        if (enabled) {
+            if (this.cropSplats && !this._acquire()) this._retryAcquire(120);
+        } else {
+            this._restoreMaterials();
+            if (this._patchPublished) {
+                this.app.fire("googletiles:patch-region-clear", this._patchId || this.entity.getGuid());
+                this._patchPublished = false;
+                this._lastPatchKey = "";
+            }
+        }
     }
 
     update(dt) {
@@ -150,6 +169,7 @@ export class SplatCrop extends ArrivalScript {
 
     destroy() {
         this._destroyed = true;
+        this.entity.script?.off("state", this._onVisibilityState, this);
         if (this._patchPublished) {
             this.app.fire("googletiles:patch-region-clear", this._patchId || this.entity.getGuid());
             this._patchPublished = false;
