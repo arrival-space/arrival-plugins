@@ -40,6 +40,13 @@
  *     ~ 70 m, NYC ~ 30 m). Tweak until the street lines up with your floor.
  *   - Lower "Scale" (e.g. 0.000002) turns the dataset into a tabletop globe.
  *   - Raise "Detail" for sharper buildings at the cost of more tile loads.
+ *     "Detail (mobile)" is the value used instead on mobile devices, where the
+ *     desktop tile count would overwhelm the GPU — defaults lower.
+ *   - "Cull To Camera View" (on by default) only streams tiles inside the
+ *     camera's view cone (direction-based, a cheap stand-in for full frustum
+ *     culling), so looking one way loads a fraction of the tiles; turning
+ *     around briefly re-streams what's now in front. Toggle OFF to keep the
+ *     whole surrounding LOD resident regardless of where the camera points.
  *   - "Altitude Adaptive Cam" (on by default) makes clip planes and fly
  *     speed follow the camera's height above ground:
  *       near = max(Near Clip, altitude/200) up to 50 km
@@ -555,6 +562,15 @@ class TileTree {
 
     lodFactor = 4;
 
+    // Direction-based view culling. Refreshed every tick by the plugin from the
+    // live camera: only tiles whose bounding sphere falls inside the camera's
+    // view cone are expanded, and expanded tiles that leave a wider cone are
+    // collapsed. viewCull = false (no camera, or toggled off) loads everything
+    // as before.
+    viewCull = false;
+    camForward = null;   // camera forward in the tile frame (normalized) or null
+    halfFov = 0.7;       // half-angle of the view cone (rad), screen-corner-to-centre
+
     expanded = new Set();
 
     contentHidden = new Map();
@@ -624,6 +640,36 @@ class TileTree {
         const radius = Math.sqrt(lx * lx + ly * ly + lz * lz);
         const surface = Math.max(0, dist - radius);
         return surface < size * Math.max(this.lodFactor - 1, 1) * slack;
+    }
+
+    /**
+     * Direction-based view test: does the tile's bounding sphere fall inside
+     * the camera's view cone? A cheap single-cone stand-in for full frustum
+     * culling — the cone (half-angle `halfFov` around `camForward`) is widened
+     * by the tile's own angular radius, so a large nearby tile that only
+     * partly overlaps the screen still counts. Both `camForward` and the box
+     * centre are in the tile frame (Y-up flipped ECEF), the same mapping
+     * inRange uses. `extra` widens the half-angle (collapse hysteresis).
+     *
+     * Returns true (never culls) when view culling is off, the camera forward
+     * is unknown, the tile has no box, or the camera is inside the sphere.
+     */
+    inView(node, cam, extra = 0) {
+        if (!this.viewCull || !this.camForward) return true;
+        const box = node.boundingVolume?.box;
+        if (!box) return true;
+        const [bx, by, bz, xx, xy, xz, yx, yy, yz, zx, zy, zz] = box;
+        const dx = bx - cam[0], dy = bz - cam[1], dz = -by - cam[2];
+        const dist = len3(dx, dy, dz);
+        if (dist < 1e-3) return true;                 // camera at the centre
+        const lx = len3(xx, xy, xz), ly = len3(yx, yy, yz), lz = len3(zx, zy, zz);
+        const radius = Math.sqrt(lx * lx + ly * ly + lz * lz);
+        if (radius >= dist) return true;              // camera inside the sphere
+        const f = this.camForward;
+        const cosAng = (f[0] * dx + f[1] * dy + f[2] * dz) / dist;
+        const ang = Math.acos(Math.max(-1, Math.min(1, cosAng)));
+        const alpha = Math.asin(radius / dist);       // tile's angular radius
+        return ang - alpha <= this.halfFov + extra;
     }
 
     async loadContent(node) {
@@ -708,15 +754,23 @@ class TileTree {
     }
 
     update(cameraPos) {
+        // Collapse uses a wider view cone than expand (≈20° extra) so a tile
+        // that just slid off the screen edge isn't unloaded-then-reloaded on a
+        // small turn. Coarse ancestors (continent/earth boxes) subtend a huge
+        // angle, so their angular-radius term keeps them "in view" — only fine
+        // descendants are ever direction-culled.
+        const COLLAPSE_VIEW_SLACK = 0.35;
         for (const node of Array.from(this.expanded)) {
             // 1.15 slack = hysteresis so nodes at the boundary don't churn
-            if (!this.inRange(node, cameraPos, 1.15)) {
+            if (!this.inRange(node, cameraPos, 1.15) ||
+                !this.inView(node, cameraPos, COLLAPSE_VIEW_SLACK)) {
                 this.collapseNode(node);
                 continue;
             }
             if (!node.children) continue;
             for (const child of node.children) {
-                if (child.children && !this.expanded.has(child) && this.inRange(child, cameraPos)) {
+                if (child.children && !this.expanded.has(child) &&
+                    this.inRange(child, cameraPos) && this.inView(child, cameraPos)) {
                     this.expandNode(child).catch(err => console.warn("GoogleTiles:", err.message));
                 }
             }
@@ -733,7 +787,15 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
     longitude = 16.37208;
     groundAltitude = 216;
     detail = 4;
+    // Detail used on mobile devices (pc.platform.mobile). Mobile GPUs/CPUs
+    // choke on the desktop tile count, so this defaults lower; the active
+    // value is chosen once at stream start (see _effectiveDetail).
+    detailMobile = 2;
     tileScale = 0.7;
+    // Only stream tiles inside the camera's view cone (direction-based, a
+    // cheap stand-in for full frustum culling). Cuts loads dramatically when
+    // looking one way; turning around briefly re-streams what's now in front.
+    cullToView = true;
     altitudeAdaptive = true;
     cameraNearClip = 0.1;
     cameraFarClip = 30000;
@@ -785,7 +847,9 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
         longitude: { title: "Longitude", min: -180, max: 180, step: 0.00001 },
         groundAltitude: { title: "Ground Altitude (m)", min: -500, max: 9000, step: 1 },
         detail: { title: "Detail", min: 2, max: 6, step: 0.5 },
+        detailMobile: { title: "Detail (mobile)", min: 2, max: 6, step: 0.5 },
         tileScale: { title: "Scale", min: 0.000001, max: 10, step: 0.000001 },
+        cullToView: { title: "Cull To Camera View" },
         altitudeAdaptive: { title: "Altitude Adaptive Cam" },
         cameraNearClip: { title: "Near Clip (m)", min: 0.01, max: 100, step: 0.01 },
         cameraFarClip: { title: "Far Clip (m)", min: 1000, max: 20000000, step: 1000 },
@@ -842,6 +906,7 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
     _enu = null;                    // { east, up, north } basis in the tile frame
     _sunDirTile = [0, 1, 0];        // sun direction in the tile frame (normalized)
     _invTileMat = new pc.Mat4();    // scratch: world -> tile frame (real metres)
+    _fwdScratch = new pc.Vec3();    // scratch: camera forward in the tile frame
 
     // Concurrent GLB downloads. Movement triggers expand cascades; without a
     // cap, hundreds of parallel loads choke the main thread and the stream
@@ -940,6 +1005,7 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
         }
 
         this._camTile = [local.x, local.y, local.z];
+        this._updateViewCull();
         this._tree.update(this._camTile);
 
         if (this.atmosphere) this._updateAtmosphereUniforms(local);
@@ -967,7 +1033,10 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
                 this._applyOrigin();
                 break;
             case "detail":
-                if (this._tree) this._tree.lodFactor = this.detail;
+            case "detailMobile":
+                // Apply only the value that matches this device, so tuning the
+                // desktop knob on a phone (or vice-versa) is a no-op live.
+                if (this._tree) this._tree.lodFactor = this._effectiveDetail();
                 break;
             case "cameraNearClip":
             case "cameraFarClip":
@@ -1176,9 +1245,52 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
         this._lastAutoSpeed = target;
     }
 
+    /**
+     * Feed the tile tree the data for direction-based view culling: the camera
+     * forward in the tile frame and the half-angle of a cone that just contains
+     * the screen corners (the diagonal FOV, plus a small margin). Disabled (the
+     * tree loads everything) when "Cull To Camera View" is off or there is no
+     * camera. Runs after _invTileMat has been refreshed for this tick.
+     */
+    _updateViewCull() {
+        const tree = this._tree;
+        const camEntity = this.cullToView ? ArrivalSpace.getCamera() : null;
+        const cam = camEntity?.camera;
+        if (!cam) {
+            tree.viewCull = false;
+            tree.camForward = null;
+            return;
+        }
+
+        // Camera forward (world -Z) into the tile frame as a direction. The
+        // inverse transform folds in tileScale, so re-normalize.
+        const f = this._invTileMat.transformVector(camEntity.forward, this._fwdScratch);
+        f.normalize();
+        tree.camForward = [f.x, f.y, f.z];
+
+        // Diagonal half-FOV: the cone that just contains the screen corners, so
+        // a tile is only culled once it is fully off-screen (give or take the
+        // margin + each tile's own angular radius added in inView).
+        const gd = this.app.graphicsDevice;
+        const aspect = cam.aspectRatioMode === pc.ASPECT_MANUAL
+            ? cam.aspectRatio
+            : (gd.height ? gd.width / gd.height : 1);
+        const half = cam.fov * Math.PI / 360;   // half the configured FOV (rad)
+        let tanV, tanH;
+        if (cam.horizontalFov) { tanH = Math.tan(half); tanV = tanH / aspect; }
+        else { tanV = Math.tan(half); tanH = tanV * aspect; }
+        tree.halfFov = Math.atan(Math.sqrt(tanH * tanH + tanV * tanV)) + 0.1; // +~6°
+        tree.viewCull = true;
+    }
+
     // ────────────────────────────────────────────
     // Streaming
     // ────────────────────────────────────────────
+
+    /** Detail (lodFactor) for this device: the mobile value on phones/tablets. */
+    _effectiveDetail() {
+        return pc.platform.mobile ? this.detailMobile : this.detail;
+    }
 
     async _start() {
         const session = ++this._sessionId;
@@ -1212,7 +1324,7 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
             show: node => this._setTileVisible(node, true),
             hide: node => this._setTileVisible(node, false),
         });
-        tree.lodFactor = this.detail;
+        tree.lodFactor = this._effectiveDetail();
         this._tree = tree;
 
         try {
