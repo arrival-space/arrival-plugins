@@ -189,31 +189,28 @@ export class VisibilityGroups extends ArrivalScript {
 
         ui.innerHTML = `
             <style>
-                /* Light, minimal, purple-accent panel — Sony XYN (xyn.sony.net) aesthetic. */
+                /* Dark, minimal, purple-accent panel — Sony XYN (xyn.sony.net) aesthetic. */
                 #vg, #vg * { box-sizing: border-box; }
-                #vg { position: fixed; top: 84px; right: 18px; width: 224px; padding: 18px 16px 16px;
+                #vg { position: fixed; bottom: 18px; left: 18px; width: 224px; padding: 18px 16px 16px;
                     border-radius: 10px; z-index: 9999; pointer-events: auto;
-                    background: #ffffff; color: #15131c; border: 1px solid #ece9f2;
+                    background: #0d0a16; color: #f3f1fa; border: 1px solid rgba(255,255,255,0.09);
                     font-family: "Helvetica Neue", Helvetica, Arial, system-ui, sans-serif; font-size: 13px;
-                    box-shadow: 0 12px 40px rgba(31,23,64,0.10); }
-                #vg h3 { margin: 0 0 14px; font-size: 15px; font-weight: 700; letter-spacing: -0.01em; color: #15131c; }
-                #vg .vg-mode { margin: -8px 0 14px; font-size: 10px; font-weight: 700; letter-spacing: 0.14em;
-                    text-transform: uppercase; color: #7a5af8; }
+                    box-shadow: 0 16px 50px rgba(0,0,0,0.55); backdrop-filter: blur(10px); }
+                #vg h3 { margin: 0 0 14px; font-size: 15px; font-weight: 700; letter-spacing: -0.01em; color: #f3f1fa; }
                 #vg .vg-btn { display: flex; align-items: center; gap: 11px; width: 100%; margin-bottom: 8px;
                     padding: 11px 13px; border-radius: 7px; cursor: pointer; font: inherit; font-weight: 600;
-                    text-align: left; color: #46424f; background: #ffffff; border: 1px solid #e6e2ee;
+                    text-align: left; color: #c7c2d6; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.10);
                     transition: background .15s ease, border-color .15s ease, color .15s ease; }
                 #vg .vg-btn:last-child { margin-bottom: 0; }
-                #vg .vg-btn:hover { background: #f6f4fc; border-color: #d9d2ef; color: #15131c; }
+                #vg .vg-btn:hover { background: rgba(255,255,255,0.08); border-color: rgba(167,139,255,0.5); color: #ffffff; }
                 #vg .vg-btn.on { color: #ffffff; background: #7a5af8; border-color: #7a5af8; }
-                #vg .vg-btn.on:hover { background: #6a47e6; border-color: #6a47e6; }
-                #vg .vg-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; background: #cfc8e0; }
+                #vg .vg-btn.on:hover { background: #8b6dff; border-color: #8b6dff; }
+                #vg .vg-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; background: rgba(255,255,255,0.25); }
                 #vg .vg-btn.on .vg-dot { background: #ffffff; }
-                #vg .vg-empty { font-size: 12px; color: #908b9c; }
+                #vg .vg-empty { font-size: 12px; color: rgba(243,241,250,0.5); }
             </style>
             <div id="vg">
                 <h3>${this._esc(this.panelTitle || "Layers")}</h3>
-                ${this.singleSelect ? `<div class="vg-mode">Single selection</div>` : ""}
                 ${groups.length ? buttons : `<div class="vg-empty">No groups configured yet.</div>`}
             </div>
         `;
