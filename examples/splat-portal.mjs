@@ -42,13 +42,16 @@
  *      immediately gives it its own material; then we stencil that material. In
  *      a non-unified room it already has a material and this is a no-op.
  *
- * --- Near-clip (clipFront) ---
+ * --- Near-clip (clipFront / clipOffset) ---
  * To hide splats IN FRONT of the opening (so you look *through* to what's beyond)
  * we do NOT touch the depth buffer — overwriting depth makes the splat draw over
  * real 3D objects in front of it. Instead the splat keeps normal depth testing
  * (so avatars / models still occlude it) and a world-space half-space clip is
  * injected into its `gsplatModifyVS` shader: any splat on the camera side of the
  * portal plane is scaled to zero. The plane is refreshed every frame.
+ * `clipOffset` slides that plane along its normal: positive moves the cut toward
+ * the viewer (keeps more of the splat in front of the portal), negative pushes it
+ * away into the scene (clips more). 0 = exactly at the portal plane.
  *
  * --- Curve ---
  * `curve` bends the opening + frame HORIZONTALLY toward the viewer (like a curved
@@ -204,6 +207,11 @@ export class SplatPortal extends ArrivalScript {
     // only see through to what's beyond it. Real 3D objects still occlude it.
     clipFront = true;
 
+    // Slide the near-clip plane along its normal (metres). + moves the cut toward
+    // the viewer (keeps more of the splat in front of the portal), − pushes it
+    // away into the scene (clips more). 0 = exactly at the portal plane.
+    clipOffset = 0;
+
     // Solid screen: fill the opening with an opaque backdrop (on the screen's own
     // curved mesh, drawn just before the splat) so nothing BEHIND the splat shows
     // through, while the splat ignores the scene depth buffer so geometry BEHIND
@@ -235,6 +243,7 @@ export class SplatPortal extends ArrivalScript {
         height: { title: "Opening Height (m)", min: 0.2, max: 50, step: 0.1 },
         curve: { title: "Screen Curve", min: -1, max: 1, step: 0.01 },
         clipFront: { title: "Clip In Front Of Portal" },
+        clipOffset: { title: "Clip Offset (m)", min: -5, max: 5, step: 0.01 },
         occludeBehind: { title: "Solid Screen (hide behind)" },
         backdropColor: { title: "Backdrop Color" },
         backsideBlack: { title: "Black Backside" },
@@ -315,8 +324,8 @@ export class SplatPortal extends ArrivalScript {
             this._buildGeometry();
             return;
         }
-        if (name === "clipFront") {
-            this._updateClipUniforms(); // toggles uPortalClipOn immediately
+        if (name === "clipFront" || name === "clipOffset") {
+            this._updateClipUniforms(); // toggles uPortalClipOn / re-places the plane immediately
             return;
         }
         if (name === "occludeBehind" || name === "backdropColor") {
@@ -724,14 +733,17 @@ export class SplatPortal extends ArrivalScript {
     }
 
     // World-space portal plane, normal oriented toward the camera so the test
-    // discards the camera-facing half ("in front of the portal").
+    // discards the camera-facing half ("in front of the portal"). `clipOffset`
+    // slides the plane a signed distance along N (N is unit length and points
+    // toward the camera, so +offset moves the cut toward the viewer regardless of
+    // which side the portal is seen from); w' = w - offset shifts P by +N·offset.
     _worldClipPlane() {
         const P = this.entity.getPosition();
         const N = this._tmpN.copy(this.entity.forward).scale(-1); // local +Z in world
         const camEnt = this._camera || (this._camera = this.app.root.findByName("Camera"));
         const cam = camEnt && camEnt.getPosition();
         if (cam && this._tmpVec.sub2(cam, P).dot(N) < 0) N.scale(-1);
-        return { N, w: -(N.x * P.x + N.y * P.y + N.z * P.z) };
+        return { N, w: -(N.x * P.x + N.y * P.y + N.z * P.z) - (this.clipOffset || 0) };
     }
 
     // Express the world plane in a splat component's LOCAL space: pLocal = Wᵀ·pWorld
