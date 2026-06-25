@@ -8,6 +8,23 @@
  * the chosen splat is hidden; inside it shows where it actually is. Inspired by
  * PlayCanvas' splat-portal example, adapted to Arrival.Space.
  *
+ * --- Reveal a hidden splat (enableTargetSplat) ---
+ * The chosen splat is normally already visible in the scene and the portal just
+ * confines it to the opening. With `enableTargetSplat` (default on) the portal
+ * also REVEALS a target that is HIDDEN in the scene — so you can point it at a
+ * hidden splat and have it appear ONLY through the window and nowhere else.
+ *
+ * Placed content is a `userModelEntity`, and its visibility is the native
+ * `data.hidden` flag driven through `updateVisibility()` — a hidden splat isn't
+ * even loaded (lazy-load), so `entity.enabled` can't reveal it. Like
+ * visibility-groups.mjs, we flip the hidden flag EPHEMERALLY (never call
+ * `setVisibility`, which would persist it to the backend) and let
+ * `updateVisibility()` lazy-load + show it; the per-0.5s re-acquire then finds the
+ * gsplat once it streams in. The original hidden state is restored when the portal
+ * is removed or its target reassigned. (Raw splat entities with no userModelEntity
+ * script fall back to `entity.enabled`. A splat hidden only by an ancestor FOLDER
+ * isn't covered — un-hide the folder, e.g. via visibility-groups.)
+ *
  * --- How the masking works (live-tested in a unified-splat room) ---
  * This is a screen-space STENCIL mask. The two facts that make it work in THIS
  * renderer were found debugging in-browser:
@@ -168,6 +185,13 @@ export class SplatPortal extends ArrivalScript {
     // The other splat in the scene to reveal through the portal.
     targetSplat = "";
 
+    // Reveal the target splat when the portal acquires it, so you can point it at a
+    // splat that is HIDDEN in the scene and have the mask confine it to the opening,
+    // making it visible ONLY through the window. Flips the native hidden flag
+    // ephemerally (not persisted); a no-op for splats already visible; restored to
+    // its original hidden state when the portal is removed. See the header comment.
+    enableTargetSplat = true;
+
     // Opening size (metres).
     width = 2;
     height = 3;
@@ -206,6 +230,7 @@ export class SplatPortal extends ArrivalScript {
 
     static properties = {
         targetSplat: { title: "Splat To Reveal", editor: "entity", filterTypes: ["splat"] },
+        enableTargetSplat: { title: "Enable Hidden Splat" },
         width: { title: "Opening Width (m)", min: 0.2, max: 50, step: 0.1 },
         height: { title: "Opening Height (m)", min: 0.2, max: 50, step: 0.1 },
         curve: { title: "Screen Curve", min: -1, max: 1, step: 0.01 },
@@ -232,6 +257,11 @@ export class SplatPortal extends ArrivalScript {
     _glassEntity = null;
     _backEntity = null;
     _subjects = new Map(); // gsplatComponent -> apply record
+    _targetEntity = null;            // entity whose visibility we changed to reveal it
+    _targetUme = null;               // its userModelEntity script (hidden-flag path)
+    _targetHiddenOrig = false;       // original data.hidden, for restore
+    _targetEntityEnabled = true;     // original entity.enabled (raw-entity fallback)
+    _gateServer = null;              // cached GateServer (per-frame target resolve)
     _acquireTimer = 0;
     _camera = null;                  // cached camera entity (per-frame clip plane)
     _tmpVec = new pc.Vec3();
@@ -255,10 +285,14 @@ export class SplatPortal extends ArrivalScript {
         if (this._destroyed || this._maskID < 0) return;
         // Every frame: refresh the clip plane (portal or camera may have moved).
         this._updateClipUniforms();
-        // Throttled re-acquire: late-streaming splats, target reassignment, the
-        // client re-unifying / swapping the splat material out from under us.
+        // Re-acquire: late-streaming splats, target reassignment, the client
+        // re-unifying / swapping the splat material out from under us. Run EVERY
+        // frame while a configured target hasn't been picked up yet (e.g. a just-
+        // revealed splat still streaming in) so the mask snaps on within a frame
+        // instead of flashing unmasked; otherwise throttle to 0.5s.
         this._acquireTimer += dt;
-        if (this._acquireTimer > 0.5) {
+        const waiting = this._subjects.size === 0 && !!String(this.targetSplat || "").trim();
+        if (this._acquireTimer > (waiting ? 0 : 0.5)) {
             this._acquireTimer = 0;
             this._acquire();
         }
@@ -269,6 +303,11 @@ export class SplatPortal extends ArrivalScript {
         if (name === "targetSplat") {
             this._restoreSubjects();
             this._acquire();
+            return;
+        }
+        if (name === "enableTargetSplat") {
+            this._restoreSubjects();  // re-hide the target if it was just toggled off
+            this._acquire();          // re-enable + re-apply if it was just toggled on
             return;
         }
         if (name === "width" || name === "height" || name === "curve" ||
@@ -549,7 +588,13 @@ export class SplatPortal extends ArrivalScript {
     _resolveTarget() {
         const id = typeof this.targetSplat === "string" ? this.targetSplat.trim() : "";
         if (!id) return null;
-        const gs = this.app.root.findByName("GateServer")?.script?.gateServer;
+        // Cache the GateServer singleton — _resolveTarget can run every frame while
+        // waiting for a revealed splat to stream in, and findByName is a full scan.
+        let gs = this._gateServer;
+        if (!gs) {
+            gs = this.app.root.findByName("GateServer")?.script?.gateServer || null;
+            if (gs) this._gateServer = gs;
+        }
         let e = gs?.getEntity?.(id) ?? null;
         if (!e) { try { e = this.app.root.findByGuid?.(id) ?? null; } catch (_) { /* ignore */ } }
         return e;
@@ -558,24 +603,86 @@ export class SplatPortal extends ArrivalScript {
     _acquire() {
         const target = this._resolveTarget();
         if (!target) return;
+        // Optionally force-enable a hidden target so the portal can reveal a splat
+        // that wasn't visible before. Must run before findComponents so the gsplat
+        // instance/material get created.
+        if (this.enableTargetSplat) this._enableTarget(target);
         const comps = target.findComponents("gsplat") || [];
         for (const c of comps) this._applyToSplat(c);
     }
 
+    // Reveal a hidden target splat so the portal can show it. Placed content is a
+    // userModelEntity whose visibility is the native data.hidden flag (driven by
+    // updateVisibility(), which also lazy-loads a never-loaded hidden splat) — so
+    // entity.enabled can't reveal it. We flip data.hidden ephemerally (NOT
+    // setVisibility, which persists) and let updateVisibility load + show it; the
+    // 0.5s re-acquire then catches the gsplat once it streams in. Original state is
+    // remembered once per target for restore. Raw splat entities (no userModelEntity
+    // script) fall back to entity.enabled.
+    _enableTarget(target) {
+        if (this._targetEntity !== target) {
+            this._restoreTargetVisibility();           // undo a previous target first
+            this._targetEntity = target;
+            const ume = target.script?.userModelEntity;
+            if (ume && ume.data) {
+                this._targetUme = ume;
+                this._targetHiddenOrig = !!ume.data.hidden;
+            } else {
+                this._targetUme = null;
+                this._targetEntityEnabled = target.enabled;
+            }
+        }
+        const ume = this._targetUme;
+        if (ume) {
+            if (ume.data.hidden) {                     // reveal once; re-acquire is a no-op after
+                ume.data.hidden = false;
+                Promise.resolve(ume.updateVisibility?.()).catch(() => {});
+            }
+        } else if (!target.enabled) {
+            target.enabled = true;
+        }
+    }
+
+    // Undo whatever _enableTarget did, returning the target to its original (hidden)
+    // state. Ephemeral — never persisted.
+    _restoreTargetVisibility() {
+        const ume = this._targetUme, target = this._targetEntity;
+        try {
+            if (ume && ume.data) {
+                ume.data.hidden = this._targetHiddenOrig;
+                Promise.resolve(ume.updateVisibility?.()).catch(() => {});
+            } else if (target) {
+                target.enabled = this._targetEntityEnabled;
+            }
+        } catch (e) { /* entity / script may already be gone */ }
+        this._targetEntity = null;
+        this._targetUme = null;
+        this._targetHiddenOrig = false;
+        this._targetEntityEnabled = true;
+    }
+
     _applyToSplat(c) {
-        let rec = this._subjects.get(c);
+        let rec = this._subjects.get(c) || {};
+
+        // Reveal a hidden splat: if the toggle is on and this gsplat component is
+        // disabled, enable it (the entity-level enable is done in _enableTarget).
+        // Record the original state once so destroy()/reassignment can re-hide it.
+        if (this.enableTargetSplat && rec.origEnabled === undefined && !c.enabled) {
+            rec.origEnabled = false;
+            c.enabled = true;
+        }
 
         // In a unified-splat room the component shares one material and has none
         // of its own — force it non-unified so it gets a per-instance material.
         if (c.unified || !c.material) {
-            if (!rec) rec = { forcedUnified: true };
+            rec.forcedUnified = true;
             try {
                 c.enabled = false;
                 c.unified = false;
                 c.enabled = true;
             } catch (e) { /* component may be mid-stream */ }
-        } else if (!rec) {
-            rec = { forcedUnified: false };
+        } else if (rec.forcedUnified === undefined) {
+            rec.forcedUnified = false;
         }
 
         const mat = c.material;
@@ -679,8 +786,14 @@ export class SplatPortal extends ArrivalScript {
                     c.unified = true;
                     c.enabled = true;
                 }
+                // Re-hide a gsplat component we force-enabled. Done last so it wins
+                // over the unified dance above (which leaves the component enabled).
+                if (rec.origEnabled !== undefined && c) c.enabled = rec.origEnabled;
             } catch (e) { /* component / material may already be gone */ }
         }
+        // Re-hide the target if enableTargetSplat revealed it (after the subject
+        // material restore above, so the gsplat is still ours while we clean it up).
+        this._restoreTargetVisibility();
         this._subjects.clear();
         try { this.app.fire("reApplySplatMaterial"); } catch (e) { /* ignore */ }
     }
