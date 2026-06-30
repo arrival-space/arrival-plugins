@@ -197,17 +197,59 @@ sequencePlayer.on("sequence:marker", ({ marker, sequence }) => {
 });
 ```
 
+## Playback Direction (Reverse)
+
+`sequencePlayer` exposes three boolean script attributes that shape playback:
+
+| Attribute  | Default | Effect                                                  |
+| ---------- | ------- | ------------------------------------------------------- |
+| `loop`     | `false` | Restart from the start frame instead of stopping.       |
+| `autoplay` | `false` | Begin playback automatically once a sequence is loaded. |
+| `reverse`  | `false` | Play from the **last** keyframe back to the **first**.  |
+
+Set them directly on the player before starting playback:
+
+```javascript
+sequencePlayer.reverse = true;   // play the sequence backwards
+sequencePlayer.loop = true;      // and keep looping
+sequencePlayer.playSequence(mySequence);
+```
+
+When `reverse` is on:
+
+- `playSequence()` starts the playhead at the sequence's **last** frame and the
+  frame counter decreases each tick.
+- Playback settles (or, with `loop`, wraps) at the **first** frame instead of
+  the last.
+- `endSequence()` jumps to the first frame, applies it, and fires
+  `sequence:complete` — so skip/cancel still lands on the directional end.
+- `resumeSequence()` restarts from the last frame if the playhead is already at
+  the first frame.
+- Markers fire in playback order — high frame numbers first, low frame numbers
+  last.
+
+`reverse` is read every frame, so set it (or flip it back) before calling
+`playSequence()` / `resumeSequence()`. Toggling it mid-playback reverses
+direction from the current frame, but the marker scan index is only reset at a
+play/loop boundary, so set the direction up front for predictable marker events.
+
 ## SequencePlayer API
 
 ### Loading And Playback
 
 - `setSequence(sequence)`
-- `playSequence(sequence)`
+- `playSequence(sequence)` — starts at the first frame (or the last frame when `reverse` is set)
 - `pauseSequence()`
 - `resumeSequence()`
-- `endSequence()`
+- `endSequence()` — settles on the directional end frame (last, or first when `reverse`)
 - `setFrame(frame, apply = true)`
 - `isPlaying()`
+
+### Playback Attributes
+
+- `loop` — restart at the directional end instead of stopping
+- `autoplay` — play automatically once a sequence is loaded
+- `reverse` — play from the last keyframe back to the first (see [Playback Direction](#playback-direction-reverse))
 
 ### Bindings
 
