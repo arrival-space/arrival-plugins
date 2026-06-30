@@ -37,7 +37,7 @@ export class MyPlugin extends ArrivalScript {
 | `number`  | `speed = 5`                  | Numeric slider |
 | `boolean` | `isEnabled = true`           | Toggle switch  |
 | `string`  | `label = "Hello"`            | Text field     |
-| `color`   | `color = "#ff0000"`          | Color picker   |
+| `color`   | `color = "#ff0000"`        | Color picker   |
 | `vec3`    | `pos = { x: 0, y: 1, z: 0 }` | X/Y/Z inputs   |
 
 ## Multiplayer Support

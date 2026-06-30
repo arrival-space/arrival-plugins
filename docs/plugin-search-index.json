@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "updated_at": "2026-06-26",
+  "updated_at": "2026-06-30",
   "source": "curated",
-  "total_entries": 51,
+  "total_entries": 52,
   "entries": [
     {
       "path": "README.md",
@@ -52,6 +52,13 @@
       "title": "Properties",
       "summary": "Explains supported property types, static property schema, dynamic options, vec3 fields, file/asset upload fields (editor: 'asset'), restricting upload file types via the 'accept' extension list, and runtime updates in the editor UI.",
       "keywords": ["properties", "schema", "editor ui", "numbers", "boolean", "string", "color", "vec3", "asset", "upload", "file", "url", "glb", "texture", "accept", "restrict", "extension", "file type", "file types"]
+    },
+    {
+      "path": "docs/sequences.md",
+      "kind": "doc",
+      "title": "Sequences & Cutscenes",
+      "summary": "Guide to keyframe animation with the sequencePlayer runtime — the same system referred to as sequences, cutscenes, or animations. Covers the entity-aware sequence shape, adapters/getters, markers and sequence:marker events, Catmull-Rom interpolation, authored cutscenes via getCutsceneScript, and playback attributes including reverse/loop/autoplay.",
+      "keywords": ["sequence", "sequences", "cutscene", "cutscenes", "animation", "animations", "animate", "keyframe", "keyframes", "timeline", "sequenceplayer", "playsequence", "getcutscenescript", "marker", "markers", "sequence:marker", "reverse", "reverse playback", "play backwards", "play then reverse", "play forward then reverse", "wait then reverse", "oncomplete", "sequence:complete", "await completion", "on finish", "when animation finishes", "isplaying", "no overlap", "one at a time", "reach sequenceplayer from cutscene", "loop", "autoplay", "camera fly-through", "interpolation", "catmull-rom", "adapter", "getter"]
     },
     {
       "path": "examples/annotation-marker.mjs",
