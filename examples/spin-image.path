@@ -1,0 +1,53 @@
+{
+  "id": "spin-image-corner-seq",
+  "name": "Spin Image On Corner",
+  "disabled": false,
+  "data": {
+    "fps": 30,
+    "entities": {
+      "spin_image": {
+        "position": {
+          "id": "position",
+          "label": "Position",
+          "type": "vec3",
+          "keyframes": [
+            { "id": "p0", "frameNumber": 0, "keyframeData": { "x": 0.75, "y": 2.95, "z": -4.0 } },
+            { "id": "p1", "frameNumber": 15, "keyframeData": { "x": 0.27452, "y": 3.22452, "z": -4.0 } },
+            { "id": "p2", "frameNumber": 30, "keyframeData": { "x": -0.27452, "y": 3.22452, "z": -4.0 } },
+            { "id": "p3", "frameNumber": 45, "keyframeData": { "x": -0.75, "y": 2.95, "z": -4.0 } },
+            { "id": "p4", "frameNumber": 60, "keyframeData": { "x": -1.02452, "y": 2.47452, "z": -4.0 } },
+            { "id": "p5", "frameNumber": 75, "keyframeData": { "x": -1.02452, "y": 1.92548, "z": -4.0 } },
+            { "id": "p6", "frameNumber": 90, "keyframeData": { "x": -0.75, "y": 1.45, "z": -4.0 } },
+            { "id": "p7", "frameNumber": 105, "keyframeData": { "x": -0.27452, "y": 1.17548, "z": -4.0 } },
+            { "id": "p8", "frameNumber": 120, "keyframeData": { "x": 0.27452, "y": 1.17548, "z": -4.0 } },
+            { "id": "p9", "frameNumber": 135, "keyframeData": { "x": 0.75, "y": 1.45, "z": -4.0 } },
+            { "id": "p10", "frameNumber": 150, "keyframeData": { "x": 1.02452, "y": 1.92548, "z": -4.0 } },
+            { "id": "p11", "frameNumber": 165, "keyframeData": { "x": 1.02452, "y": 2.47452, "z": -4.0 } },
+            { "id": "p12", "frameNumber": 180, "keyframeData": { "x": 0.75, "y": 2.95, "z": -4.0 } }
+          ]
+        },
+        "rotation": {
+          "id": "rotation",
+          "label": "Rotation",
+          "type": "quat",
+          "keyframes": [
+            { "id": "r0", "frameNumber": 0, "keyframeData": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 } },
+            { "id": "r1", "frameNumber": 15, "keyframeData": { "x": 0.0, "y": 0.0, "z": 0.258819, "w": 0.965926 } },
+            { "id": "r2", "frameNumber": 30, "keyframeData": { "x": 0.0, "y": 0.0, "z": 0.5, "w": 0.866025 } },
+            { "id": "r3", "frameNumber": 45, "keyframeData": { "x": 0.0, "y": 0.0, "z": 0.707107, "w": 0.707107 } },
+            { "id": "r4", "frameNumber": 60, "keyframeData": { "x": 0.0, "y": 0.0, "z": 0.866025, "w": 0.5 } },
+            { "id": "r5", "frameNumber": 75, "keyframeData": { "x": 0.0, "y": 0.0, "z": 0.965926, "w": 0.258819 } },
+            { "id": "r6", "frameNumber": 90, "keyframeData": { "x": 0.0, "y": 0.0, "z": 1.0, "w": 0.0 } },
+            { "id": "r7", "frameNumber": 105, "keyframeData": { "x": 0.0, "y": 0.0, "z": 0.965926, "w": -0.258819 } },
+            { "id": "r8", "frameNumber": 120, "keyframeData": { "x": 0.0, "y": 0.0, "z": 0.866025, "w": -0.5 } },
+            { "id": "r9", "frameNumber": 135, "keyframeData": { "x": 0.0, "y": 0.0, "z": 0.707107, "w": -0.707107 } },
+            { "id": "r10", "frameNumber": 150, "keyframeData": { "x": 0.0, "y": 0.0, "z": 0.5, "w": -0.866025 } },
+            { "id": "r11", "frameNumber": 165, "keyframeData": { "x": 0.0, "y": 0.0, "z": 0.258819, "w": -0.965926 } },
+            { "id": "r12", "frameNumber": 180, "keyframeData": { "x": 0.0, "y": 0.0, "z": 0.0, "w": -1.0 } }
+          ]
+        }
+      }
+    },
+    "markers": []
+  }
+}

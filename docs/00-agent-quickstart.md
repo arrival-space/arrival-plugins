@@ -2,6 +2,13 @@
 
 Use this as the first reference when generating Arrival.Space plugins from prompts.
 
+> **Plugin or cutscene?** If the request is to **animate / move / spin / rotate**
+> an object (no interaction), that is usually a **cutscene**, not a plugin — and
+> you can create one headlessly as a `.path` file with no plugin at all (see
+> [Creating Cutscenes Headlessly](cutscenes-via-mcp.md)). Use a plugin only when
+> you need custom logic, input, UI, or physics. If it is unclear whether
+> interactivity is needed, **ask the user: vibe/plugin or sequence-editor/cutscene?**
+
 ## Required Plugin Shape
 
 ```javascript
@@ -66,7 +73,7 @@ export class MyPlugin extends ArrivalScript {
 - Player input hooks: `this.onKeyDown`, `this.onKeyUp`
 - Standing-object detection: `ArrivalSpace.getStandingObject`, `ArrivalSpace.onStandingObjectChanged`
 - NPC behavior: `ArrivalSpace.createNPC`
-- Cutscenes / animations / sequences (same system — keyframe playback): authored ones via `ArrivalSpace.getCutsceneScript(entityId)` → `playCutscene({ onComplete })` / `on("sequence:marker", ...)`; react to the end via `onComplete`. Play one in **reverse** with `cutscene.setData({ reverse: true })` *before* `playCutscene()` (reset to `false` after). The controller creates its `sequencePlayer` per run and destroys it on completion, so don't grab `entity.script.sequencePlayer` for authored cutscenes — use the `sequencePlayer` script directly (`reverse`/`loop`/`autoplay`/`playSequence`) only for **code-driven** sequences you own. See `docs/sequences.md`.
+- Cutscenes / animations / sequences (same system — keyframe playback): authored ones via `ArrivalSpace.getCutsceneScript(entityId)` → `playCutscene({ onComplete })` / `on("sequence:marker", ...)`; react to the end via `onComplete`. Play one in **reverse** with `cutscene.setData({ reverse: true })` *before* `playCutscene()` (reset to `false` after). The controller creates its `sequencePlayer` per run and destroys it on completion, so don't grab `entity.script.sequencePlayer` for authored cutscenes — use the `sequencePlayer` script directly (`reverse`/`loop`/`autoplay`/`playSequence`) only for **code-driven** sequences you own. See `docs/sequences.md`. To **create** a cutscene headlessly (MCP/CLI) as a `.path` file — no plugin — see `docs/cutscenes-via-mcp.md`.
 - Multiplayer state: `attribute(default, { sync: true, authority: ... })`
 - Multiplayer events: `ArrivalSpace.net.send/on/...`
 - Plugin event bus (local inter-plugin communication): `ArrivalSpace.fire/on/off/once`

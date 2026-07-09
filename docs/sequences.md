@@ -5,7 +5,9 @@
 > asks for an animation, a cutscene, an animated object, or a camera fly-through,
 > this is the system to use. Authored cutscenes are reached via
 > `ArrivalSpace.getCutsceneScript(entityId)`; code-driven animation uses
-> `sequencePlayer` directly.
+> `sequencePlayer` directly. To **create** a cutscene headlessly (MCP/CLI) as a
+> `.path` file — no in-app editor, no plugin — see
+> [Creating Cutscenes Headlessly](cutscenes-via-mcp.md).
 
 `sequencePlayer` is the built-in runtime for keyframe animation in Arrival.Space. It powers camera cutscenes, animated objects, marker-driven events, and the visual Sequence Editor in the main client.
 
@@ -353,6 +355,18 @@ building the player); reset to `false` after. Add a boolean lock if a clip must
 not overlap itself. The raw `sequencePlayer` API (`reverse` / `playSequence` /
 [Playback Direction](#playback-direction-reverse)) is for **code-driven**
 sequences you own, not controller-managed cutscenes.
+
+## Creating A Cutscene Headlessly (CLI / MCP)
+
+Cutscenes don't have to be authored in the in-app Sequence Editor. Serialize a
+`Sequence` (the [shape above](#sequence-shape)) to a **`.path`** file, upload it,
+and create an entity from it — the `.path` file *is* the cutscene, and it is
+attached to its target purely by the entity id used as the key in
+`data.entities`.
+
+See **[Creating Cutscenes Headlessly (`.path` files)](cutscenes-via-mcp.md)** for
+the full flow, property/quat details, auto-play/loop notes, and a worked "spin an
+image on its corner" recipe ([`examples/spin-image.path`](../examples/spin-image.path)).
 
 ## Patterns
 
