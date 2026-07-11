@@ -1,5 +1,14 @@
 # Sequences & Cutscenes
 
+> **Terminology:** "sequence", "cutscene", and "animation" all refer to the same
+> system in Arrival.Space — keyframe data played by `sequencePlayer`. If a prompt
+> asks for an animation, a cutscene, an animated object, or a camera fly-through,
+> this is the system to use. Authored cutscenes are reached via
+> `ArrivalSpace.getCutsceneScript(entityId)`; code-driven animation uses
+> `sequencePlayer` directly. To **create** a cutscene headlessly (MCP/CLI) as a
+> `.path` file — no in-app editor, no plugin — see
+> [Creating Cutscenes Headlessly](cutscenes-via-mcp.md).
+
 `sequencePlayer` is the built-in runtime for keyframe animation in Arrival.Space. It powers camera cutscenes, animated objects, marker-driven events, and the visual Sequence Editor in the main client.
 
 The current sequence model is **entity-aware**:
@@ -197,17 +206,59 @@ sequencePlayer.on("sequence:marker", ({ marker, sequence }) => {
 });
 ```
 
+## Playback Direction (Reverse)
+
+`sequencePlayer` exposes three boolean script attributes that shape playback:
+
+| Attribute  | Default | Effect                                                  |
+| ---------- | ------- | ------------------------------------------------------- |
+| `loop`     | `false` | Restart from the start frame instead of stopping.       |
+| `autoplay` | `false` | Begin playback automatically once a sequence is loaded. |
+| `reverse`  | `false` | Play from the **last** keyframe back to the **first**.  |
+
+Set them directly on the player before starting playback:
+
+```javascript
+sequencePlayer.reverse = true;   // play the sequence backwards
+sequencePlayer.loop = true;      // and keep looping
+sequencePlayer.playSequence(mySequence);
+```
+
+When `reverse` is on:
+
+- `playSequence()` starts the playhead at the sequence's **last** frame and the
+  frame counter decreases each tick.
+- Playback settles (or, with `loop`, wraps) at the **first** frame instead of
+  the last.
+- `endSequence()` jumps to the first frame, applies it, and fires
+  `sequence:complete` — so skip/cancel still lands on the directional end.
+- `resumeSequence()` restarts from the last frame if the playhead is already at
+  the first frame.
+- Markers fire in playback order — high frame numbers first, low frame numbers
+  last.
+
+`reverse` is read every frame, so set it (or flip it back) before calling
+`playSequence()` / `resumeSequence()`. Toggling it mid-playback reverses
+direction from the current frame, but the marker scan index is only reset at a
+play/loop boundary, so set the direction up front for predictable marker events.
+
 ## SequencePlayer API
 
 ### Loading And Playback
 
 - `setSequence(sequence)`
-- `playSequence(sequence)`
+- `playSequence(sequence)` — starts at the first frame (or the last frame when `reverse` is set)
 - `pauseSequence()`
 - `resumeSequence()`
-- `endSequence()`
+- `endSequence()` — settles on the directional end frame (last, or first when `reverse`)
 - `setFrame(frame, apply = true)`
 - `isPlaying()`
+
+### Playback Attributes
+
+- `loop` — restart at the directional end instead of stopping
+- `autoplay` — play automatically once a sequence is loaded
+- `reverse` — play from the last keyframe back to the first (see [Playback Direction](#playback-direction-reverse))
 
 ### Bindings
 
@@ -267,15 +318,55 @@ _play() {
 
 `getCutsceneScript(entityId)` returns the cutscene controller (or `null`):
 
-- `playCutscene(options?)` — play from the start (no-op if empty or disabled)
+- `playCutscene(options?)` — play from the start (no-op if the cutscene has no
+  keyframes or is disabled). Pass `{ onComplete }` to run a callback once it
+  finishes or is skipped: `cutscene.playCutscene({ onComplete: () => { ... } })`.
 - `editCutscene(options?)` — open the Sequence Editor (desktop only)
 - `skipIntroCutscene()` — skip the running cutscene with a fade
+- `setData(partial)` — merge config into the cutscene (e.g. `{ loop }`,
+  `{ reverse }`). Used to set playback direction before `playCutscene()`.
+- `getLoop()` / `getReverse()` — read the current `loop` / `reverse` flags
 - `on("sequence:marker", ({ marker, sequence }) => ...)` — react to timeline
   markers as the cutscene plays; unsubscribe with `off(...)` in `destroy()`
 
 The controller re-fires the same `sequence:marker` events its `SequencePlayer`
 emits, so marker-reactive plugins can listen on the cutscene entity without
 owning the player.
+
+### Reverse & Completion
+
+`playCutscene()` creates the cutscene's `sequencePlayer` for the run and
+**destroys it on completion**, so don't grab `entity.script.sequencePlayer` to
+reverse an authored cutscene — drive direction through the controller. Play
+forward, wait, then reverse:
+
+```javascript
+const cutscene = ArrivalSpace.getCutsceneScript(id);
+
+cutscene.setData({ reverse: false });          // forward
+cutscene.playCutscene({ onComplete: () => {    // fires on finish/skip, either direction
+    cutscene.setData({ reverse: true });       // …wait, then play it backwards
+    cutscene.playCutscene({ onComplete: () => cutscene.setData({ reverse: false }) });
+}});
+```
+
+`setData({ reverse })` must precede `playCutscene()` (it reads `getReverse()` when
+building the player); reset to `false` after. Add a boolean lock if a clip must
+not overlap itself. The raw `sequencePlayer` API (`reverse` / `playSequence` /
+[Playback Direction](#playback-direction-reverse)) is for **code-driven**
+sequences you own, not controller-managed cutscenes.
+
+## Creating A Cutscene Headlessly (CLI / MCP)
+
+Cutscenes don't have to be authored in the in-app Sequence Editor. Serialize a
+`Sequence` (the [shape above](#sequence-shape)) to a **`.path`** file, upload it,
+and create an entity from it — the `.path` file *is* the cutscene, and it is
+attached to its target purely by the entity id used as the key in
+`data.entities`.
+
+See **[Creating Cutscenes Headlessly (`.path` files)](cutscenes-via-mcp.md)** for
+the full flow, property/quat details, auto-play/loop notes, and a worked "spin an
+image on its corner" recipe ([`examples/spin-image.path`](../examples/spin-image.path)).
 
 ## Patterns
 

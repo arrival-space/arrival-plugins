@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "updated_at": "2026-06-16",
+  "updated_at": "2026-07-09",
   "source": "curated",
-  "total_entries": 48,
+  "total_entries": 54,
   "entries": [
     {
       "path": "README.md",
@@ -26,6 +26,13 @@
       "keywords": ["api", "reference", "arrivalscript", "arrivalspace", "methods", "helpers", "physics", "ui", "models", "splat", "gsplat", "ply"]
     },
     {
+      "path": "docs/arrival-script-api.md",
+      "kind": "doc",
+      "title": "ArrivalScript / ArrivalSpace API Reference (full, distilled)",
+      "summary": "Complete distilled API surface of the ArrivalScript base class and the ArrivalSpace runtime, generated from pluginUtils.js: lifecycle, ArrivalScript instance helpers, player & input, entities & geometry, materials, UI & panels, audio, events, camera, room & user, persistence (pluginStore/userData), and multiplayer (net + synced attribute()).",
+      "keywords": ["api", "reference", "arrivalscript", "arrivalspace", "pluginstore", "userdata", "persistence", "attribute", "sync", "net", "multiplayer", "lifecycle", "ui", "panel", "camera", "audio", "events"]
+    },
+    {
       "path": "docs/getting-started.md",
       "kind": "doc",
       "title": "Getting Started",
@@ -45,6 +52,27 @@
       "title": "Properties",
       "summary": "Explains supported property types, static property schema, dynamic options, vec3 fields, file/asset upload fields (editor: 'asset'), restricting upload file types via the 'accept' extension list, and runtime updates in the editor UI.",
       "keywords": ["properties", "schema", "editor ui", "numbers", "boolean", "string", "color", "vec3", "asset", "upload", "file", "url", "glb", "texture", "accept", "restrict", "extension", "file type", "file types"]
+    },
+    {
+      "path": "docs/sequences.md",
+      "kind": "doc",
+      "title": "Sequences & Cutscenes",
+      "summary": "Guide to keyframe animation with the sequencePlayer runtime — the same system referred to as sequences, cutscenes, or animations. Covers the entity-aware sequence shape, adapters/getters, markers and sequence:marker events, Catmull-Rom interpolation, authored cutscenes via getCutsceneScript, and playback attributes including reverse/loop/autoplay.",
+      "keywords": ["sequence", "sequences", "cutscene", "cutscenes", "animation", "animations", "animate", "keyframe", "keyframes", "timeline", "sequenceplayer", "playsequence", "getcutscenescript", "marker", "markers", "sequence:marker", "reverse", "reverse playback", "play backwards", "play then reverse", "play forward then reverse", "wait then reverse", "oncomplete", "sequence:complete", "await completion", "on finish", "when animation finishes", "isplaying", "no overlap", "one at a time", "reach sequenceplayer from cutscene", "loop", "autoplay", "camera fly-through", "interpolation", "catmull-rom", "adapter", "getter"]
+    },
+    {
+      "path": "docs/cutscenes-via-mcp.md",
+      "kind": "doc",
+      "title": "Creating Cutscenes Headlessly (CLI / MCP) — .path files",
+      "summary": "How to author a cutscene/animation without the in-app Sequence Editor or a plugin: serialize a Sequence to a .path file, upload_text_file it, and create_entity from the resource_key. Covers the position/rotation(quat)/scale property keys, attaching the animation by target entity id in data.entities, auto-play/loop, and a worked recipe for spinning an image on one of its corners.",
+      "keywords": ["cutscene", "cutscenes", "animation", "animate", "move object", "spin", "rotate", "spin on corner", "corner pivot", "path file", ".path", "headless", "mcp", "cli", "create cutscene", "cutscene without plugin", "sequence file", "keyframes", "upload_text_file", "create_entity", "timeline", "no vibe", "no plugin"]
+    },
+    {
+      "path": "examples/spin-image.path",
+      "kind": "example",
+      "title": "Spin Image On Corner (.path cutscene)",
+      "summary": "A .path cutscene (not a plugin) that spins an image entity on one of its corners by driving position + rotation(quat) keyframes together. Target is attached via the entity id 'spin_image' key inside data.entities. See docs/cutscenes-via-mcp.md.",
+      "keywords": ["spin image", "rotate image", "spin on corner", "corner pivot", "cutscene", "animation", "path file", ".path", "keyframes", "position", "rotation", "quat", "loop", "autoplay", "headless cutscene", "no plugin", "no vibe"]
     },
     {
       "path": "examples/annotation-marker.mjs",
@@ -111,6 +139,14 @@
       "keywords": ["light", "dynamic light", "spotlight", "point light", "lighting", "emissive", "helper"]
     },
     {
+      "path": "examples/first-install-setup.mjs",
+      "kind": "example",
+      "title": "First-Install Setup",
+      "summary": "Uses the onInstall(ctx) lifecycle hook to run a one-time setup panel right after a vibe is added in-app, writing the choices into the vibe's real editor parameters with setParams().",
+      "script_name": "firstInstallSetup",
+      "keywords": ["oninstall", "first install", "setup", "onboarding", "bootup", "deploy trigger", "preset params", "setparams", "setparam", "one-time", "config panel", "lifecycle"]
+    },
+    {
       "path": "examples/game-hud.mjs",
       "kind": "example",
       "title": "Game HUD",
@@ -132,7 +168,7 @@
       "title": "Google 3D Tiles",
       "summary": "Streams Google Photorealistic 3D Tiles (the Google Earth dataset) as a full globe with distance-based LOD, re-centered on a configurable lat/lon so the chosen city builds up around the player; supports ground altitude tuning, detail factor, miniature-globe scaling, and camera far-clip override.",
       "script_name": "Google 3D Tiles",
-      "keywords": ["google 3d tiles", "photorealistic 3d tiles", "3d tiles", "google earth", "globe", "geospatial", "map", "city", "streaming tiles", "latitude longitude", "ecef", "lod", "earthatile", "map tiles api"]
+      "keywords": ["google 3d tiles", "photorealistic 3d tiles", "3d tiles", "google earth", "globe", "geospatial", "map", "city", "streaming tiles", "latitude longitude", "ecef", "lod", "earthatile", "map tiles api", "welcome popup", "setup", "location picker", "hdr", "atmosphere"]
     },
     {
       "path": "examples/hello-world.mjs",
@@ -373,6 +409,14 @@
       "summary": "A movable, rotatable oriented crop box for the space's already-loaded Gaussian splat(s). The vibe's own entity IS the box: set dimensions with Box Size and keep only splats inside it (or carve a hole with Invert), with a soft edge fade. Applies to the unified splat material and every non-unified gsplat material at once via a gsplatModifyVS shader chunk (GLSL + WGSL, WebGL + WebGPU). The Crop Splats toggle (default on) can be turned off to use the box purely as a selector, and Cull Google Tiles publishes the same box to a Google 3D Tiles vibe so it carves a matching hole.",
       "script_name": "Splat Crop",
       "keywords": ["splat", "crop", "clip", "cull", "gsplat", "unified splat", "oriented box", "bounding box", "crop box", "box size", "half-extents", "invert", "carve hole", "edge softness", "soft edge", "signed distance", "selector", "gsplatModifyVS", "modifySplatRotationScale", "glsl", "wgsl", "webgl", "webgpu", "shader chunk", "google 3d tiles", "cull google tiles", "googletiles:patch-region", "hide", "mask", "region"]
+    },
+    {
+      "path": "examples/splat-portal.mjs",
+      "kind": "example",
+      "title": "Splat Portal",
+      "summary": "Reveals ANOTHER scene splat only through a rectangular opening, via a stencil mask on the shared 'Splats' layer. The target can be a splat that is HIDDEN (disabled) in the scene — enableTargetSplat (default on) force-enables it so it appears ONLY through the window, then restores it on unload. Options: near-clip (hide splats in front), horizontal screen curve, additive glossy env reflection, and a solid-screen mode that hides everything behind while objects in front still occlude it. Picks the target with an entity picker (filterTypes:['splat']). See the file for the rendering details.",
+      "script_name": "Splat Portal",
+      "keywords": ["splat", "portal", "window", "stencil", "stencil mask", "stencil buffer", "StencilParameters", "FUNC_EQUAL", "STENCILOP_REPLACE", "near clip", "clip plane", "clip offset", "half-space clip", "gsplatModifyVS", "clip in front", "curved screen", "horizontal curve", "screen curve", "subdivided mesh", "glass", "reflection", "glossy", "gloss", "envAtlas", "additive blend", "metalness mirror", "depth write", "occlude behind", "solid screen", "black backside", "back panel", "gsplat", "reveal", "peephole", "doorway", "Splats layer", "AfterSplat", "stencilMaskIds", "unified splat", "force non-unified", "entity picker", "filterTypes splat", "glowing frame", "emissive frame", "playcanvas splat-portal", "another world", "enableTargetSplat", "enable hidden splat", "reveal hidden splat", "show hidden splat", "make splat visible", "enable splat", "disabled splat", "webgl", "webgpu"]
     },
     {
       "path": "types/arrival.d.ts",

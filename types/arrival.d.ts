@@ -1431,19 +1431,37 @@ declare namespace ArrivalSpace {
      * examples/firework-marker-fx.mjs and examples/floating-cutscene-button.mjs.
      */
     interface SequencePlayer {
+        /** Restart from the start frame instead of stopping at the end. Editor attribute. */
+        loop: boolean;
+
+        /** Begin playback automatically once a sequence is loaded. Editor attribute. */
+        autoplay: boolean;
+
+        /**
+         * Play from the last keyframe back to the first. Editor attribute, read
+         * every frame — set it before `playSequence()` / `resumeSequence()`.
+         * When set, `playSequence()` starts at the last frame, playback settles
+         * (or loops) at the first frame, `endSequence()` lands on the first
+         * frame, and markers fire from high frame numbers to low.
+         */
+        reverse: boolean;
+
         /** Load a sequence without starting playback. */
         setSequence(sequence: Sequence): void;
 
-        /** Set and start playing a sequence from its first keyframe. */
+        /** Set and start playing a sequence from its first keyframe (or the last when `reverse` is set). */
         playSequence(sequence: Sequence): void;
 
         /** Pause at the current frame. */
         pauseSequence(): void;
 
-        /** Resume playback. Restarts if at the last frame. */
+        /** Resume playback. Restarts from the directional start if at the directional end frame. */
         resumeSequence(): void;
 
-        /** Jump to the last frame, apply it, and fire completion. Use for skip/cancel. */
+        /**
+         * Jump to the directional end frame (last, or first when `reverse` is
+         * set), apply it, and fire completion. Use for skip/cancel.
+         */
         endSequence(): void;
 
         /** Set the playhead to a specific frame. Applies adapters if `apply` is true (default). */

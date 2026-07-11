@@ -119,6 +119,17 @@ https://ugc.arrival.space/{userId}/{resource_key}
 
 **Why a plain CORS URL also works:** the client loader (`client …/scripts/user-model-entity.js` → `loadPlugin`) does `import(glbUrl)` first, then **falls back to `fetch(glbUrl)` + `new Blob([src], { type: "text/javascript" })` + import** when the MIME isn't a module type. So a raw GitHub URL (served `text/plain`) loads via the fallback, while the proper ugc URL (`text/javascript`) takes the clean primary path. A glbUrl change can also leave the entity `hidden: true` — pass `hidden: false` in the same update or the plugin won't run. Always reload the space in a browser to verify; don't trust the API echo.
 
+### Creating a cutscene/animation headlessly via the MCP (no plugin)
+
+To animate or move an object **without a plugin**, upload a **`.path`** file (a
+serialized `Sequence`) and create an entity from it — the `.path` *is* the
+cutscene, keyed to its target by the entity id in `data.entities`. `.path` is a
+first-class asset type (like `.mjs` → plugin, `.png` → image). Full flow, quat
+details, auto-play/loop, and a corner-spin recipe are in
+[`docs/cutscenes-via-mcp.md`](docs/cutscenes-via-mcp.md) (+ `examples/spin-image.path`).
+When a request is "animate/move/spin X", prefer this over a vibe unless
+logic/UI/input/physics is needed — and if it's ambiguous, ask the user which they want.
+
 ## When Adding/Renaming/Removing Examples
 
 This is easy to forget and breaks the MCP search:
