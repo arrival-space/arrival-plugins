@@ -1129,6 +1129,49 @@ const invKeys = await ArrivalSpace.userData.keys(NS, { prefix: 'inv/' });
 
 ---
 
+### AI (`ArrivalSpace.ai`)
+
+One-shot LLM answers for plugins, backed by the platform's `/ai/ask` endpoint.
+The free GLM model is used by default — an AI NPC works with zero setup. The
+entity owner can store their own OpenAI/Anthropic/GLM API key **server-side**
+(never visible to plugins or visitors). The server reads `prePrompt` /
+`provider` / `model` from the target entity's params — clients only send the
+question and their local history.
+
+#### `ArrivalSpace.ai.ask(opts)`
+
+Ask the AI configured on an entity a question.
+
+| Param | Type | Description |
+|---|---|---|
+| `opts.entityId` | `string` | The vibe's own entity ID (`this.entity._vibeEntityId`) |
+| `opts.question` | `string` | The visitor's question (max 1000 chars) |
+| `opts.history` | `Array?` | Prior turns `[{role: 'user'\|'assistant', content}]`, last 10 kept |
+
+**Returns:** `Promise<{answer, provider, model, costUsd} | {error} | null>` —
+`{error}` on a server error response (display it), `null` on network failure.
+
+```javascript
+const res = await ArrivalSpace.ai.ask({
+    entityId: this.entity._vibeEntityId,
+    question: 'What can I do here?',
+    history: this._history,
+});
+if (res?.answer) this._showAnswer(res.answer);
+```
+
+#### `ArrivalSpace.ai.setKey(provider, apiKey)` / `clearKey(provider)` / `keyStatus()`
+
+Owner key management. `provider` is `'openai' | 'anthropic' | 'glm'`.
+`keyStatus()` returns `{openai, anthropic, glm}` booleans — keys themselves are
+never returned by any endpoint. Rate limits: 100 asks/visitor/day,
+1000 asks/entity/day.
+
+See [`examples/ai-npc.mjs`](../examples/ai-npc.mjs) for a complete LLM-driven
+NPC using this API.
+
+---
+
 ### Multiplayer
 
 See `docs/multiplayer.md` for `attribute()` and `ArrivalSpace.net`.

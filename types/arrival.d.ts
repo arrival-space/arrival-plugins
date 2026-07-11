@@ -1149,6 +1149,44 @@ declare namespace ArrivalSpace {
         function keys(namespace: string, options?: { prefix?: string; userId?: string; limit?: number }): Promise<string[] | false>;
     }
 
+    /**
+     * One-shot LLM answers for plugins (AI NPC etc.). Free GLM model by
+     * default; entity owners can store their own OpenAI/Anthropic/GLM key
+     * server-side — keys are never exposed to plugins or visitors.
+     *
+     * @example
+     * const res = await ArrivalSpace.ai.ask({
+     *     entityId: this.entity._vibeEntityId,
+     *     question: 'Who are you?',
+     * });
+     * if (res?.answer) showBubble(res.answer);
+     */
+    namespace ai {
+        /**
+         * Ask the AI configured on an entity a question. The server reads the
+         * persona (prePrompt), provider and model from the entity's params.
+         * @param opts.entityId - The vibe's own entity ID
+         * @param opts.question - The visitor's question (max 1000 chars)
+         * @param opts.history - Prior turns, last 10 kept
+         * @returns {answer, provider, model, costUsd}; {error} on a server
+         *   error response; null on network failure
+         */
+        function ask(opts: {
+            entityId: string;
+            question: string;
+            history?: Array<{ role: 'user' | 'assistant'; content: string }>;
+        }): Promise<{ answer: string; provider: string; model: string; costUsd: number } | { error: string } | null>;
+
+        /** Store a provider API key for the current user (server-side, write-only). */
+        function setKey(provider: 'openai' | 'anthropic' | 'glm', apiKey: string): Promise<boolean>;
+
+        /** Remove a stored provider API key. */
+        function clearKey(provider: 'openai' | 'anthropic' | 'glm'): Promise<boolean>;
+
+        /** Which providers have a stored key for the current user (never the keys). */
+        function keyStatus(): Promise<{ openai: boolean; anthropic: boolean; glm: boolean } | null>;
+    }
+
     // ═══════════════════════════════════════════════════════════════════════════
     // MULTIPLAYER / NETWORK API
     // ═══════════════════════════════════════════════════════════════════════════
