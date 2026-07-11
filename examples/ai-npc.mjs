@@ -184,9 +184,9 @@ export class AiNpc extends ArrivalScript {
     }
 
     async _setupOwnerSection() {
-        const me = ArrivalSpace.getUser();
-        const room = ArrivalSpace.getRoom();
-        if (!me?.userID || me.userID !== room?.owner) return;
+        // getRoom().owner is a user-info OBJECT (not an id) — use the canonical
+        // room-owner check instead of comparing ids by hand.
+        if (!ArrivalSpace.isOwner()) return;
 
         const ownerEl = this._panel.querySelector('#aiNpc-owner');
         ownerEl.style.display = 'block';
