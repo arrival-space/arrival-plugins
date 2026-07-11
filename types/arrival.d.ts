@@ -1185,6 +1185,13 @@ declare namespace ArrivalSpace {
 
         /** Which providers have a stored key for the current user (never the keys). */
         function keyStatus(): Promise<{ openai: boolean; anthropic: boolean; glm: boolean } | null>;
+
+        /**
+         * Open the native account settings at the profile section
+         * (Settings → Profile → AI Keys) so the creator can enter a key.
+         * @returns whether the settings screen could be opened
+         */
+        function openKeySettings(): boolean;
     }
 
     // ═══════════════════════════════════════════════════════════════════════════

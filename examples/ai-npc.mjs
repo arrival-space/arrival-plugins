@@ -4,9 +4,10 @@
  * An LLM-driven character. Visitors click the NPC to open a chat panel and ask
  * questions; answers come from ArrivalSpace.ai.ask (backend /ai/ask). Runs on
  * the free GLM model by default — no setup needed. The space owner can select
- * OpenAI/Anthropic instead and store their own API key via the owner-only
- * section in the panel — the key is kept server-side and is never visible to
- * visitors.
+ * OpenAI/Anthropic instead; their API key is a profile/account setting
+ * (Settings → Profile → AI Keys, stored server-side, never visible to
+ * visitors). Choosing a non-free provider without a stored key navigates the
+ * owner there automatically.
  *
  * The persona lives in the `prePrompt` parameter. The server reads it from
  * this entity directly, so visitors cannot override it.
@@ -110,7 +111,6 @@ export class AiNpc extends ArrivalScript {
                 <button id="aiNpc-close" style="background: none; border: none; color: white; cursor: pointer; font-size: 18px; opacity: 0.7; padding: 0 4px;">×</button>
             </div>
             <div id="aiNpc-messages" style="flex: 1; overflow-y: auto; padding: 10px; color: white; font-size: 13px;"></div>
-            <div id="aiNpc-owner" style="display: none; padding: 8px 10px; background: #00000033; font-size: 11px; color: #ddd;"></div>
             <div style="padding: 10px; display: flex; gap: 8px;">
                 <input type="text" id="aiNpc-input" placeholder="Ask a question..."
                     style="flex: 1; padding: 10px 12px; border-radius: 16px; border: none; background: #00000026; color: white; font-size: 13px; outline: none;"
@@ -135,7 +135,6 @@ export class AiNpc extends ArrivalScript {
             for (const m of this._history) this._renderMessage(m.content, m.role === 'user');
         }
 
-        this._setupOwnerSection();
         this._inputEl.focus();
     }
 
@@ -158,6 +157,10 @@ export class AiNpc extends ArrivalScript {
         if (!res || res.error || !res.answer) {
             pendingEl.textContent = res?.error || 'No connection — please try again.';
             pendingEl.style.opacity = '0.7';
+            // a paid provider without a stored key: point the owner at the settings
+            if (res?.error && this.provider !== 'glm' && ArrivalSpace.isOwner()) {
+                this._renderSettingsHint();
+            }
             return;
         }
 
@@ -183,54 +186,22 @@ export class AiNpc extends ArrivalScript {
         return msgEl;
     }
 
-    async _setupOwnerSection() {
-        // getRoom().owner is a user-info OBJECT (not an id) — use the canonical
-        // room-owner check instead of comparing ids by hand.
-        if (!ArrivalSpace.isOwner()) return;
+    // Owner-only line in the panel linking to Settings → Profile → AI Keys.
+    _renderSettingsHint() {
+        const hintEl = this._renderMessage('Open settings to add your API key →', false);
+        hintEl.style.cursor = 'pointer';
+        hintEl.style.textDecoration = 'underline';
+        hintEl.onclick = () => ArrivalSpace.ai.openKeySettings();
+    }
 
-        const ownerEl = this._panel.querySelector('#aiNpc-owner');
-        ownerEl.style.display = 'block';
-        ownerEl.innerHTML = `
-            <div style="margin-bottom: 6px;">Owner: API key for
-                <select id="aiNpc-keyProvider" style="background: #00000044; color: white; border: none; border-radius: 6px; padding: 2px 4px;">
-                    <option value="openai">OpenAI</option>
-                    <option value="anthropic">Anthropic</option>
-                    <option value="glm">GLM</option>
-                </select>
-                <span id="aiNpc-keyState" style="opacity: 0.8;"></span>
-            </div>
-            <div style="display: flex; gap: 6px;">
-                <input type="password" id="aiNpc-keyInput" placeholder="paste key, stored server-side"
-                    style="flex: 1; padding: 5px 8px; border-radius: 8px; border: none; background: #00000044; color: white; font-size: 11px; outline: none;">
-                <button id="aiNpc-keySave" style="padding: 5px 10px; border-radius: 8px; border: none; background: #38b4b0; color: #fff; cursor: pointer;">Save</button>
-                <button id="aiNpc-keyClear" style="padding: 5px 10px; border-radius: 8px; border: none; background: #00000044; color: #fff; cursor: pointer;">Clear</button>
-            </div>
-        `;
-
-        const providerSel = ownerEl.querySelector('#aiNpc-keyProvider');
-        const keyInput = ownerEl.querySelector('#aiNpc-keyInput');
-        const stateEl = ownerEl.querySelector('#aiNpc-keyState');
-
-        const refreshState = async () => {
-            const status = await ArrivalSpace.ai.keyStatus();
-            if (!status) { stateEl.textContent = ''; return; }
-            stateEl.textContent = status[providerSel.value] ? '✓ key stored' : 'no key';
-        };
-        providerSel.onchange = refreshState;
-
-        ownerEl.querySelector('#aiNpc-keySave').onclick = async () => {
-            const key = keyInput.value.trim();
-            if (!key) return;
-            const ok = await ArrivalSpace.ai.setKey(providerSel.value, key);
-            if (ok) keyInput.value = '';
-            stateEl.textContent = ok ? '✓ key stored' : 'save failed';
-        };
-        ownerEl.querySelector('#aiNpc-keyClear').onclick = async () => {
-            await ArrivalSpace.ai.clearKey(providerSel.value);
-            refreshState();
-        };
-
-        refreshState();
+    // The owner picked a paid provider in the property editor: if they have no
+    // key stored for it yet, take them to the account settings to add one.
+    async _checkProviderKey() {
+        if (this.provider === 'glm' || !ArrivalSpace.isOwner()) return;
+        const status = await ArrivalSpace.ai.keyStatus();
+        if (status && !status[this.provider]) {
+            ArrivalSpace.ai.openKeySettings();
+        }
     }
 
     onPropertyChanged(name) {
@@ -238,6 +209,9 @@ export class AiNpc extends ArrivalScript {
         if (name === 'npcName') {
             this._npc.setHeadLabel(this.npcName);
             if (this._panel) this._panel.querySelector('#aiNpc-title').textContent = this.npcName;
+        }
+        if (name === 'provider') {
+            this._checkProviderKey();
         }
     }
 

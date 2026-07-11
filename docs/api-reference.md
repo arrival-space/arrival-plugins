@@ -1160,11 +1160,14 @@ const res = await ArrivalSpace.ai.ask({
 if (res?.answer) this._showAnswer(res.answer);
 ```
 
-#### `ArrivalSpace.ai.setKey(provider, apiKey)` / `clearKey(provider)` / `keyStatus()`
+#### `ArrivalSpace.ai.setKey(provider, apiKey)` / `clearKey(provider)` / `keyStatus()` / `openKeySettings()`
 
-Owner key management. `provider` is `'openai' | 'anthropic' | 'glm'`.
-`keyStatus()` returns `{openai, anthropic, glm}` booleans — keys themselves are
-never returned by any endpoint. Rate limits: 100 asks/visitor/day,
+Key management. `provider` is `'openai' | 'anthropic' | 'glm'`. Keys are a
+**profile/account setting** — creators normally manage them under
+Settings → Profile → AI Keys; `openKeySettings()` navigates there (use it when
+a paid provider is selected but `keyStatus()` shows no key). `keyStatus()`
+returns `{openai, anthropic, glm}` booleans — keys themselves are never
+returned by any endpoint. Rate limits: 100 asks/visitor/day,
 1000 asks/entity/day.
 
 See [`examples/ai-npc.mjs`](../examples/ai-npc.mjs) for a complete LLM-driven
