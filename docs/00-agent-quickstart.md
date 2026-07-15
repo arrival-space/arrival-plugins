@@ -40,6 +40,11 @@ export class MyPlugin extends ArrivalScript {
 - Keep plugin properties serializable (number, boolean, string, color hex, vec3-like object).
 - If your plugin allocates resources, clean them up in `destroy()`.
 
+## Lifecycle Hooks
+
+- `initialize()` / `update(dt)` / `onPropertyChanged(name, v, old)` / `destroy()` — the usual hooks.
+- `onInstall(ctx)` — optional, fires **once** right after a user adds the vibe to the space in-app (library install, drag-drop, or upload). It does **not** fire on reload, for other visitors, or for CLI/MCP deploys. Use it for one-time setup, e.g. open your own config panel; persist choices into the vibe's real params with `await this.setParams({ ... })` so they show in the editor and apply on every load. **Deploying via CLI/MCP? Set the vibe's `params` at deploy time instead — `onInstall` will not fire on that path.** Requires `ArrivalSpace.VERSION` ≥ `1.12.0`. See `examples/first-install-setup.mjs`.
+
 ## MCP Deployment Notes
 
 - Upload plugin as a `.mjs` text file.
@@ -52,6 +57,7 @@ export class MyPlugin extends ArrivalScript {
 - Put runtime-editable fields as class properties.
 - Add `static properties` for titles, min/max/step, dropdown `options`.
 - Use `onPropertyChanged` for targeted updates.
+- To set + persist a param from code (e.g. pre-configure on install), use `await this.setParam(name, value)` or `this.setParams({ ... })` — writes the real editor param (shows in the panel, applied on load, seen by everyone). It does **not** call your own `onPropertyChanged`.
 - For dynamic dropdowns, call:
   - `this.setParamOptions(paramName, options, false)`
   - `this.refreshParamSchema()`

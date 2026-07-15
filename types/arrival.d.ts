@@ -229,6 +229,18 @@ declare function attribute<T>(defaultValue: T, options?: AttributeOptions): T;
  * Base class for Arrival.Space plugins.
  * Extend this class to create your plugin.
  */
+/**
+ * Context passed to {@link ArrivalScript.onInstall}.
+ */
+interface ArrivalScriptInstallContext {
+    /** Always `true` for the first-install trigger (reserved for future triggers). */
+    isFirstInstall: boolean;
+    /** The placed entity's id. */
+    entityId: string;
+    /** The current space/room id. */
+    spaceId: string;
+}
+
 declare class ArrivalScript extends pc.Script {
     /** Current space/room */
     readonly space: any;
@@ -262,6 +274,36 @@ declare class ArrivalScript extends pc.Script {
      * Works on desktop (W/S/A/D, arrows) and mobile (virtual joystick).
      */
     getMoveInput(): ArrivalSpace.MoveInput;
+
+    /**
+     * Persist one of this plugin's editor parameters (the canonical, editor-visible
+     * `params` stored on the entity). Use it to pre-set configuration — e.g. from
+     * onInstall() — so the value shows in the parameter panel, survives reloads, and is
+     * seen by every visitor, exactly as if the user had set it in the editor. Only
+     * declared plugin properties are valid names. Updates the live `this[name]` too but
+     * does NOT call your own onPropertyChanged().
+     * @param name A declared plugin property name.
+     * @param value The new value.
+     * @param options persist:false sets without uploading (batch, then call save()).
+     */
+    setParam(name: string, value: any, options?: { persist?: boolean }): Promise<boolean>;
+
+    /** Persist several editor parameters at once (one upload). See setParam(). */
+    setParams(values: Record<string, any>, options?: { persist?: boolean }): Promise<boolean>;
+
+    /** Persist the current `params` to the server without changing any values. */
+    save(): Promise<boolean>;
+
+    /**
+     * Optional lifecycle hook fired once — right after a user adds this vibe to the
+     * space in-app (library install, drag-drop, or upload), in the browser where they
+     * added it. Use it to run a one-time setup flow (e.g. open your own configuration
+     * panel). It is NOT called on reload, for other visitors, or for CLI/MCP deploys —
+     * those should configure the vibe via entity `params` at deploy time instead. May
+     * be async. Requires `ArrivalSpace.VERSION` >= `1.12.0`.
+     * @param ctx Install context.
+     */
+    onInstall?(ctx: ArrivalScriptInstallContext): void | Promise<void>;
 }
 
 /**

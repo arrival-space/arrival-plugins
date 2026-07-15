@@ -186,11 +186,63 @@ export class MyPlugin extends ArrivalScript {
         // Called when an editor property changes
     }
 
+    onInstall(ctx) {
+        // Called ONCE, right after a user adds this vibe to the space
+        // in-app. Run one-time setup here (e.g. open a config panel).
+    }
+
     destroy() {
         // Called when plugin is removed/destroyed
     }
 }
 ```
+
+#### `onInstall(ctx)` — first-install setup
+
+Optional. Fired **once** — right after a user adds this vibe to the space in-app (library install, drag-drop, or upload), in the browser where they added it. Use it to run a one-time setup flow: e.g. open your own configuration panel and collect settings.
+
+- **In-app add only.** It's tied to the user actually creating the entity in their browser — *not* the per-load path. So it never fires on reload, never for other visitors, and never for CLI/MCP deploys (which create the entity through the API and never run the in-app create flow). That makes it safe to show setup UI: the person who just added it is right there.
+- **No re-fires, no flag.** Reloads don't re-create the entity, so there's nothing to dedupe — no persisted marker, no owner-check.
+- **May be async.** Returning a promise is fine; the install flow doesn't block on it. An abandoned or cancelled setup simply does nothing — if you want to re-prompt, track that yourself.
+- **Pre-set the vibe's parameters.** The cleanest way to persist setup is to write the vibe's own editor parameters with [`this.setParams({...})`](#setparamname-value-options--setparamsvalues-options) — they show in the parameter panel, are applied automatically on every load, and are seen by every visitor. Use `ArrivalSpace.pluginStore` only for data that isn't an editor parameter.
+- **Deploying via CLI/MCP?** Set the vibe's `params` directly at deploy time instead of relying on this hook — see [`docs/00-agent-quickstart.md`](00-agent-quickstart.md).
+
+`ctx`: `{ isFirstInstall: true, entityId: string, spaceId: string }`.
+
+```javascript
+async onInstall(ctx) {
+    // Owner just installed this vibe — open a one-time setup panel
+    this._openSetupPanel();
+}
+```
+
+Requires `ArrivalSpace.VERSION` ≥ `1.12.0` (feature-detect if you target older clients). See [`first-install-setup.mjs`](../examples/first-install-setup.mjs) for a complete example.
+
+#### `setParam(name, value, options?)` / `setParams(values, options?)`
+
+Persist the vibe's own **editor parameters** — the canonical `params` stored on the entity — from plugin code. This is what the editor's parameter panel writes; calling it yourself (e.g. from `onInstall`) is how you pre-configure a vibe so the value:
+
+- shows up in the parameter panel,
+- is applied automatically onto `this[name]` on every load (before `initialize()`),
+- is seen by every visitor, and
+- survives reloads — no side store needed.
+
+Only **declared plugin properties** are valid names. The live `this[name]` is updated too, but your own `onPropertyChanged()` is **not** called (you're the one setting it, so apply any side effects yourself). Returns a promise that resolves once persisted.
+
+```javascript
+// One value:
+await this.setParam('greeting', 'Hello!');
+
+// Several at once (single upload):
+await this.setParams({ greeting: 'Hello!', accent: '#ff0066' });
+
+// Batch without uploading, then persist once:
+await this.setParam('a', 1, { persist: false });
+await this.setParam('b', 2, { persist: false });
+await this.save();
+```
+
+`save()` persists the current `params` without changing any values. Requires `ArrivalSpace.VERSION` ≥ `1.12.0`.
 
 ---
 

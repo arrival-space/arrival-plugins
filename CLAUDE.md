@@ -117,6 +117,8 @@ https://ugc.arrival.space/{userId}/{resource_key}
 
 `{userId}` is the 8-digit prefix of the spaceId. Set `glbUrl` to that full URL, not the raw key.
 
+**`onInstall` does NOT fire on MCP/CLI deploys.** A plugin's optional `onInstall(ctx)` setup hook is tied to the *interactive* in-app install action (the vibe-editor side panel), not to entity creation via the API. So when you deploy/update a plugin through the MCP, `onInstall` will not run — and that's intentional, since an automated deploy shouldn't queue up setup popups for whoever next visits the space. If the plugin needs configuration, set it directly via `entity_data.params` in the `update_entity`/create call instead of expecting the setup flow to fire.
+
 **Why a plain CORS URL also works:** the client loader (`client …/scripts/user-model-entity.js` → `loadPlugin`) does `import(glbUrl)` first, then **falls back to `fetch(glbUrl)` + `new Blob([src], { type: "text/javascript" })` + import** when the MIME isn't a module type. So a raw GitHub URL (served `text/plain`) loads via the fallback, while the proper ugc URL (`text/javascript`) takes the clean primary path. A glbUrl change can also leave the entity `hidden: true` — pass `hidden: false` in the same update or the plugin won't run. Always reload the space in a browser to verify; don't trust the API echo.
 
 ### Creating a cutscene/animation headlessly via the MCP (no plugin)
