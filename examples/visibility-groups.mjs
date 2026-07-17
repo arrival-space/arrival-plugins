@@ -22,6 +22,7 @@ export class VisibilityGroups extends ArrivalScript {
     panelTitle = "Layers";
     showPanel = true;
     singleSelect = false;
+    dropdown = false;   // render a compact <select> (single-select) instead of the button panel
 
     group1Name = "Group 1";
     group1Entities = [];
@@ -38,7 +39,8 @@ export class VisibilityGroups extends ArrivalScript {
         const props = {
             panelTitle: { title: "Panel Title" },
             showPanel: { title: "Show Panel" },
-            singleSelect: { title: "Only One Group At A Time" }
+            singleSelect: { title: "Only One Group At A Time" },
+            dropdown: { title: "Compact Dropdown" }
         };
         for (let i = 1; i <= 5; i++) {
             props[`group${i}Name`] = { title: `Group ${i} · Name` };
@@ -183,6 +185,7 @@ export class VisibilityGroups extends ArrivalScript {
         if (!this.showPanel) { ui.innerHTML = ""; return; }
 
         const groups = this._groups();
+        if (this.dropdown) { this._renderDropdown(ui, groups); return; }
         const buttons = groups
             .map((g) => `<button type="button" class="vg-btn ${this._on[g.i] ? "on" : ""}" data-g="${g.i}"><span class="vg-dot"></span>${this._esc(g.name)}</button>`)
             .join("");
@@ -228,6 +231,45 @@ export class VisibilityGroups extends ArrivalScript {
                 this.log(`Group ${i} ${this._on[i] ? "enabled" : "disabled"}.`);
             }
 
+            this._apply();
+            this._render();
+        };
+        ui.onmouseenter = () => this.lockInput();
+        ui.onmouseleave = () => this.unlockInput();
+    }
+
+    // Compact dropdown variant (single-select): a native <select> at top-left, so it
+    // stays clear of bottom-screen controls and opens the OS picker on mobile.
+    _renderDropdown(ui, groups) {
+        const opts = groups
+            .map((g) => `<option value="${g.i}" ${this._on[g.i] ? "selected" : ""}>${this._esc(g.name)}</option>`)
+            .join("");
+        ui.innerHTML = `
+            <style>
+                #vgd { position: fixed; top: 72px; left: 16px; z-index: 9999; pointer-events: auto;
+                    padding: 12px 14px; border-radius: 12px;
+                    background: #0d0a16; border: 1px solid rgba(255,255,255,0.10);
+                    box-shadow: 0 16px 50px rgba(0,0,0,0.55);
+                    font-family: "Helvetica Neue", Helvetica, Arial, system-ui, sans-serif; }
+                #vgd label { display: block; font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
+                    color: rgba(243,241,250,0.5); margin: 0 0 8px 2px; }
+                #vgd select { cursor: pointer; color: #f3f1fa; background: rgba(255,255,255,0.05);
+                    border: 1px solid rgba(255,255,255,0.12); border-radius: 8px;
+                    padding: 10px 14px; font: inherit; font-size: 14px; font-weight: 600; min-width: 172px;
+                    transition: border-color .15s ease; }
+                #vgd select:hover { border-color: rgba(167,139,255,0.5); }
+                #vgd select:focus { outline: none; border-color: #7a5af8; }
+            </style>
+            <div id="vgd">
+                <label>${this._esc(this.panelTitle || "Screen")}</label>
+                ${groups.length ? `<select class="vg-select">${opts}</select>` : ""}
+            </div>
+        `;
+        const sel = ui.querySelector(".vg-select");
+        if (sel) sel.onchange = () => {
+            const i = Number(sel.value);
+            this._enforceSingleSelection(i);   // dropdown is single-select
+            this.log(`Selected group ${i} via dropdown.`);
             this._apply();
             this._render();
         };

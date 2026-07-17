@@ -317,17 +317,36 @@ function rectLoop(w, h, colsX, colsY) {
 
 // Rectangular border ring of thickness t around the (w,h) opening, bent in X.
 // colsX = 1 + curve = 0 gives a plain 4-corner rectangle frame.
-function buildFrame(device, w, h, t, curve, colsX) {
+function buildFrame(device, w, h, t, curve, colsX, depth) {
     const refHW = w / 2;
     const outer = rectLoop(w + 2 * t, h + 2 * t, colsX, 1);
     const inner = rectLoop(w, h, colsX, 1);
     const n = outer.length; // outer & inner share the count → 1:1 correspondence
+    const d = depth || 0;
+    const zc = (x) => curveZ(x, refHW, curve);
     const positions = [], normals = [], indices = [];
-    for (let i = 0; i < n; i++) { positions.push(outer[i][0], outer[i][1], curveZ(outer[i][0], refHW, curve)); normals.push(0, 0, 1); }
-    for (let i = 0; i < n; i++) { positions.push(inner[i][0], inner[i][1], curveZ(inner[i][0], refHW, curve)); normals.push(0, 0, 1); }
+    if (Math.abs(d) <= 1e-4) {
+        // Flat ring (original).
+        for (let i = 0; i < n; i++) { positions.push(outer[i][0], outer[i][1], zc(outer[i][0])); normals.push(0, 0, 1); }
+        for (let i = 0; i < n; i++) { positions.push(inner[i][0], inner[i][1], zc(inner[i][0])); normals.push(0, 0, 1); }
+        for (let i = 0; i < n; i++) {
+            const o0 = i, o1 = (i + 1) % n, i0 = n + i, i1 = n + ((i + 1) % n);
+            indices.push(o0, i0, o1, o1, i0, i1);
+        }
+        return makeMesh(device, positions, normals, null, indices);
+    }
+    // Raised bezel: front face at +depth with outer + inner side walls back to the screen
+    // plane. Blocks of n: 0 front-outer, n front-inner, 2n back-outer, 3n back-inner.
+    // (Frame material is unlit + double-sided, so face normals don't need to be exact.)
+    const push = (loop, zAdd) => { for (let i = 0; i < n; i++) { positions.push(loop[i][0], loop[i][1], zc(loop[i][0]) + zAdd); normals.push(0, 0, 1); } };
+    push(outer, d); push(inner, d); push(outer, 0); push(inner, 0);
     for (let i = 0; i < n; i++) {
-        const o0 = i, o1 = (i + 1) % n, i0 = n + i, i1 = n + ((i + 1) % n);
-        indices.push(o0, i0, o1, o1, i0, i1);
+        const j = (i + 1) % n;
+        const fo = i, fi = n + i, bo = 2 * n + i, bi = 3 * n + i;
+        const fo1 = j, fi1 = n + j, bo1 = 2 * n + j, bi1 = 3 * n + j;
+        indices.push(fo, fi, fo1, fo1, fi, fi1);   // front face (raised ring)
+        indices.push(fo, bo, fo1, fo1, bo, bo1);   // outer side wall
+        indices.push(fi, bi, fi1, fi1, bi, bi1);   // inner side wall (lip round the screen)
     }
     return makeMesh(device, positions, normals, null, indices);
 }
@@ -362,6 +381,24 @@ export class SplatMonitor extends ArrivalScript {
     // source (overrides followPlayer and the fixed viewpoint; aim settings ignored).
     // Move / parent / animate the entity to drive the shot. Empty = use the modes below.
     cameraEntity = "";
+    // Monitor mode only: rotate the POV 180° about its local X (flips both front & up).
+    // Use when the POV model's lens faces its local +Z (opposite PlayCanvas's -Z) and/or
+    // the screen quad is mounted upside-down, so the feed matches what the model films.
+    flipPov = false;
+    // Monitor mode: render the feed from a point pushed this many metres FORWARD along the
+    // POV's view direction (e.g. to sit at the lens rather than the model origin, and so the
+    // POV model's own body falls behind the eye and out of frame). Metres; 0 = at the entity.
+    povForward = 0;
+    // Add a static box collider the size of the screen so avatars can't pass through it.
+    // Flat box for now (v1); a curved screen still gets a flat approximation.
+    collision = false;
+    // Depth (thickness) of that collider, in metres — the third dimension (its face is the
+    // screen's width x height). Thicker = harder for fast avatars to tunnel through.
+    collisionDepth = 0.1;
+    // Also render OTHER Splat Monitors' screens into this feed. Their screen meshes live on
+    // a main-camera-only layer, so feeds don't see them by default. Note: if this monitor's
+    // OWN screen falls in frame it feeds back into itself (a video tunnel).
+    showScreens = false;
 
     // Where the feed is rendered from when no cameraEntity is set. Off (default): the
     // FIXED viewpoint below — a monitor onto the space from somewhere you are not.
@@ -429,7 +466,7 @@ export class SplatMonitor extends ArrivalScript {
     rasterGap = 0.15;
     // Distance (m) at which the grid has fully blended away (full by half this). Very
     // fine grids also dissolve on their own once a cell is smaller than a screen pixel.
-    rasterFadeDist = 6;
+    rasterFadeDist = 0.5;
 
     // Clip feed splats between the feed camera and the monitor, so you see through to
     // what's behind it (the near plane can't do this — see CLIP_GLSL). Half-space clip
@@ -452,6 +489,8 @@ export class SplatMonitor extends ArrivalScript {
     showFrame = true;
     frameColor = { r: 0.3, g: 0.85, b: 1 };
     frameThickness = 0.06;
+    frameDepth = 0;      // extrude the frame this many metres off the screen face (0 = flat ring; a
+                         // bezel that sticks toward the viewer). Negative extrudes the other way.
     frameGlow = 6;
 
     static properties = {
@@ -462,6 +501,11 @@ export class SplatMonitor extends ArrivalScript {
         height: { title: "Screen Height (m)", min: 0.2, max: 50, step: 0.1 },
         curve: { title: "Screen Curve", min: -1, max: 1, step: 0.01 },
         cameraEntity: { title: "Camera POV (entity)", editor: "entity" },
+        flipPov: { title: "Flip POV 180° (monitor)" },
+        povForward: { title: "POV Forward Offset (m)", min: -10, max: 10, step: 0.05 },
+        collision: { title: "Screen Collision (box)" },
+        collisionDepth: { title: "Collision Depth (m)", min: 0.02, max: 5, step: 0.05 },
+        showScreens: { title: "Show Screens in Feed" },
         followPlayer: { title: "Follow Player Camera" },
         viewPosition: { title: "Camera Position (world)" },
         aimAtTarget: { title: "Aim At Target Splat" },
@@ -487,6 +531,7 @@ export class SplatMonitor extends ArrivalScript {
         showFrame: { title: "Show Frame" },
         frameColor: { title: "Frame Color" },
         frameThickness: { title: "Frame Thickness (m)", min: 0.005, max: 1, step: 0.005 },
+        frameDepth: { title: "Frame Depth (m)", min: -2, max: 2, step: 0.01 },
         frameGlow: { title: "Frame Glow", min: 0, max: 20, step: 0.1 },
     };
 
@@ -497,6 +542,7 @@ export class SplatMonitor extends ArrivalScript {
     _texture = null;
     _rt = null;
     _rttCam = null;                  // hidden feed camera (child of this.entity)
+    _collisionEntity = null;         // optional static box collider matching the screen
     _privateLayer = null;            // isolated-mode layer only _rttCam renders
     _screenLayer = null;             // shared layer for our own meshes (main cam only)
     _screenEntity = null;
@@ -597,14 +643,14 @@ export class SplatMonitor extends ArrivalScript {
         this._renderDirty = true; // any tweak → redraw at least once in on-demand mode
         // Affects the render target / camera / screen geometry — rebuild everything.
         if (name === "isolateTarget" || name === "resolution" || name === "pixelated" ||
-            name === "width" || name === "height") {
+            name === "width" || name === "height" || name === "showScreens") {
             this._teardown();
             this._setup();
             return;
         }
         // Affects only our own meshes — rebuild just those (keeps the feed running).
         // (compensateCurve toggling off must rebuild to restore the un-warped UVs.)
-        if (name === "showFrame" || name === "frameThickness" || name === "backsideBlack" ||
+        if (name === "showFrame" || name === "frameThickness" || name === "frameDepth" || name === "backsideBlack" ||
             name === "scanlineCount" || name === "curve" || name === "compensateCurve" ||
             name === "pixelRaster") {
             this._rebuildScreenMeshes();
@@ -627,7 +673,8 @@ export class SplatMonitor extends ArrivalScript {
         // windowMode also rebuilds the screen meshes so warped UVs are reset when
         // leaving window mode (and re-warped on the next frame when entering it).
         if (name === "windowMode") { this._rebuildScreenMeshes(); this._positionCamera(); return; }
-        if (name === "followPlayer" || name === "cameraEntity") { this._positionCamera(); return; }
+        if (name === "collision" || name === "collisionDepth") { this._buildCollision(); return; }
+        if (name === "followPlayer" || name === "cameraEntity" || name === "flipPov" || name === "povForward") { this._positionCamera(); return; }
         if (name === "fov" && this._rttCam) { this._rttCam.camera.fov = this.fov; return; }
         if (name === "backdropColor" && this._rttCam) {
             this._rttCam.camera.clearColor = new pc.Color(this.backdropColor.r, this.backdropColor.g, this.backdropColor.b, 1);
@@ -656,6 +703,7 @@ export class SplatMonitor extends ArrivalScript {
         this._buildTexture();
         this._buildCamera();
         this._buildScreenMeshes();
+        this._buildCollision();
         this._createWarpMaterial();
         this._ready = true;
         // Reset the render gate: render for a warm-up window so the splat streams /
@@ -674,6 +722,7 @@ export class SplatMonitor extends ArrivalScript {
         this._restoreClips();          // restore feed-splat chunks before the material goes
         this._restoreSubjects();
         this._destroyScreenMeshes();
+        this._destroyCollision();
         if (this._rttCam) { this._rttCam.destroy(); this._rttCam = null; }
         // The PRIVATE feed layer is per-instance — remove it (it was never on the
         // main camera, only on the feed camera we just destroyed). The SHARED screen
@@ -792,6 +841,8 @@ export class SplatMonitor extends ArrivalScript {
             layers = [this._privateLayer.id];
         } else {
             layers = this._sceneLayerIds();
+            // Include the shared screen layer so the feed shows other monitors' screens.
+            if (this.showScreens && this._screenLayer) layers.push(this._screenLayer.id);
         }
 
         this._rttCam = new pc.Entity("SplatMonitorCamera");
@@ -849,6 +900,8 @@ export class SplatMonitor extends ArrivalScript {
         if (pov) {
             cam.setPosition(pov.getPosition());
             cam.setRotation(pov.getRotation());
+            if (this.flipPov) cam.rotateLocal(180, 0, 0);   // lens faces +Z / quad mounted flipped
+            if (this.povForward) cam.translateLocal(0, 0, -this.povForward);  // push eye forward along the view
             cam.camera.fov = this.fov;
             return;
         }
@@ -1222,7 +1275,7 @@ export class SplatMonitor extends ArrivalScript {
             this._frameEntity = new pc.Entity("SplatMonitorFrame");
             this.entity.addChild(this._frameEntity);
             const t = Math.max(0.005, this.frameThickness);
-            this._setRenderMesh(this._frameEntity, buildFrame(device, w, h, t, curve, colsX), this._frameMaterial(), layerIds);
+            this._setRenderMesh(this._frameEntity, buildFrame(device, w, h, t, curve, colsX, this.frameDepth), this._frameMaterial(), layerIds);
         }
 
         // Solid black back panel — only its back faces render (cull front), so the
@@ -1275,6 +1328,29 @@ export class SplatMonitor extends ArrivalScript {
     _rebuildScreenMeshes() {
         this._destroyScreenMeshes();
         this._buildScreenMeshes();
+    }
+
+    // Optional static box collider matching the screen (flat; a curved screen gets a flat
+    // approximation for now). Sized width x height with a thin depth, centred on the screen.
+    _buildCollision() {
+        this._destroyCollision();
+        if (!this.collision) return;
+        try {
+            const thin = Math.max(0.02, this.collisionDepth);
+            this._collisionEntity = new pc.Entity("SplatMonitorCollision");
+            this.entity.addChild(this._collisionEntity);
+            this._collisionEntity.addComponent("collision", {
+                type: "box",
+                halfExtents: new pc.Vec3(Math.max(0.05, this.width / 2), Math.max(0.05, this.height / 2), thin / 2),
+            });
+            this._collisionEntity.addComponent("rigidbody", { type: "static" });
+        } catch (e) {
+            this._destroyCollision();   // physics (Ammo) unavailable
+        }
+    }
+
+    _destroyCollision() {
+        if (this._collisionEntity) { this._collisionEntity.destroy(); this._collisionEntity = null; }
     }
 
     _setRenderMesh(entity, mesh, material, layerIds) {

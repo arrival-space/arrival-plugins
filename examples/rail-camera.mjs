@@ -40,6 +40,13 @@
  * - The trigger box is hit-tested in the rig's local space (oriented box), so it
  *   follows the vibe's rotation and scale, and works whether or not it's visible.
  *
+ * Studio extras (opt-in):
+ * - `followEntity` — an entity pinned to the camera every frame while you fly, and
+ *   nudged by the operator pad while you're out. Point a Splat Monitor's Camera-POV
+ *   at the same entity and its window re-frames live as you move the camera.
+ * - `operatorPanel` — a 2D camera-operator panel (REC monitor + move pad + ENTER)
+ *   as the way in, instead of clicking the 3D trigger box.
+ *
  * Features demonstrated:
  * - setCameraMode / getCameraMode / setFreeCamPose, freeCamView FOV control
  * - setAppUIVisible(false) for a clean viewport + a camera-viewfinder overlay
@@ -53,6 +60,11 @@
  * - Edit-mode guard (onEditModeChanged) so clicking edits the vibe, not enters
  * - onKeyDown("escape", ...) and a createUI()-based HUD
  */
+const FOV_MIN = 6.87;      // tightest FOV → ~200 mm (35mm-equivalent focal length)
+const FOV_MAX = 100;       // widest FOV
+const ZOOM_SPEED = 16;     // zoom rate at full deflection (° FOV / s) — gentle
+const ZOOM_TAU = 0.2;      // zoom velocity ease-in/out time constant (s), like movement
+
 export class RailCamera extends ArrivalScript {
     static scriptName = "Rail Camera";
 
@@ -78,12 +90,32 @@ export class RailCamera extends ArrivalScript {
     maxUp = 2;
     maxDown = 1;
     maxForwardBack = 4;
+    minHeight = 0.2;           // world-height floor: the camera never dips below this (m)
     cameraOffset = { x: 0, y: 1.5, z: 0 }; // start position (rail origin) offset from the placement
     moveSpeed = 3;
+    rotateSpeed = 45;          // operator pan/tilt slider speed (deg/s at full deflection)
+    vertSpeed = 1;             // operator up/down (pedestal) speed (m/s), separate from moveSpeed
     smoothing = 0.15;          // velocity ease-in/out time constant (s); 0 = instant
     fov = 60;                  // field of view on enter; scroll wheel adjusts it live
     aspectRatio = 2.39;        // letterbox the view to this aspect (0 = off / fill screen)
     exposure = 0;              // starting exposure on the −3..+3 meter (0 = scene default)
+
+    // ── Studio: carry an entity + a 2D operator panel ──
+    // While inside the camera, this entity is pinned to it every frame; the operator
+    // panel's move pad also nudges it while you're OUT. Point a Splat Monitor's
+    // Camera-POV at the same entity and its window re-frames live. Empty = off.
+    followEntity = "";
+    followRotation = true;     // also match the entity's rotation to the camera
+    // Optional scene entity (a placed dolly/tripod) that follows the camera on the FLOOR —
+    // tracks the follow entity's X/Z only, keeping its own placed height, so the camera can
+    // pedestal up/down while the base stays grounded. Empty = off.
+    groundEntity = "";
+    groundYaw = false;         // also yaw the ground entity to the camera's heading
+    groundYOffset = 0;         // height offset (m) added to the ground entity's held height
+    // A 2D camera-operator panel (REC monitor + move pad + ENTER) as the way in,
+    // instead of clicking the 3D trigger box.
+    operatorPanel = false;
+    operatorLabel = "CAM 01";
 
     // ── Optional view limit (off by default — "may add later") ──
     // When on, the cone is centred on the vibe's forward (not your entry heading),
@@ -107,12 +139,23 @@ export class RailCamera extends ArrivalScript {
         maxUp: { title: "Max Up (m)", min: 0, max: 100, step: 0.1 },
         maxDown: { title: "Max Down (m)", min: 0, max: 100, step: 0.1 },
         maxForwardBack: { title: "Max Forward/Back (m)", min: 0, max: 100, step: 0.1 },
+        minHeight: { title: "Min Height (m)", min: 0, max: 50, step: 0.05 },
         cameraOffset: { title: "Camera Offset" },
         moveSpeed: { title: "Move Speed (m/s)", min: 0.1, max: 30, step: 0.1 },
+        rotateSpeed: { title: "Rotate Speed (°/s)", min: 1, max: 180, step: 1 },
+        vertSpeed: { title: "Vertical Speed (m/s)", min: 0.05, max: 20, step: 0.05 },
         smoothing: { title: "Movement Smoothing", min: 0, max: 1, step: 0.01 },
         fov: { title: "Field of View", min: 20, max: 100, step: 1 },
         aspectRatio: { title: "Letterbox Aspect (0 = off)", min: 0, max: 4, step: 0.01 },
         exposure: { title: "Exposure (EV)", min: -3, max: 3, step: 0.1 },
+
+        followEntity: { title: "Follow Entity", editor: "entity" },
+        followRotation: { title: "Follow Rotation" },
+        groundEntity: { title: "Ground Entity (X/Z follow)", editor: "entity" },
+        groundYaw: { title: "Ground Yaw To Camera" },
+        groundYOffset: { title: "Ground Height Offset (m)", min: -20, max: 20, step: 0.05 },
+        operatorPanel: { title: "2D Operator Panel" },
+        operatorLabel: { title: "Operator Label" },
 
         limitYaw: { title: "Limit Yaw" },
         yawRange: { title: "Yaw Range (°)", min: 0, max: 360, step: 1 },
@@ -138,18 +181,46 @@ export class RailCamera extends ArrivalScript {
     _evEl = null;          // exposure meter EV value element
     _uiHidden = false;     // whether we hid the app's built-in UI
     _padStrafe = 0;        // on-screen D-pad: -1 (A) .. +1 (D)
-    _padVert = 0;          // on-screen D-pad: -1 (Q) .. +1 (E)
+    _padVert = 0;          // on-screen buttons: -1 (Q) .. +1 (E)
+    _hudYaw = 0;           // in-camera pan slider (-1..1) → fly-cam yaw rate
+    _hudPitch = 0;         // in-camera tilt slider (-1..1) → fly-cam pitch rate
+    _padForward = 0;       // on-screen joystick forward/back: -1 (S) .. +1 (W)
     _zoomDir = 0;          // zoom rocker: +1 wide (FOV up) / -1 tele (FOV down)
+    _zoomVel = 0;          // eased zoom velocity (° FOV / s) for a smooth ramp
     _expoDir = 0;          // exposure −/+ buttons: -1 darker / +1 brighter
     _expoEv = 0;           // current exposure on the −3..+3 meter
     _baseBrightness = 1;   // scene brightness captured on enter (restored on exit)
     _expoApplied = false;  // whether we have a brightness override in effect
     _hdrNeutral = false;   // HDR Neutral tone-map toggle (the button right of the EV +)
+    _hudLocked = false;    // input-lock state while touching the viewfinder HUD
+    _hudUnlock = null;
 
     _onDown = null;
     _onMove = null;
     _onWheel = null;
     _escUnsub = null;
+
+    // Studio follow + 2D operator panel
+    _opUI = null;
+    _opHeld = { fwd: 0, side: 0, vert: 0 };
+    _opVel = new pc.Vec3();    // eased operator-nudge velocity (m/s) for a smooth dolly/pedestal
+    _opPan = 0;                // pan slider rate (-1..1) → yaw the camera
+    _opTilt = 0;               // tilt slider rate (-1..1) → pitch the camera
+    _opFovEl = null;           // operator-panel focal-length (mm) readout element
+    _zoomMonitors = null;      // cached splat-monitors linked to the follow entity (for zoom)
+    _groundEnt = null;         // resolved ground-follow entity
+    _groundEntId = "";
+    _groundHomeY = null;       // its placed height, held constant while it tracks X/Z
+    _recording = false;        // mirror of the Feed Recorder's state (via the event bus)
+    _recSubs = [];             // [name, fn] recorder-event subscriptions, for cleanup
+    _opLocked = false;
+    _opUnlock = null;
+    _followEnt = null;
+    _followEntId = "";
+    _followHome = null;    // followEntity's home pose (pos+rot), captured on first resolve
+    _followMeshHidden = null;  // render/model comps we hid while flying (restored on exit)
+    _followRot = new pc.Quat();                            // scratch for the synced rotation
+    _flipY = new pc.Quat().setFromEulerAngles(0, 180, 0);  // model lens = local +Z → 180° yaw
 
     // rail frame, captured on enter
     _origin = new pc.Vec3();
@@ -170,19 +241,23 @@ export class RailCamera extends ArrivalScript {
     _mInv = new pc.Mat4();
 
     initialize() {
+        this._currentFov = pc.math.clamp(this.fov, FOV_MIN, FOV_MAX);   // seed the shared zoom
         this._buildBox();
         this._bindPointer();
         this._escUnsub = this.onKeyDown("escape", () => { if (this._active) this._exit(); });
+        // Mirror the Feed Recorder's state so the controls' REC button reflects it.
+        const onRec = (name, fn) => { try { ArrivalSpace.on(name, fn); this._recSubs.push([name, fn]); } catch (_) { /* ignore */ } };
+        onRec("recorder:started", () => { this._recording = true; this._updateRecButtons(); });
+        onRec("recorder:stopped", () => { this._recording = false; this._updateRecButtons(); });
+        if (this.operatorPanel) this._setOperatorVisible(true);
     }
 
     update(dt) {
+        this._updateGroundMesh();   // dolly/tripod tracks the camera's X/Z on the floor
         if (this._active) {
             // Zoom rocker ramps FOV while held; keep the readout in sync (the scroll
             // wheel changes it too).
-            if (this._zoomDir !== 0) {
-                this._currentFov = pc.math.clamp(this._currentFov + this._zoomDir * 35 * (dt || 0), 20, 100);
-                this._getFreeCamView()?.setFOV?.(this._currentFov);
-            }
+            if (this._stepZoom(dt)) this._getFreeCamView()?.setFOV?.(this._currentFov);
             if (this._fovEl) this._fovEl.textContent = this._focalFromFov(this._currentFov);
             if (this._expoDir !== 0) {
                 this._expoEv = pc.math.clamp(this._expoEv + this._expoDir * 2 * (dt || 0), -3, 3);
@@ -190,6 +265,16 @@ export class RailCamera extends ArrivalScript {
             }
             return;
         }
+        // Operator zoom rocker: ramp FOV while held (out of camera), drive any linked
+        // monitor's feed live, and keep the mm readout in sync.
+        if (this.operatorPanel) {
+            this._stepZoom(dt);
+            this._setMonitorZoom(this._currentFov);   // keep the linked monitor synced to the readout
+            if (this._opFovEl) this._opFovEl.textContent = this._focalFromFov(this._currentFov);
+        }
+        // Operator-panel move pad: slide the follow entity while OUT of the camera,
+        // so the linked screens re-frame without entering.
+        this._applyNudge(dt || 0);
         // Re-assert the hover cursor each frame: the client's own hover system
         // (click-to-highlight) rewrites document.body.style.cursor on pointer-move,
         // and our trigger box has no collision for it to detect, so without this it
@@ -218,12 +303,23 @@ export class RailCamera extends ArrivalScript {
             this._buildBox();
             return;
         }
+        if (name === "operatorPanel") {
+            if (this.operatorPanel) this._setOperatorVisible(true);
+            else this._destroyOperator();
+            return;
+        }
+        if (name === "operatorLabel") {
+            if (this._opUI) { this._buildOperator(); this._setOperatorVisible(!this._active); }
+            return;
+        }
+        if (name === "followEntity") { this._followEnt = null; this._followEntId = ""; this._zoomMonitors = null; return; }
+        if (name === "groundEntity") { this._groundEnt = null; this._groundEntId = ""; this._groundHomeY = null; return; }
         if (name === "cameraOffset" && this._active) {
             this._recomputeOrigin();
             return;
         }
         if (name === "fov" && this._active) {
-            this._currentFov = pc.math.clamp(this.fov, 20, 100);
+            this._currentFov = pc.math.clamp(this.fov, FOV_MIN, FOV_MAX);
             this._getFreeCamView()?.setFOV?.(this._currentFov);
             return;
         }
@@ -241,6 +337,7 @@ export class RailCamera extends ArrivalScript {
         this._editingThisVibe = !!isEditing;
         // If the editor opens on this vibe while we're driving the camera, bail out.
         if (isEditing && this._active) this._exit();
+        this._setOperatorVisible(!isEditing);
     }
 
     // ── Enter / exit ─────────────────────────────────────────────────────────
@@ -261,12 +358,14 @@ export class RailCamera extends ArrivalScript {
         ArrivalSpace.setFreeCamPose(this._origin, lookAt);
 
         const fcv = this._getFreeCamView();
-        this._currentFov = pc.math.clamp(this.fov, 20, 100);
+        this._currentFov = pc.math.clamp(this._currentFov, FOV_MIN, FOV_MAX);   // carry the operator zoom in
         fcv?.setFOV?.(this._currentFov);
 
         this._active = true;
+        this._setFollowMeshHidden(true);   // looking through the camera — hide its body
         this._setHover(false);
         if (this._boxEntity) this._boxEntity.enabled = false; // don't tint the view from inside
+        this._setOperatorVisible(false);   // hand the screen over to the viewfinder HUD
         this._showHud();
     }
 
@@ -281,8 +380,10 @@ export class RailCamera extends ArrivalScript {
     // Shared cleanup for explicit exit and "kicked out of free cam" cases.
     _deactivate() {
         this._active = false;
+        this._setFollowMeshHidden(false);  // exiting — show the camera model again
         if (this._boxEntity) this._boxEntity.enabled = !!this.showBox;
         this._hideHud();
+        this._setOperatorVisible(true);    // bring the operator panel back
     }
 
     // Capture the rail axes from the ENTITY's local orientation (call before
@@ -315,6 +416,10 @@ export class RailCamera extends ArrivalScript {
     }
 
     _recomputeOrigin() {
+        // With a follow entity, enter/continue from wherever the camera currently is,
+        // so entering never snaps it back. Only the reset button returns it home.
+        const fe = this._resolveFollow();
+        if (fe) { this._origin.copy(fe.getPosition()); return; }
         const off = this.cameraOffset || {};
         this._origin.copy(this.entity.getPosition())
             .add(this._t1.copy(this._axR).mulScalar(off.x || 0))
@@ -331,7 +436,7 @@ export class RailCamera extends ArrivalScript {
         // Read the raw movement *intent* (independent of where the camera looks).
         // fcv.*Value are set by the WASD / arrow / E-Q key events the free cam uses;
         // the on-screen D-pad adds its A/D (strafe) and E/Q (vertical) intent on top.
-        const fwd = fcv.forwardValue || 0;   // W = +1, S = -1
+        const fwd = pc.math.clamp((fcv.forwardValue || 0) + this._padForward, -1, 1);   // W/S + joystick
         const strafe = pc.math.clamp((fcv.sidewardValue || 0) + this._padStrafe, -1, 1); // D=+1, A=-1
         const vert = pc.math.clamp((fcv.upwardValue || 0) + this._padVert, -1, 1);       // E=+1, Q=-1
 
@@ -365,6 +470,10 @@ export class RailCamera extends ArrivalScript {
         let cF = this.allowForwardBack ? this._railOffset.dot(this._axF) : 0;
         cR = pc.math.clamp(cR, -Math.max(0, this.maxLeftRight), Math.max(0, this.maxLeftRight));
         cU = pc.math.clamp(cU, -Math.max(0, this.maxDown), Math.max(0, this.maxUp)); // +up / -down
+        // world-height floor: don't let the vertical rail offset dip the eye below it
+        // (rail up ≈ world +Y; the hard clamp on `target` below covers any rail tilt).
+        const upY = this._axU.y;
+        if (upY > 1e-3) cU = Math.max(cU, (this.minHeight - this._origin.y) / upY);
         cF = pc.math.clamp(cF, -Math.max(0, this.maxForwardBack), Math.max(0, this.maxForwardBack));
         this._railOffset.set(0, 0, 0)
             .add(this._tA.copy(this._axR).mulScalar(cR))
@@ -372,8 +481,19 @@ export class RailCamera extends ArrivalScript {
             .add(this._tA.copy(this._axF).mulScalar(cF));
 
         const target = this._t4.copy(this._origin).add(this._railOffset);
+        if (target.y < this.minHeight) target.y = this.minHeight;   // hard world-height floor
         fcv.setInitPosition(target);
+        this._moveFollow(target);   // studio camera model rides along → linked screens re-frame
 
+        // Pan/tilt sliders → rotate the fly cam (rate); the limits below still clamp it.
+        if (this._hudYaw && typeof fcv.yaw === "number") {
+            const dy = -this._hudYaw * Math.max(1, this.rotateSpeed) * dt;   // slider right → pan right
+            fcv.yaw += dy; if (typeof fcv.yawTarget === "number") fcv.yawTarget += dy;
+        }
+        if (this._hudPitch && typeof fcv.pitch === "number") {
+            const dp = this._hudPitch * Math.max(1, this.rotateSpeed) * dt;   // slider up → tilt up
+            fcv.pitch += dp; if (typeof fcv.pitchTarget === "number") fcv.pitchTarget += dp;
+        }
         if (this.limitYaw && typeof fcv.yaw === "number") {
             const half = Math.max(0, this.yawRange) / 2;
             fcv.yawTarget = this._clampYaw(fcv.yawTarget ?? fcv.yaw, this._centerYaw, half);
@@ -400,6 +520,411 @@ export class RailCamera extends ArrivalScript {
             this._freeCamView = entity?.script?.freeCamView || null;
         }
         return this._freeCamView;
+    }
+
+    // ── Studio follow + 2D operator panel ────────────────────────────────────
+
+    // The entity dragged along with the camera (and nudged by the operator pad).
+    // Point a Splat Monitor's Camera-POV at the same entity so its window re-frames.
+    _resolveFollow() {
+        const id = (this.followEntity || "").trim();
+        if (!id) return null;
+        if (this._followEnt && this._followEntId === id) return this._followEnt;
+        let e = null;
+        const gs = this.app.root.findByName("GateServer")?.script?.gateServer;
+        e = gs?.getEntity?.(id) || null;
+        if (!e) { try { e = this.app.root.findByGuid?.(id) || null; } catch (_) { /* ignore */ } }
+        this._followEnt = e; this._followEntId = id;
+        if (e && !this._followHome) this._followHome = { p: e.getPosition().clone(), r: e.getRotation().clone() };
+        return e;
+    }
+
+    // Fly mode: pin the follow entity to the live camera each frame.
+    _moveFollow(target) {
+        const fe = this._resolveFollow();
+        if (!fe) return;
+        fe.setPosition(target);
+        // windowMode screens re-frame from the eye POSITION, not rotation — but we still spin
+        // the model to match the view so it KEEPS that facing after you exit. The model's lens
+        // faces its local +Z (opposite entity.forward), so add a 180° yaw to aim the lens along
+        // the view instead of backwards.
+        if (this.followRotation) {
+            const cam = ArrivalSpace.getCamera?.();
+            if (cam) { this._followRot.copy(cam.getRotation()).mul(this._flipY); fe.setRotation(this._followRot); }
+        }
+    }
+
+    // Return the follow entity to the pose it had when the plugin loaded (its placed
+    // spot), so the linked screens re-frame to the original shot.
+    _resetFollow() {
+        const fe = this._resolveFollow();
+        if (!fe || !this._followHome) return;
+        fe.setPosition(this._followHome.p);
+        fe.setRotation(this._followHome.r);
+    }
+
+    // Hide/show the camera model's visible mesh while flying (you're looking THROUGH it,
+    // so its body shouldn't be in frame). Toggle only render/model components — never the
+    // entity's enabled flag or transform — so the linked screens keep reading its eye.
+    _setFollowMeshHidden(hide) {
+        const fe = this._resolveFollow();
+        if (!fe) return;
+        if (hide) {
+            const list = [];
+            const walk = (e) => {
+                if (e.render && e.render.enabled) { e.render.enabled = false; list.push(e.render); }
+                if (e.model && e.model.enabled) { e.model.enabled = false; list.push(e.model); }
+                for (const c of (e.children || [])) walk(c);
+            };
+            walk(fe);
+            this._followMeshHidden = list;
+        } else {
+            for (const c of (this._followMeshHidden || [])) { try { c.enabled = true; } catch (_) { /* ignore */ } }
+            this._followMeshHidden = null;
+        }
+    }
+
+    // Operator-panel nudge (out of the camera). Relative to the CAMERA being operated,
+    // not the player's view. The camera model's lens faces its local +Z (= -entity.forward),
+    // so the operator's "forward" is toward the lens/screen: dolly along -forward, truck
+    // along -right, pedestal on world Y. Consistent wherever the operator stands or looks.
+    _applyNudge(dt) {
+        if (this._active || !this.operatorPanel) return;
+        const fe = this._resolveFollow();
+        if (!fe) return;
+        // Pan/tilt sliders → rotate the camera: yaw around world up, pitch around its own right.
+        if (this._opPan || this._opTilt) {
+            const rot = Math.max(1, this.rotateSpeed) * dt;
+            if (this._opPan) fe.rotate(0, -this._opPan * rot, 0);
+            if (this._opTilt) fe.rotateLocal(-this._opTilt * rot, 0, 0);
+        }
+        // Target velocity from the pad in the camera's own frame (forward = lens dir), with
+        // vert on world Y — then EASED toward, so the dolly/pedestal ramps smoothly (same
+        // `smoothing` feel as the fly cam) instead of snapping on/off.
+        const h = this._opHeld;
+        const f = this._t1.copy(fe.forward).mulScalar(-1), r = this._t2.copy(fe.right).mulScalar(-1);
+        f.y = 0; r.y = 0;
+        if (f.lengthSq() > 1e-6) f.normalize();
+        if (r.lengthSq() > 1e-6) r.normalize();
+        const target = this._t3.set(0, 0, 0)
+            .add(this._tA.copy(f).mulScalar(h.fwd))
+            .add(this._tA.copy(r).mulScalar(h.side));
+        target.mulScalar(Math.max(0.1, this.moveSpeed));   // horizontal dolly/truck
+        target.y += h.vert * Math.max(0, this.vertSpeed);  // vertical pedestal at its own speed
+        const tau = Math.max(0, this.smoothing);
+        if (tau < 1e-4) this._opVel.copy(target);
+        else this._opVel.lerp(this._opVel, target, 1 - Math.exp(-(dt || 0) / tau));
+        if (this._opVel.lengthSq() < 1e-8) { this._opVel.set(0, 0, 0); return; }
+        const mv = this._t4.copy(this._opVel).mulScalar(dt || 0);
+        const p = fe.getPosition();
+        fe.setPosition(p.x + mv.x, Math.max(this.minHeight, p.y + mv.y), p.z + mv.z);
+    }
+
+    _buildOperator() {
+        this._destroyOperator();
+        this._opUI = this.createUI("div", {
+            interactive: false,   // container passes through; only the panel is clickable
+            innerHTML: this._operatorHtml(),
+            style: {
+                position: "fixed", left: "0", bottom: "0", width: "100%",
+                display: "flex", justifyContent: "center", alignItems: "flex-end",
+                pointerEvents: "none", zIndex: "999",
+                fontFamily: "'Courier New', ui-monospace, monospace",
+            },
+        });
+
+        const hold = (b, on) => {
+            b.addEventListener("pointerdown", (e) => { e.preventDefault(); e.stopPropagation(); on(true); });
+            b.addEventListener("pointerup", (e) => { e.stopPropagation(); on(false); });
+            b.addEventListener("pointerleave", () => on(false));
+            b.addEventListener("pointercancel", () => on(false));
+        };
+        const set = (k, v, on) => { this._opHeld[k] = on ? v : 0; };
+        this._opUI.querySelectorAll("[data-move]").forEach((b) => {
+            const m = b.dataset.move;
+            hold(b, (on) => {
+                if (m === "fwd") set("fwd", 1, on);
+                else if (m === "back") set("fwd", -1, on);
+                else if (m === "left") set("side", -1, on);
+                else if (m === "right") set("side", 1, on);
+                else if (m === "up") set("vert", 1, on);
+                else if (m === "down") set("vert", -1, on);
+            });
+        });
+        this._opUI.querySelectorAll("[data-zoom]").forEach((b) => {
+            const dir = b.dataset.zoom === "wide" ? 1 : -1;   // wide → FOV up, tele → FOV down
+            hold(b, (on) => { this._zoomDir = on ? dir : 0; });
+        });
+        this._wireJoystick(
+            this._opUI.querySelector(".rcop-stick"),
+            this._opUI.querySelector(".rcop-knob"),
+            (x, y) => { this._opHeld.side = x; this._opHeld.fwd = y; }
+        );
+        this._wireSlider(this._opUI.querySelector(".rcop-pan"), this._opUI.querySelector(".rcop-pan-knob"), "x", (v) => { this._opPan = v; });
+        this._wireSlider(this._opUI.querySelector(".rcop-tilt"), this._opUI.querySelector(".rcop-tilt-knob"), "y", (v) => { this._opTilt = v; });
+        this._opFovEl = this._opUI.querySelector(".rcop-mm b");
+        this._zoomMonitors = null;
+        const resetBtn = this._opUI.querySelector("[data-reset]");
+        if (resetBtn) resetBtn.addEventListener("click", (e) => { e.stopPropagation(); this._resetFollow(); });
+        const recBtn = this._opUI.querySelector("[data-rec]");
+        if (recBtn) recBtn.addEventListener("click", (e) => { e.stopPropagation(); this._toggleRecording(); });
+        this._updateRecButtons();
+        const enterBtn = this._opUI.querySelector("[data-enter]");
+        if (enterBtn) enterBtn.addEventListener("click", (e) => { e.stopPropagation(); this._enter(); });
+
+        // Input lock: block the world's click-to-walk / look while the pointer is over
+        // the panel. Lock on ENTER (fires before pointerdown, so the flag is set before
+        // the world's click handler runs) and unlock when the pointer leaves.
+        const rcop = this._opUI.querySelector(".rcop");
+        if (rcop) {
+            rcop.addEventListener("pointerenter", () => {
+                if (!this._opLocked) { this._opLocked = true; try { this.lockInput(); } catch (_) { /* ignore */ } }
+            });
+            const unlock = () => { if (this._opLocked) { this._opLocked = false; try { this.unlockInput(); } catch (_) { /* ignore */ } } };
+            rcop.addEventListener("pointerleave", unlock);
+            rcop.addEventListener("pointercancel", unlock);
+        }
+    }
+
+    // Analog drag joystick, reused by the operator panel and the viewfinder. Push the
+    // knob → onMove(x, y) with x/y in -1..1 (x = right+, y = up/forward+), proportional
+    // to how far. Pointer-captured (+ stopPropagation) so the drag never leaks to the
+    // world look/move; snaps back to centre and onMove(0,0) on release.
+    _wireJoystick(stick, knob, onMove) {
+        if (!stick || !knob) return;
+        const maxT = 30;   // knob travel radius (px)
+        let active = false, cx = 0, cy = 0;
+        const reset = () => {
+            active = false;
+            knob.style.transform = "translate(-50%, -50%)";
+            onMove(0, 0);
+        };
+        const move = (px, py) => {
+            let dx = px - cx, dy = py - cy;
+            const len = Math.hypot(dx, dy);
+            if (len > maxT) { dx = dx / len * maxT; dy = dy / len * maxT; }
+            knob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+            onMove(dx / maxT, -dy / maxT);   // x = right+, y = up/forward+
+        };
+        stick.addEventListener("pointerdown", (e) => {
+            e.preventDefault(); e.stopPropagation();
+            const r = stick.getBoundingClientRect();
+            cx = r.left + r.width / 2; cy = r.top + r.height / 2;
+            active = true;
+            try { stick.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ }
+            move(e.clientX, e.clientY);
+        });
+        stick.addEventListener("pointermove", (e) => { if (active) { e.preventDefault(); e.stopPropagation(); move(e.clientX, e.clientY); } });
+        stick.addEventListener("pointerup", (e) => { e.stopPropagation(); reset(); });
+        stick.addEventListener("pointercancel", () => reset());
+    }
+
+    // Single-axis analog slider (a knob dragged from centre). axis "x" horizontal, "y"
+    // vertical. onMove(v) with v in -1..1 (x = right+, y = up+); snaps back to centre and
+    // onMove(0) on release. Pointer-captured + stopPropagation like the joystick.
+    _wireSlider(track, knob, axis, onMove) {
+        if (!track || !knob) return;
+        let active = false;
+        const reset = () => { active = false; knob.style.transform = "translate(-50%, -50%)"; onMove(0); };
+        const move = (px, py) => {
+            const r = track.getBoundingClientRect();
+            const half = Math.max(10, (axis === "x" ? r.width : r.height) / 2 - 12);
+            const d = axis === "x" ? px - (r.left + r.width / 2) : py - (r.top + r.height / 2);
+            const v = Math.max(-1, Math.min(1, d / half));
+            knob.style.transform = axis === "x"
+                ? `translate(calc(-50% + ${v * half}px), -50%)`
+                : `translate(-50%, calc(-50% + ${v * half}px))`;
+            onMove(axis === "x" ? v : -v);   // screen-down is +py → invert so up = +
+        };
+        track.addEventListener("pointerdown", (e) => {
+            e.preventDefault(); e.stopPropagation();
+            active = true;
+            try { track.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ }
+            move(e.clientX, e.clientY);
+        });
+        track.addEventListener("pointermove", (e) => { if (active) { e.preventDefault(); e.stopPropagation(); move(e.clientX, e.clientY); } });
+        track.addEventListener("pointerup", (e) => { e.stopPropagation(); reset(); });
+        track.addEventListener("pointercancel", () => reset());
+    }
+
+    // Push a focal length (via FOV) to any Splat Monitor whose Camera-POV is our follow
+    // entity, so the operator's zoom re-frames the linked monitor feed live. Windowed
+    // ("portal") monitors ignore FOV, so we only touch monitor-mode ones.
+    _setMonitorZoom(fov) {
+        if (!this._zoomMonitors || !this._zoomMonitors.length) this._zoomMonitors = this._findZoomMonitors();
+        for (const m of this._zoomMonitors) { try { if (m) m.fov = fov; } catch (_) { /* ignore */ } }
+    }
+
+    _findZoomMonitors() {
+        const id = (this.followEntity || "").trim();
+        const root = this.app?.root;
+        if (!id || !root) return [];
+        const out = [], stack = [root];
+        while (stack.length) {
+            const e = stack.pop();
+            for (const s of (e?.script?.scripts || [])) {
+                if (s && s !== this && s.cameraEntity === id && !s.windowMode && typeof s.fov === "number") out.push(s);
+            }
+            for (const c of (e?.children || [])) stack.push(c);
+        }
+        return out;
+    }
+
+    _resolveGroundEntity() {
+        const id = (this.groundEntity || "").trim();
+        if (!id) return null;
+        if (this._groundEnt && this._groundEntId === id) return this._groundEnt;
+        let e = null;
+        const gs = this.app.root.findByName("GateServer")?.script?.gateServer;
+        e = gs?.getEntity?.(id) || null;
+        if (!e) { try { e = this.app.root.findByGuid?.(id) || null; } catch (_) { /* ignore */ } }
+        this._groundEnt = e; this._groundEntId = id;
+        if (e && this._groundHomeY == null) this._groundHomeY = e.getPosition().y;   // hold its placed height
+        return e;
+    }
+
+    // Slide the ground entity to the follow entity's X/Z while keeping its placed height,
+    // so a dolly/tripod stays on the floor as the camera pedestals. Optionally yaws to face.
+    _updateGroundMesh() {
+        const g = this._resolveGroundEntity();
+        if (!g) return;
+        const fe = this._resolveFollow();
+        if (!fe) return;
+        const p = fe.getPosition();
+        const y = ((this._groundHomeY != null) ? this._groundHomeY : p.y) + this.groundYOffset;
+        if (this.groundYaw) {
+            const f = this._t1.copy(fe.forward).mulScalar(-1); f.y = 0;   // lens direction, flattened
+            if (f.lengthSq() > 1e-6) g.setEulerAngles(0, Math.atan2(f.x, f.z) * pc.math.RAD_TO_DEG, 0);
+        }
+        g.setPosition(p.x, y, p.z);
+    }
+
+    // Toggle the Feed Recorder over the shared event bus; it fires back
+    // recorder:started/stopped, which flip _recording + refresh the button.
+    _toggleRecording() {
+        try { ArrivalSpace.fire("recorder:toggle"); } catch (_) { /* ignore */ }
+    }
+
+    _updateRecButtons() {
+        const set = (btn) => {
+            if (!btn) return;
+            btn.classList.toggle("is-rec", this._recording);
+            btn.textContent = this._recording ? "■ STOP" : "● REC";
+        };
+        if (this._opUI) set(this._opUI.querySelector("[data-rec]"));
+        if (this._hud) set(this._hud.querySelector("[data-rec]"));
+    }
+
+    _destroyOperator() {
+        this._opHeld.fwd = this._opHeld.side = this._opHeld.vert = 0;
+        this._opPan = this._opTilt = 0;
+        this._zoomDir = this._zoomVel = 0;
+        this._opVel.set(0, 0, 0);
+        if (this._opLocked) { this._opLocked = false; try { this.unlockInput(); } catch (_) { /* ignore */ } }
+        if (this._opUI) { this._opUI.remove(); this._opUI = null; }
+    }
+
+    // Show only when the panel is enabled, we're not inside the camera, and not editing.
+    _setOperatorVisible(v) {
+        if (!this.operatorPanel) { this._destroyOperator(); return; }
+        if (!this._opUI) this._buildOperator();
+        const show = v && !this._active && !this._isEditing();
+        if (this._opUI) this._opUI.style.display = show ? "flex" : "none";
+        if (!show) { this._opHeld.fwd = this._opHeld.side = this._opHeld.vert = 0; this._opPan = this._opTilt = 0; this._zoomDir = this._zoomVel = 0; this._opVel.set(0, 0, 0); }
+    }
+
+    _operatorHtml() {
+        return `
+        <style>
+            .rcop { pointer-events:auto; position:relative; margin-bottom:22px;
+                display:flex; flex-direction:column; align-items:center; gap:8px;
+                width:fit-content; max-width:96vw;
+                background:#0d0a16; border:1px solid rgba(255,255,255,0.10);
+                border-radius:12px; padding:9px 14px 12px; color:#f3f1fa;
+                box-shadow:0 16px 50px rgba(0,0,0,0.55);
+                font-family:"Helvetica Neue", Helvetica, Arial, system-ui, sans-serif;
+                user-select:none; -webkit-user-select:none; }
+            .rcop-cap { font-size:10px; letter-spacing:2px; text-transform:uppercase;
+                color:rgba(243,241,250,0.5); }
+            .rcop-controls { display:flex; align-items:center; gap:12px; }
+            .rcop-btn { pointer-events:auto; cursor:pointer; touch-action:none;
+                -webkit-tap-highlight-color:transparent; color:#f3f1fa; font:inherit; font-weight:600;
+                background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.12);
+                transition:background .15s ease, border-color .15s ease;
+                display:flex; align-items:center; justify-content:center; }
+            .rcop-btn:hover { background:rgba(255,255,255,0.09); border-color:rgba(167,139,255,0.5); }
+            .rcop-btn:active { background:#7a5af8; border-color:#7a5af8; color:#fff; }
+            .rcop-stick { width:100px; height:100px; border-radius:50%; position:relative; flex:none;
+                background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.12);
+                touch-action:none; cursor:grab; }
+            .rcop-stick:active { cursor:grabbing; }
+            .rcop-knob { position:absolute; left:50%; top:50%; width:44px; height:44px; border-radius:50%;
+                transform:translate(-50%,-50%); background:#7a5af8; border:1px solid #8b6dff;
+                box-shadow:0 2px 12px rgba(122,90,248,0.55); pointer-events:none;
+                display:flex; align-items:center; justify-content:center;
+                color:rgba(255,255,255,0.55); font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; }
+            .rcop-stickwrap { display:flex; flex-direction:column; align-items:flex-end; gap:6px; flex:none; }
+            .rcop-stickrow { display:flex; align-items:center; gap:6px; }
+            .rcop-pan { width:100px; height:18px; border-radius:9px; position:relative; flex:none;
+                background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.12); touch-action:none; cursor:grab; }
+            .rcop-tilt { width:18px; height:100px; border-radius:9px; position:relative; flex:none;
+                background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.12); touch-action:none; cursor:grab; }
+            .rcop-pan-knob, .rcop-tilt-knob { position:absolute; left:50%; top:50%; width:24px; height:24px;
+                border-radius:50%; transform:translate(-50%,-50%); background:#7a5af8; border:1px solid #8b6dff;
+                box-shadow:0 2px 10px rgba(122,90,248,0.5); pointer-events:none;
+                display:flex; align-items:center; justify-content:center;
+                color:rgba(255,255,255,0.55); font-size:6px; font-weight:700; text-transform:uppercase; letter-spacing:0.2px; }
+            .rcop-vert { display:flex; flex-direction:column; gap:5px; flex:none; }
+            .rcop-vert .rcop-btn { width:48px; height:30px; border-radius:7px; font-size:15px; }
+            .rcop-vert small { font-size:7px; opacity:0.55; margin-left:2px; letter-spacing:1px; }
+            .rcop-zoom { display:flex; flex-direction:column; align-items:center; gap:5px; flex:none; }
+            .rcop-zoom .rcop-btn { width:44px; border-radius:7px; font-size:14px; font-weight:700;
+                flex-direction:column; gap:0; line-height:1; padding:4px 0; }
+            .rcop-zoom .rcop-btn small { font-size:6px; letter-spacing:1px; opacity:0.55; font-weight:normal; }
+            .rcop-mm { color:#f3f1fa; line-height:1.05; text-align:center; }
+            .rcop-mm b { font-size:14px; font-weight:700; }
+            .rcop-mm small { font-size:8px; opacity:0.6; letter-spacing:1px; margin-left:1px; }
+            .rcop-reset { position:absolute; top:8px; right:10px; padding:3px 10px; border-radius:6px;
+                font-size:10px; letter-spacing:1px; text-transform:uppercase; }
+            .rcop-rec { position:absolute; top:8px; left:10px; padding:3px 10px; border-radius:6px;
+                font-size:10px; letter-spacing:1px; text-transform:uppercase;
+                color:#ff8585; border-color:rgba(229,57,53,0.45); }
+            .rcop-rec.is-rec { background:#c81e1e; border-color:#c81e1e; color:#fff; }
+            .rcop-enter { padding:0 20px; height:52px; border-radius:9px; font-size:14px; letter-spacing:2px;
+                color:#fff; background:#7a5af8; border:1px solid #7a5af8;
+                box-shadow:0 3px 16px rgba(122,90,248,0.5); }
+            .rcop-enter:hover { background:#8b6dff; border-color:#8b6dff; }
+            /* Mobile: stack the content row and hug the right so the bottom-left stays
+               free for the player's movement stick. */
+            @media (max-width: 600px) {
+                .rcop { margin-left: auto; margin-right: 72px; }
+                .rcop-controls { flex-direction: column; gap: 9px; }
+            }
+        </style>
+        <div class="rcop">
+            <div class="rcop-cap">Camera Control</div>
+            <button class="rcop-btn rcop-reset" data-reset aria-label="Reset camera">reset</button>
+            <button class="rcop-btn rcop-rec" data-rec aria-label="Record feed">● REC</button>
+            <div class="rcop-controls">
+                <div class="rcop-stickwrap">
+                    <div class="rcop-pan" aria-label="Pan angle"><div class="rcop-pan-knob">yaw</div></div>
+                    <div class="rcop-stickrow">
+                        <div class="rcop-tilt" aria-label="Tilt angle"><div class="rcop-tilt-knob">pitch</div></div>
+                        <div class="rcop-stick" aria-label="Move joystick"><div class="rcop-knob">move</div></div>
+                    </div>
+                </div>
+                <div class="rcop-vert">
+                    <button class="rcop-btn" data-move="up" aria-label="Up">＋<small>UP</small></button>
+                    <button class="rcop-btn" data-move="down" aria-label="Down">－<small>DN</small></button>
+                </div>
+                <div class="rcop-zoom">
+                    <button class="rcop-btn" data-zoom="tele" aria-label="Zoom tele">T<small>TELE</small></button>
+                    <div class="rcop-mm"><b>${this._focalFromFov(this._currentFov)}</b><small>mm</small></div>
+                    <button class="rcop-btn" data-zoom="wide" aria-label="Zoom wide">W<small>WIDE</small></button>
+                </div>
+                <button class="rcop-btn rcop-enter" data-enter aria-label="Enter camera">ENTER</button>
+            </div>
+        </div>`;
     }
 
     // ── Trigger box ──────────────────────────────────────────────────────────
@@ -469,7 +994,7 @@ export class RailCamera extends ArrivalScript {
             if (!this._active) return;
             e.preventDefault?.();
             e.stopPropagation?.();
-            this._currentFov = pc.math.clamp(this._currentFov + e.deltaY * 0.05, 20, 100);
+            this._currentFov = pc.math.clamp(this._currentFov + e.deltaY * 0.05, FOV_MIN, FOV_MAX);
             this._getFreeCamView()?.setFOV?.(this._currentFov);
         };
         window.addEventListener("pointerdown", this._onDown, true);
@@ -598,14 +1123,21 @@ export class RailCamera extends ArrivalScript {
             b.addEventListener("pointercancel", () => on(false));
         };
 
-        // D-pad → A/D (strafe) and E/Q (vertical) intent, added on top of the keys.
+        // Up/Down buttons → E/Q (vertical) intent, added on top of the keys.
         const setDir = (dir, on) => {
-            if (dir === "left") this._padStrafe = on ? -1 : 0;
-            else if (dir === "right") this._padStrafe = on ? 1 : 0;
-            else if (dir === "up") this._padVert = on ? 1 : 0;
+            if (dir === "up") this._padVert = on ? 1 : 0;
             else if (dir === "down") this._padVert = on ? -1 : 0;
         };
         this._hud.querySelectorAll("[data-dir]").forEach((b) => bindHold(b, (on) => setDir(b.dataset.dir, on)));
+        // Joystick → strafe (A/D) + forward/back (W/S) intent.
+        this._wireJoystick(
+            this._hud.querySelector(".rcvf-stick"),
+            this._hud.querySelector(".rcvf-knob"),
+            (x, y) => { this._padStrafe = x; this._padForward = y; }
+        );
+        // Pan / tilt sliders → fly-cam yaw / pitch (same layout as the operator panel).
+        this._wireSlider(this._hud.querySelector(".rcvf-pan"), this._hud.querySelector(".rcvf-pan-knob"), "x", (v) => { this._hudYaw = v; });
+        this._wireSlider(this._hud.querySelector(".rcvf-tilt"), this._hud.querySelector(".rcvf-tilt-knob"), "y", (v) => { this._hudPitch = v; });
 
         // Zoom rocker → ramps FOV in update() (W = wider / FOV up, T = tele / FOV down).
         this._hud.querySelectorAll("[data-zoom]").forEach((b) => {
@@ -638,14 +1170,39 @@ export class RailCamera extends ArrivalScript {
             btn.addEventListener("mouseenter", () => this.lockInput());
             btn.addEventListener("mouseleave", () => this.unlockInput());
         }
+        const recBtn = this._hud.querySelector("[data-rec]");
+        if (recBtn) {
+            recBtn.addEventListener("click", () => this._toggleRecording());
+            recBtn.addEventListener("mouseenter", () => this.lockInput());
+            recBtn.addEventListener("mouseleave", () => this.unlockInput());
+        }
+        this._updateRecButtons();
 
         // Immersive viewport: hide the app's built-in UI while in the camera.
         ArrivalSpace.setAppUIVisible?.(false);
         this._uiHidden = true;
+
+        // Input lock: touching any HUD control blocks player look/move via the app's
+        // input-lock mechanic. Capture phase beats the controls' stopPropagation;
+        // unlock on release anywhere.
+        this._hud.addEventListener("pointerdown", () => {
+            if (!this._hudLocked) { this._hudLocked = true; try { this.lockInput(); } catch (_) { /* ignore */ } }
+        }, true);
+        this._hudUnlock = () => {
+            if (this._hudLocked) { this._hudLocked = false; try { this.unlockInput(); } catch (_) { /* ignore */ } }
+        };
+        window.addEventListener("pointerup", this._hudUnlock, true);
+        window.addEventListener("pointercancel", this._hudUnlock, true);
     }
 
     _hideHud() {
         this.unlockInput();
+        if (this._hudUnlock) {
+            window.removeEventListener("pointerup", this._hudUnlock, true);
+            window.removeEventListener("pointercancel", this._hudUnlock, true);
+            this._hudUnlock = null;
+        }
+        this._hudLocked = false;
         if (this._uiHidden) { ArrivalSpace.setAppUIVisible?.(true); this._uiHidden = false; }
         if (this._expoApplied) {
             ArrivalSpace.setPostEffects?.({ brightness: this._baseBrightness });
@@ -653,7 +1210,8 @@ export class RailCamera extends ArrivalScript {
         }
         if (this._hud) { this._hud.remove(); this._hud = null; }
         this._frameEl = this._fovEl = this._markEl = this._evEl = null;
-        this._padStrafe = this._padVert = this._zoomDir = this._expoDir = 0;
+        this._padStrafe = this._padVert = this._padForward = this._zoomDir = this._zoomVel = this._expoDir = 0;
+        this._hudYaw = this._hudPitch = 0;
         this._hdrNeutral = false;
     }
 
@@ -722,42 +1280,64 @@ export class RailCamera extends ArrivalScript {
                 height:2px; margin-top:-1px; background:${C}; }
             .rcvf-cross::after { content:''; position:absolute; left:50%; top:0; height:100%;
                 width:2px; margin-left:-1px; background:${C}; }
-            /* exit button — pinned to the viewport's top-right, its right edge
-               aligned with the control cluster below (right:40px); reuses .rcvf-btn
-               so it matches the operator buttons (glass fill + border) */
-            .rcvf-exit { position:absolute; top:30px; right:40px; padding:0 16px; height:36px;
-                border-radius:9px; font-size:14px; letter-spacing:1px; }
-            .rcvf-exit:hover { background:rgba(255,255,255,0.18); }
+            /* exit button — pinned to the viewport's top-right, its right edge aligned
+               with the control cluster below (right:40px); Lila purple to match the
+               operator panel's ENTER button (the mode-toggle action) */
+            .rcvf-btn.rcvf-exit { position:absolute; top:30px; right:40px; padding:0 16px; height:36px;
+                border-radius:9px; font-size:14px; letter-spacing:1px;
+                background:#7a5af8; border-color:#7a5af8; box-shadow:0 3px 16px rgba(122,90,248,0.5); }
+            .rcvf-btn.rcvf-exit:hover, .rcvf-btn.rcvf-exit:active { background:#8b6dff; border-color:#8b6dff; }
+            .rcvf-btn.rcvf-rec { position:absolute; top:30px; left:40px; padding:0 14px; height:36px;
+                border-radius:9px; font-size:13px; letter-spacing:1px;
+                color:#ff8585; border-color:rgba(229,57,53,0.5); }
+            .rcvf-btn.rcvf-rec.is-rec { background:#c81e1e; border-color:#c81e1e; color:#fff; }
             .rcvf-raw { position:absolute; bottom:32px; left:40px; background:#000; color:#fff;
                 padding:4px 13px; border-radius:5px; font-size:16px; letter-spacing:2px; }
 
-            /* operator control cluster — bottom-right, where the right thumb sits */
+            /* operator control cluster — bottom-right; identical look to the outer panel */
             .rcvf-cluster { position:absolute; right:40px; bottom:30px; pointer-events:none; }
-            .rcvf-ctl { display:flex; align-items:stretch; gap:11px; }
+            .rcvf-panel { display:flex; align-items:center; gap:12px; pointer-events:auto;
+                background:#0d0a16; border:1px solid rgba(255,255,255,0.10); border-radius:12px;
+                padding:10px 12px; box-shadow:0 16px 50px rgba(0,0,0,0.55);
+                font-family:"Helvetica Neue", Helvetica, Arial, system-ui, sans-serif; }
             .rcvf-btn { pointer-events:auto; cursor:pointer; touch-action:none; user-select:none;
                 -webkit-user-select:none; -webkit-tap-highlight-color:transparent;
-                display:flex; align-items:center; justify-content:center; color:#fff;
-                font-family:inherit; font-weight:bold; background:${G}; border:1.5px solid ${B}; }
-            .rcvf-btn:active, .rcvf-btn.is-on { background:rgba(255,255,255,0.26); }
-
-            .rcvf-pad { width:124px; height:124px; display:grid;
-                grid-template-columns:repeat(3,1fr); grid-template-rows:repeat(3,1fr); }
-            .rcvf-pad .rcvf-btn { font-size:15px; }
-            .rcvf-pad-up { grid-area:1/2; border-radius:9px 9px 0 0; }
-            .rcvf-pad-left { grid-area:2/1; border-radius:9px 0 0 9px; }
-            .rcvf-pad-right { grid-area:2/3; border-radius:0 9px 9px 0; }
-            .rcvf-pad-down { grid-area:3/2; border-radius:0 0 9px 9px; }
-
-            .rcvf-zoom { width:56px; display:flex; flex-direction:column; gap:6px; }
-            .rcvf-zoom .rcvf-btn { flex:1; flex-direction:column; gap:1px; border-radius:9px;
-                font-size:16px; line-height:1; }
-            .rcvf-zoom .rcvf-btn small { font-size:8px; letter-spacing:1px; opacity:0.6;
-                font-weight:normal; }
-            .rcvf-read { display:flex; flex-direction:column; align-items:center; justify-content:center;
-                background:${G}; border:1.5px solid rgba(255,255,255,0.22); border-radius:9px;
-                padding:5px 0; }
-            .rcvf-read .rcvf-fov { color:#ffc24d; font-size:17px; line-height:1.1; }
-            .rcvf-read small { font-size:8px; letter-spacing:2px; opacity:0.6; font-weight:normal; }
+                display:flex; align-items:center; justify-content:center; color:#f3f1fa;
+                font:inherit; font-weight:600; background:rgba(255,255,255,0.05);
+                border:1px solid rgba(255,255,255,0.12);
+                transition:background .15s ease, border-color .15s ease; }
+            .rcvf-btn:hover { background:rgba(255,255,255,0.09); border-color:rgba(167,139,255,0.5); }
+            .rcvf-btn:active, .rcvf-btn.is-on { background:#7a5af8; border-color:#7a5af8; color:#fff; }
+            .rcvf-stickwrap { display:flex; flex-direction:column; align-items:flex-end; gap:6px; flex:none; }
+            .rcvf-stickrow { display:flex; align-items:center; gap:6px; }
+            .rcvf-stick { width:100px; height:100px; border-radius:50%; position:relative; flex:none;
+                background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.12);
+                touch-action:none; cursor:grab; pointer-events:auto; }
+            .rcvf-stick:active { cursor:grabbing; }
+            .rcvf-knob { position:absolute; left:50%; top:50%; width:44px; height:44px; border-radius:50%;
+                transform:translate(-50%,-50%); background:#7a5af8; border:1px solid #8b6dff;
+                box-shadow:0 2px 12px rgba(122,90,248,0.55); pointer-events:none;
+                display:flex; align-items:center; justify-content:center;
+                color:rgba(255,255,255,0.55); font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; }
+            .rcvf-pan { width:100px; height:18px; border-radius:9px; position:relative; flex:none;
+                background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.12); touch-action:none; cursor:grab; pointer-events:auto; }
+            .rcvf-tilt { width:18px; height:100px; border-radius:9px; position:relative; flex:none;
+                background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.12); touch-action:none; cursor:grab; pointer-events:auto; }
+            .rcvf-pan-knob, .rcvf-tilt-knob { position:absolute; left:50%; top:50%; width:24px; height:24px;
+                border-radius:50%; transform:translate(-50%,-50%); background:#7a5af8; border:1px solid #8b6dff;
+                box-shadow:0 2px 10px rgba(122,90,248,0.5); pointer-events:none;
+                display:flex; align-items:center; justify-content:center;
+                color:rgba(255,255,255,0.55); font-size:6px; font-weight:700; text-transform:uppercase; letter-spacing:0.2px; }
+            .rcvf-vert { display:flex; flex-direction:column; gap:5px; flex:none; }
+            .rcvf-vert .rcvf-btn { width:48px; height:30px; border-radius:7px; font-size:15px; }
+            .rcvf-vert small { font-size:7px; opacity:0.55; margin-left:2px; letter-spacing:1px; }
+            .rcvf-zoom { display:flex; flex-direction:column; align-items:center; gap:5px; flex:none; }
+            .rcvf-zoom .rcvf-btn { width:44px; border-radius:7px; font-size:14px; font-weight:700;
+                flex-direction:column; gap:0; line-height:1; padding:4px 0; }
+            .rcvf-zoom .rcvf-btn small { font-size:6px; letter-spacing:1px; opacity:0.55; font-weight:normal; }
+            .rcvf-mm { color:#f3f1fa; line-height:1.05; text-align:center; }
+            .rcvf-mm .rcvf-fov { font-size:14px; font-weight:700; }
+            .rcvf-mm small { font-size:8px; opacity:0.6; letter-spacing:1px; margin-left:1px; }
 
             /* exposure meter — bottom centre, like a cine viewfinder's EV scale */
             .rcvf-expo { position:absolute; bottom:30px; left:50%; transform:translateX(-50%);
@@ -789,19 +1369,25 @@ export class RailCamera extends ArrivalScript {
             <div class="rcvf-cross"></div>
         </div>
         <button class="rcvf-btn rcvf-exit" aria-label="Exit camera">Exit</button>
+        <button class="rcvf-btn rcvf-rec" data-rec aria-label="Record feed">● REC</button>
         <div class="rcvf-raw">RAW</div>
         <div class="rcvf-cluster">
-            <div class="rcvf-ctl">
-                <div class="rcvf-pad">
-                    <button class="rcvf-btn rcvf-pad-up" data-dir="up">▲</button>
-                    <button class="rcvf-btn rcvf-pad-left" data-dir="left">◀</button>
-                    <button class="rcvf-btn rcvf-pad-right" data-dir="right">▶</button>
-                    <button class="rcvf-btn rcvf-pad-down" data-dir="down">▼</button>
+            <div class="rcvf-panel">
+                <div class="rcvf-stickwrap">
+                    <div class="rcvf-pan" aria-label="Yaw"><div class="rcvf-pan-knob">yaw</div></div>
+                    <div class="rcvf-stickrow">
+                        <div class="rcvf-tilt" aria-label="Pitch"><div class="rcvf-tilt-knob">pitch</div></div>
+                        <div class="rcvf-stick" aria-label="Move joystick"><div class="rcvf-knob">move</div></div>
+                    </div>
+                </div>
+                <div class="rcvf-vert">
+                    <button class="rcvf-btn" data-dir="up" aria-label="Up">＋<small>UP</small></button>
+                    <button class="rcvf-btn" data-dir="down" aria-label="Down">－<small>DN</small></button>
                 </div>
                 <div class="rcvf-zoom">
-                    <button class="rcvf-btn" data-zoom="tele">T<small>TELE</small></button>
-                    <div class="rcvf-read"><b class="rcvf-fov">${this._focalFromFov(this._currentFov)}</b><small>mm</small></div>
-                    <button class="rcvf-btn" data-zoom="wide">W<small>WIDE</small></button>
+                    <button class="rcvf-btn" data-zoom="tele" aria-label="Zoom tele">T<small>TELE</small></button>
+                    <div class="rcvf-mm"><b class="rcvf-fov">${this._focalFromFov(this._currentFov)}</b><small>mm</small></div>
+                    <button class="rcvf-btn" data-zoom="wide" aria-label="Zoom wide">W<small>WIDE</small></button>
                 </div>
             </div>
         </div>
@@ -821,6 +1407,15 @@ export class RailCamera extends ArrivalScript {
     // photographer's reading (≈21 mm wide … ≈68 mm short tele over the FOV range).
     _focalFromFov(fov) {
         return Math.round(12 / Math.tan(pc.math.clamp(fov, 1, 179) * 0.5 * pc.math.DEG_TO_RAD));
+    }
+
+    // Step the shared FOV at a constant rate while a zoom direction is held — no velocity
+    // easing, so it stops instantly on release (no coasting). Returns true if it moved.
+    _stepZoom(dt) {
+        if (this._zoomDir === 0) return false;
+        const before = this._currentFov;
+        this._currentFov = pc.math.clamp(this._currentFov + this._zoomDir * ZOOM_SPEED * (dt || 0), FOV_MIN, FOV_MAX);
+        return this._currentFov !== before;
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────
@@ -844,9 +1439,13 @@ export class RailCamera extends ArrivalScript {
             ArrivalSpace.setCameraMode?.(this._prevMode || "third");
         }
         this._active = false;
+        this._setFollowMeshHidden(false);   // never leave the camera body hidden
         this._unbindPointer();
         this._escUnsub?.();
+        for (const [n, fn] of (this._recSubs || [])) { try { ArrivalSpace.off(n, fn); } catch (_) { /* ignore */ } }
+        this._recSubs = [];
         this._hideHud();
+        this._destroyOperator();
         this._destroyBox();
         if (this._hovered && document.body.style.cursor === "pointer") document.body.style.cursor = "auto";
         this._hovered = false;
