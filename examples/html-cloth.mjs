@@ -135,6 +135,14 @@ export class HtmlCloth extends ArrivalScript {
             return;
         }
 
+        // Reconcile player-proxy colliders once a second so remote players
+        // who join/leave mid-session start/stop bumping the cloth.
+        this._reconcileAccumulator = (this._reconcileAccumulator || 0) + dt;
+        if (this._reconcileAccumulator >= 1.0) {
+            this._reconcileAccumulator = 0;
+            this._reconcileColliders();
+        }
+
         this._syncAnchorBodies();
         this._syncColliderBodies();
 
@@ -438,56 +446,69 @@ export class HtmlCloth extends ArrivalScript {
         }
     }
 
+    _isPlayerLike(entity) {
+        if (!entity) return false;
+        // Local player: CharacterController entity or script.
+        if (entity.name === "CharacterController") return true;
+        if (entity.script?.characterController) return true;
+        // Remote players: NetworkManager stamps entity.userID at spawn.
+        if (entity.userID !== undefined && entity.userID !== null) return true;
+        return false;
+    }
+
     _createNearbyColliders() {
+        // Initial population — reconcile from empty to current scene state.
+        this._reconcileColliders();
+    }
+
+    _reconcileColliders() {
+        if (!this._dynamicsWorld) return;
+
         const center = this.entity.getPosition();
         const maxDistanceSq = this.colliderDistance * this.colliderDistance;
         const collisionComponents = this.app.root.findComponents("collision");
 
+        // Walk the scene once, build the set of entities that *should* have
+        // a proxy right now.
+        const wanted = new Set();
         for (const collision of collisionComponents) {
-            if (!collision?.entity || collision.entity === this.entity) {
-                continue;
-            }
-
-            if(!collision.enabled) {
-                continue;
-            }
-
-            if(!collision?.entity?.rigidbody || !collision?.entity.enabled) {
-                continue;
-            }
+            if (!collision?.entity || collision.entity === this.entity) continue;
+            if (!collision.enabled) continue;
+            if (!collision?.entity?.rigidbody || !collision?.entity.enabled) continue;
+            if (!this._isPlayerLike(collision.entity)) continue;
 
             const pos = collision.entity.getPosition();
             const dx = pos.x - center.x;
             const dy = pos.y - center.y;
             const dz = pos.z - center.z;
+            if ((dx * dx) + (dy * dy) + (dz * dz) > maxDistanceSq) continue;
 
-            if ((dx * dx) + (dy * dy) + (dz * dz) > maxDistanceSq) {
-                continue;
-            }
+            wanted.add(collision.entity);
+        }
 
-            const proxy = this._createColliderProxy(collision);
-            if (proxy) {
-                this._colliderBodies.push(proxy);
+        // Remove proxies whose entity has been destroyed, moved out of range,
+        // or had its collision/rigidbody disabled.
+        const kept = [];
+        for (const proxy of this._colliderBodies) {
+            if (wanted.has(proxy.entity)) {
+                wanted.delete(proxy.entity);
+                kept.push(proxy);
+            } else {
+                this._destroyRigidBody(proxy);
             }
+        }
+        this._colliderBodies = kept;
+
+        // Add proxies for new entities (local player on first pass, plus any
+        // remote players who joined since the last reconcile).
+        for (const entity of wanted) {
+            const proxy = this._createColliderProxyForEntity(entity);
+            if (proxy) this._colliderBodies.push(proxy);
         }
     }
 
-    _createColliderProxy(collision) {
-        const type = collision.type;
-        const entity = collision.entity;
-        const entityScale = entity.getScale();
-        const maxScale = Math.max(Math.abs(entityScale.x), Math.abs(entityScale.y), Math.abs(entityScale.z));
-        const isPlayer = entity.name === "CharacterController" || !!entity.script?.characterController;
-        let shape = null;
-        let usesScale = false;
-
-        if (isPlayer) {
-            shape = new Ammo.btCapsuleShape(this.playerProxyWidth, this.playerProxyHeight);
-        } else{
-
-            return null; // only support player proxy for now, can add more shapes later if needed
-        }
-
+    _createColliderProxyForEntity(entity) {
+        const shape = new Ammo.btCapsuleShape(this.playerProxyWidth, this.playerProxyHeight);
         shape.setMargin(this.collisionMargin);
 
         const transform = new Ammo.btTransform();
@@ -503,7 +524,7 @@ export class HtmlCloth extends ArrivalScript {
 
         this._dynamicsWorld.addRigidBody(body, 1, -1);
 
-        const proxy = { body, entity, shape, transform, motionState, info, inertia, usesScale };
+        const proxy = { body, entity, shape, transform, motionState, info, inertia, usesScale: false };
         this._syncRigidBody(proxy);
         return proxy;
     }
