@@ -63,6 +63,7 @@ export class HtmlCloth extends ArrivalScript {
     _material = null;
     _texture = null;
     _sourceEl = null;
+    _sourceBound = false;
     _hadLayoutSubtree = false;
     _paintHandler = null;
     _positions = null;
@@ -228,8 +229,13 @@ export class HtmlCloth extends ArrivalScript {
     }
 
     _htmlCanvasSupported() {
-        const gl = this.app.graphicsDevice?.gl;
-        return !!(gl && typeof gl.texElementImage2D === "function");
+        const device = this.app.graphicsDevice;
+        if (!device) return false;
+        // Engine 2.19+ exposes this directly; older engines need the raw probe.
+        if (typeof device.supportsHtmlTextures === "boolean") {
+            return device.supportsHtmlTextures;
+        }
+        return typeof device.gl?.texElementImage2D === "function";
     }
 
     _createErrorTexture() {
@@ -1340,19 +1346,49 @@ input[type="range"].hover::-webkit-slider-thumb { transform: scale(1.25); }
         blank.fill(255);
         this._texture._levels[0] = blank;
         this._texture.upload();
+
+        // Fresh texture — the HTML element has to be re-bound as its source.
+        this._sourceBound = false;
     }
 
     _uploadTexture() {
         if (!this._texture || !this._sourceEl) return;
 
+        // Let the engine own the texElementImage2D call. Its argument shape has
+        // already churned once during Chrome's origin trial — the original form
+        // mirrored texImage2D (target, level, internalformat, format, type,
+        // element), the current spec is (target, internalformat, element, config)
+        // — so calling it by hand breaks on a browser update. Texture.setSource
+        // accepts an HTMLElement directly from engine 2.19 onward.
+        if (this.app.graphicsDevice.supportsHtmlTextures) {
+            if (this._sourceBound) {
+                this._texture.upload();
+            } else {
+                this._texture.setSource(this._sourceEl);
+                this._sourceBound = true;
+            }
+            return;
+        }
+
+        this._uploadTextureRawGL();
+    }
+
+    // Fallback for engines predating Texture.setSource(HTMLElement) support.
+    _uploadTextureRawGL() {
         const gl = this.app.graphicsDevice.gl;
         const glTexture = this._texture.impl?._glTexture ?? this._texture.impl?.glTexture;
         if (!glTexture) return;
 
         gl.bindTexture(gl.TEXTURE_2D, glTexture);
-        gl.texElementImage2D(
-            gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, this._sourceEl
-        );
+        // Function.length is the WebIDL required-arg count, so it distinguishes
+        // the two signatures above (3 required vs 6).
+        if (gl.texElementImage2D.length <= 3) {
+            gl.texElementImage2D(gl.TEXTURE_2D, gl.RGBA, this._sourceEl);
+        } else {
+            gl.texElementImage2D(
+                gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, this._sourceEl
+            );
+        }
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
