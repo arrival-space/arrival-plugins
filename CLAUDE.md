@@ -9,7 +9,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `examples/` — Reference plugin implementations as standalone `.mjs` files (loaded at runtime by the Arrival.Space client)
 - `docs/` — Plugin developer documentation, including a curated `plugin-search-index.json` used by the MCP search tool
 - `types/arrival.d.ts` — Hand-maintained TypeScript declarations for `ArrivalScript` and `ArrivalSpace` (used via `/// <reference>` comments in plugin files)
-- `tools/arrival-cli/` — Node REPL that bridges to a localhost browser via WebSocket for live debugging
 - `tools/plugin-upload/` — Node CLI for uploading/updating `.mjs` plugins to a space via the backend REST API
 - `data/` — GLB models, textures, audio used by example plugins
 
@@ -74,19 +73,6 @@ The full quick-checklist is in `docs/00-agent-quickstart.md` and is the highest-
 - `pc.*` — Full PlayCanvas engine API is available (https://developer.playcanvas.com/api/).
 
 ## Tooling Commands
-
-### `tools/arrival-cli/` — Live REPL bridge to a localhost browser
-
-```bash
-cd tools/arrival-cli
-npm install                              # one-time
-npm start                                # interactive REPL on ws://localhost:9222
-node index.js -e "ArrivalSpace.getRoom()"  # one-shot eval
-node index.js -w                         # watch/relay only, no REPL
-node index.js -p 9223                    # alternate port
-```
-
-The browser auto-connects when you load Arrival.Space on `localhost` (must be `localhost`, not `127.0.0.1`).
 
 ### `tools/plugin-upload/` — Upload/update plugins via REST API
 

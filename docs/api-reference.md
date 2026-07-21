@@ -1331,14 +1331,6 @@ The callback receives the same state object as `getState()`. Returns an unsubscr
 
 ---
 
-### CLI Bridge (Local)
-
-There is no public `ArrivalSpace.debug` API.
-
-For local tooling, Arrival may expose an internal `_cli` bridge when launched with `?cli-port=...`. This is for `arrival-cli` integration and not intended as a stable plugin API surface.
-
----
-
 ## Gotchas And Tips
 
 ### createTexturePanel Transform Offset
