@@ -42,6 +42,21 @@ test("buildApplyZip normalizes CRLF to LF in text files (SHA-stability)", () => 
     fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test("extractPull always creates assets/plugins skeleton + a workspace README (not pushed)", () => {
+    const src = new AdmZip();
+    src.addFile("space/room.json", Buffer.from('{"id":"RoomInfo"}'));
+    src.addFile(".materialize-manifest.json", Buffer.from(JSON.stringify({ spaceId: "1_0001", entities: [], plugins: [], assets: [] })));
+    const dir = tmp();
+    ws.extractPull(src.toBuffer(), dir);
+    assert.ok(fs.existsSync(path.join(dir, "space", "assets")), "space/assets/ created even with no assets");
+    assert.ok(fs.existsSync(path.join(dir, "space", "plugins")), "space/plugins/ created");
+    assert.ok(fs.existsSync(path.join(dir, "README.md")), "workspace README written");
+    // the README is at the workspace root (outside space/) — it must never end up in the apply zip
+    const zip = new AdmZip(ws.buildApplyZip(dir));
+    assert.ok(!zip.getEntries().some((e) => e.entryName.replace(/\\/g, "/") === "README.md"), "workspace README is not pushed");
+    fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test("normalizeToLF leaves binary extensions untouched", () => {
     const buf = Buffer.from([0x00, 0x0d, 0x0a, 0xff]);
     assert.equal(ws.normalizeToLF(buf, ".glb"), buf);

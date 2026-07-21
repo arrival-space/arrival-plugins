@@ -95,7 +95,8 @@ program.command("pull")
             const manifest = ws.extractPull(buf, dir);
             console.log(`✓ Pulled ${spaceId} → ${dir}`);
             if (manifest) console.log(`  ${summarizeManifest(manifest)}`);
-            console.log(`  edit files under space/, then \`arrival push\` (run from ${dir === process.cwd() ? "here" : dir})`);
+            console.log(`  layout + how plugins & assets work: ${path.join(dir, "README.md")}`);
+            console.log(`  edit files under space/, then \`arrival validate\` / \`arrival push\``);
         } catch (e) {
             fail(e);
             if (/\b404\b|not found/i.test(e.message || "")) {

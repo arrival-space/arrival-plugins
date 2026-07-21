@@ -12,6 +12,43 @@ const AdmZip = require("adm-zip");
 
 const MANIFEST_REL = path.join(".arrival", "manifest.json");
 
+// Written to the workspace ROOT on pull (outside space/, so it's never pushed or mistaken for an
+// asset). Makes the layout + the assets token scheme discoverable even for a space that has no
+// plugins/assets yet — empty dirs don't survive the pull zip, so without this there's nothing to
+// see. Backticks are literal here (double-quoted lines), no escaping needed.
+const WORKSPACE_README = [
+    "# Arrival space workspace",
+    "",
+    "This folder is an Arrival.Space space checked out as files. Edit anything under `space/`,",
+    "then run `arrival validate` and `arrival push`. This README and `.arrival/` are generated —",
+    "don't edit them.",
+    "",
+    "## Layout",
+    "",
+    "- `space/room.json`       — the space itself (title, privacy, …)",
+    "- `space/entities/*.json` — one file per entity in the space",
+    "- `space/plugins/`        — plugin code: `<name>.mjs` (ArrivalScript), or a folder `<name>/`",
+    "                            with an `index.mjs` for a multi-file plugin",
+    "- `space/assets/`         — images / models / audio that a plugin or entity uses",
+    "",
+    "## Assets (textures, models, audio)",
+    "",
+    "Drop a file in `space/assets/` with a flat name, e.g. `space/assets/wood.webp`. Reference it",
+    'as the **literal string** "assets/wood.webp" in plugin source or in an entity\'s data (e.g. a',
+    "param). On `arrival push` the file is uploaded to the CDN and every \"assets/<name>\" reference",
+    "is replaced with the real URL automatically.",
+    "",
+    "- Prefer `.webp` (smallest download); `.png` / `.jpg` / `.glb` / … also work. Max 25 MB each.",
+    "- Only real asset files belong in `space/assets/` — a `.md` / `.gitkeep` / etc. there will fail",
+    "  validation. Plugin code goes in `space/plugins/`, not here.",
+    "",
+    "## Commands",
+    "",
+    "- `arrival validate` — server-side dry-run (catch problems before applying)",
+    "- `arrival push`     — apply your edits to the live space (`--force` to confirm deletions)",
+    "",
+].join("\n");
+
 // Text file types are LF-normalized on push. The server computes byte-exact SHAs over the LF
 // bytes materialize wrote; a stray CRLF from a Windows editor / git autocrlf would otherwise make
 // every file look "changed" and clobber the whole space. Binary assets are left untouched.
@@ -47,6 +84,11 @@ function extractPull(zipBuffer, destDir) {
         fs.writeFileSync(abs, entry.getData());
     }
     if (manifest) writeManifest(destDir, manifest);
+    // Always present the standard skeleton dirs + a guide, even for a space with no plugins/assets
+    // yet (empty dirs don't survive the pull zip). The README is at the workspace root, OUTSIDE
+    // space/, so it is never zipped back on push.
+    for (const d of ["entities", "plugins", "assets"]) fs.mkdirSync(path.join(destDir, "space", d), { recursive: true });
+    fs.writeFileSync(path.join(destDir, "README.md"), WORKSPACE_README);
     return manifest;
 }
 
