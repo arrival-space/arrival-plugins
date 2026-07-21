@@ -19,9 +19,12 @@ const ws = require("./lib/workspace");
 const oauth = require("./lib/oauth");
 const pkg = require("./package.json");
 
+// Set exitCode instead of process.exit(): calling process.exit() synchronously after a fetch can
+// trip a libuv assertion (UV_HANDLE_CLOSING) on Windows while undici's keep-alive socket is still
+// closing. Letting the event loop drain naturally exits cleanly (undici unrefs its idle sockets).
 function fail(err) {
     console.error("✗ " + (err && err.message ? err.message : String(err)));
-    process.exit(1);
+    process.exitCode = 1;
 }
 
 function summarizeManifest(m) {
@@ -93,7 +96,12 @@ program.command("pull")
             console.log(`✓ Pulled ${spaceId} → ${dir}`);
             if (manifest) console.log(`  ${summarizeManifest(manifest)}`);
             console.log(`  edit files under space/, then \`arrival push\` (run from ${dir === process.cwd() ? "here" : dir})`);
-        } catch (e) { fail(e); }
+        } catch (e) {
+            fail(e);
+            if (/\b404\b|not found/i.test(e.message || "")) {
+                console.error(`  (targeting ${config.serverUrl(cfg)} — check the space id looks like "userId_1234", and that you're logged into the right server: \`arrival login --server https://api-dev.arrival.space\`)`);
+            }
+        }
     });
 
 program.command("validate")
@@ -107,7 +115,7 @@ program.command("validate")
             const zip = ws.buildApplyZip(dir);
             const { status, json } = await api.apply(cfg, spaceId, zip, { dryRun: true });
             if (status === 200) { console.log(json.noChanges ? "✓ Valid — no changes to apply." : "✓ Valid."); return; }
-            if (status === 422) { printValidationErrors(json); process.exit(1); }
+            if (status === 422) { printValidationErrors(json); process.exitCode = 1; return; }
             fail(new Error(json.message || `Validate failed (${status})`));
         } catch (e) { fail(e); }
     });
@@ -133,15 +141,16 @@ program.command("push")
                 for (const a of applied) console.log(`  ${String(a.op).replace(/_/g, " ")} ${a.target}`);
                 for (const f of (json.failed || [])) console.log(`  ! ${String(f.op).replace(/_/g, " ")} ${f.target}: ${f.error}`);
                 if (json.manifest) ws.writeManifest(dir, json.manifest); // persist the advanced baseline
-                if (json.status === "partial") process.exit(1);
+                if (json.status === "partial") process.exitCode = 1;
                 return;
             }
-            if (status === 422) { printValidationErrors(json); process.exit(1); }
+            if (status === 422) { printValidationErrors(json); process.exitCode = 1; return; }
             if (status === 409) {
                 console.error(`✗ This push would DELETE ${(json.plannedDeletes || []).length} entit${(json.plannedDeletes || []).length === 1 ? "y" : "ies"}:`);
                 for (const id of (json.plannedDeletes || [])) console.error(`    - ${id}`);
                 console.error("  If that's intended, re-run with --force.");
-                process.exit(1);
+                process.exitCode = 1;
+                return;
             }
             if (status === 423) { fail(new Error(json.message || "Space is locked by another session — try again shortly.")); }
             fail(new Error(json.message || `Push failed (${status})`));
@@ -153,4 +162,7 @@ function printValidationErrors(json) {
     for (const e of (json.validationErrors || [])) console.error(`  ${e.file}: ${e.message}`);
 }
 
-program.parseAsync(process.argv);
+program.parseAsync(process.argv).catch((e) => {
+    console.error("✗ " + (e && e.message ? e.message : e));
+    process.exitCode = 1;
+});
