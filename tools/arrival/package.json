@@ -1,0 +1,25 @@
+{
+  "name": "arrival",
+  "version": "0.1.0",
+  "description": "Arrival.Space CLI — manage your spaces as local files (pull / push / validate)",
+  "bin": {
+    "arrival": "index.js"
+  },
+  "type": "commonjs",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "keywords": [
+    "arrival.space",
+    "cli",
+    "space-as-code"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "adm-zip": "^0.5.16",
+    "commander": "^12.1.0"
+  }
+}
