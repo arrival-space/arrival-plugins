@@ -217,6 +217,30 @@ export class NpcCharacter extends ArrivalScript {
         this.refreshParamSchema();
     }
 
+    // Built-in lifecycle hook: the client calls this when our placed entity is moved/rotated in
+    // the editor (on gesture finish). The NPC is a separate entity spawned once in initialize(),
+    // so without this it would sit at its original spawn point until a reload. `position` is a
+    // world-space {x,y,z}; `rotation` is Euler {x,y,z} (see lamp.mjs for the same signature).
+    onEntityMoved(position) {
+        const pos = position || this.entity.getPosition();
+        if (pos) this._repositionNpc(pos);
+    }
+
+    // Teleport the NPC to a new anchor. In dynamicCapsule mode the position is driven by the
+    // rigidbody, so a plain setPosition would be overwritten next frame — teleport the body
+    // instead. Cancel any in-flight walk so it re-paths from the new spot, not the old target.
+    _repositionNpc(pos) {
+        const npcEntity = this._npc?.entity;
+        if (!npcEntity) return;
+        this._npc.stop();
+        const rb = npcEntity.rigidbody;
+        if (rb && rb.enabled) {
+            rb.teleport(new pc.Vec3(pos.x, pos.y, pos.z));
+        } else {
+            npcEntity.setPosition(pos.x, pos.y, pos.z);
+        }
+    }
+
     update(dt) {
         if (!this._npc) return;
 
