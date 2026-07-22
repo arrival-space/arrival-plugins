@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "updated_at": "2026-07-09",
+  "updated_at": "2026-07-22",
   "source": "curated",
-  "total_entries": 54,
+  "total_entries": 55,
   "entries": [
     {
       "path": "README.md",
@@ -17,6 +17,13 @@
       "title": "Agent Quickstart",
       "summary": "High-signal checklist for generating Arrival.Space plugins, including shape, cleanup, property authoring, and example selection.",
       "keywords": ["agent", "quickstart", "llm", "prompting", "plugin generation", "checklist", "cleanup", "examples"]
+    },
+    {
+      "path": "docs/room-config.md",
+      "kind": "doc",
+      "title": "Room Config — space/room.json schema (RoomInfo data)",
+      "summary": "Complete reference for the RoomInfo `data` fields of space/room.json — every setting in the Edit Space panel plus advanced keys: title, description, privacy, wall/floor/ceiling/glass colors and textures, skybox, lighting and shadows, post effects (framePosteffectParams: tone mapping, bloom, brightness/contrast), camera and movement, avatar overrides, collision, GPU texture downscaling / LOD quality (textureDivider, maxTextureSize), rendering backend (WebGPU, unifiedSplats), content folders, enterprise/branding, and discovery/SEO (enrichment, geo). Gives types, defaults, valid values, and which keys belong on entities instead of the room.",
+      "keywords": ["room config", "room.json", "roominfo", "room settings", "space settings", "room appearance", "edit space", "edit panel", "wallColor", "floorColor", "ceilingColor", "glassColor", "wall texture", "floor texture", "roomTitle", "roomTitleColor", "roomDescription", "roomPrivacy", "skybox", "skyboxImage", "skyboxIntensity", "skyboxRotation", "lighting", "stageLight", "shadows", "post effects", "framePosteffectParams", "tone mapping", "bloom", "cameraFOV", "field of view", "moveSpeed", "jumpHeight", "avatar override", "customAvatar", "customFont", "collision", "lod", "texture divider", "maxTextureSize", "gpu memory", "performance", "webgpu", "unifiedSplats", "contentFolders", "branding", "discovery", "seo", "enrichment", "geo latitude", "copyrightNotice"]
     },
     {
       "path": "docs/api-reference.md",
