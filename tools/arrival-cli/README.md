@@ -10,7 +10,7 @@ materialize / validate / sync-back pipeline the in-app space agent uses, minus t
 ## Install
 
 ```bash
-cd tools/arrival
+cd tools/arrival-cli
 npm install
 npm link          # optional: puts `arrival` on your PATH
 ```

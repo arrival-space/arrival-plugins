@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `examples/` — Reference plugin implementations as standalone `.mjs` files (loaded at runtime by the Arrival.Space client)
 - `docs/` — Plugin developer documentation, including a curated `plugin-search-index.json` used by the MCP search tool
 - `types/arrival.d.ts` — Hand-maintained TypeScript declarations for `ArrivalScript` and `ArrivalSpace` (used via `/// <reference>` comments in plugin files)
-- `tools/plugin-upload/` — Node CLI for uploading/updating `.mjs` plugins to a space via the backend REST API
+- `tools/arrival-cli/` — Node CLI (`arrival`) for managing a space as local files (pull / edit / validate / push) via the backend REST API
 - `data/` — GLB models, textures, audio used by example plugins
 
 There is **no build step for the plugins themselves** — `.mjs` files are the deliverable. They run directly inside the Arrival.Space client at runtime.
@@ -74,18 +74,30 @@ The full quick-checklist is in `docs/00-agent-quickstart.md` and is the highest-
 
 ## Tooling Commands
 
-### `tools/plugin-upload/` — Upload/update plugins via REST API
+### `tools/arrival-cli/` — Manage a space as local files (`arrival`)
+
+The `arrival` CLI pulls a space into a git-friendly workspace, lets you edit its
+entities / plugins / assets as files, and pushes them back through the same
+materialize / validate / sync-back pipeline the in-app space agent uses.
 
 ```bash
-cd tools/plugin-upload
-node index.js init [--server <url>]                              # one-time login (opens browser)
-node index.js upload <file.mjs> --space <spaceId>                # create new plugin entity
-node index.js upload <file.mjs> --space <spaceId> --entity <id>  # update existing entity
-node index.js list --space <spaceId>                             # list plugins in a space
-node index.js config                                             # show stored config
+cd tools/arrival-cli
+npm install
+npm link                        # optional: puts `arrival` on your PATH
+
+arrival login                   # one-time OAuth sign-in (opens browser); token in ~/.arrival/config.json
+arrival spaces                  # list your spaces
+arrival pull <spaceId>          # download into ./<spaceId>/ (edit files under space/)
+arrival validate                # server-side dry-run — catch problems before applying
+arrival push                    # apply the workspace to the live space
 ```
 
-Default server is `https://user.arrival.space`. Config and bearer token are stored in `tools/plugin-upload/.arrival-api.json`. Space IDs are 8-digit-userid + `_` + 4 digits (e.g. `45637586_1234`).
+`arrival login --server https://api-dev.arrival.space` targets dev instead of live.
+Space IDs are 8-digit-userid + `_` + 4 digits (e.g. `45637586_1234`). See
+[`tools/arrival-cli/README.md`](tools/arrival-cli/README.md) for the workspace layout and current limits.
+
+> The old `tools/plugin-upload/` single-`.mjs` uploader has been removed — use `arrival push`
+> (or the Arrival MCP flow below) to deploy plugins.
 
 ### Updating a placed plugin via the Arrival MCP (alternative to the CLI)
 
