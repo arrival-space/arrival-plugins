@@ -2,7 +2,7 @@
   "version": 1,
   "updated_at": "2026-07-22",
   "source": "curated",
-  "total_entries": 55,
+  "total_entries": 57,
   "entries": [
     {
       "path": "README.md",
@@ -224,6 +224,22 @@
       "summary": "Spawns an NPC that follows the local player — demonstrates createNPC, avatar setup, a click callback, and per-slot animations (Idle/Walk/Jump) driven by a catalog clip or a custom Mixamo .fbx upload that the platform auto-converts to a generic clip and retargets onto the avatar (VRM and modular/RPM).",
       "script_name": "NPC Character",
       "keywords": ["npc", "character", "createNPC", "follower", "avatar", "ai character", "companion", "click", "interaction", "animation", "setAnimation", "custom animation", "mixamo", "fbx", "retarget", "idle", "walk", "jump"]
+    },
+    {
+      "path": "examples/ai-npc.mjs",
+      "kind": "example",
+      "title": "AI NPC",
+      "summary": "An LLM-driven character built on ArrivalSpace.ai.complete: click the NPC to open a chat panel; the plugin sends its persona (prePrompt) as the system prompt plus the running chat. Free GLM by default; the owner can add an OpenAI/Anthropic key (server-side, spent only through this entity). Shows createNPC + a chat UI + ai.complete continuation.",
+      "script_name": "AI NPC",
+      "keywords": ["ai npc", "llm", "chatbot", "chat", "ai.complete", "gpt", "openai", "anthropic", "glm", "system prompt", "prePrompt", "persona", "guide", "conversation", "assistant", "provider key", "byo key", "createNPC"]
+    },
+    {
+      "path": "examples/ai-text-tool.mjs",
+      "kind": "example",
+      "title": "AI Text Tool",
+      "summary": "A non-NPC example of ArrivalSpace.ai.complete: a HUD panel where the visitor pastes text, picks an operation (summarize / translate / rewrite), and the plugin builds its own system prompt and runs a one-shot completion (prompt only, no history). Demonstrates that ai.complete is general, plus the this.aiComplete() forwarder.",
+      "script_name": "AI Text Tool",
+      "keywords": ["ai", "llm", "ai.complete", "aiComplete", "text tool", "summarize", "translate", "rewrite", "one-shot", "prompt", "no history", "general ai", "classifier", "openai", "anthropic", "glm", "system prompt", "hud panel"]
     },
     {
       "path": "examples/outfit-override.mjs",

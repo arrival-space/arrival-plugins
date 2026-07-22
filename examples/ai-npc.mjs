@@ -1,16 +1,18 @@
 /**
  * AI NPC
  *
- * An LLM-driven character. Visitors click the NPC to open a chat panel and ask
- * questions; answers come from ArrivalSpace.ai.ask (backend /ai/ask). Runs on
- * the free GLM model by default — no setup needed. The space owner can select
- * OpenAI/Anthropic instead; their API key is a profile/account setting
+ * An LLM-driven character built on the general ArrivalSpace.ai.complete API.
+ * Visitors click the NPC to open a chat panel and ask questions; the plugin
+ * sends its persona (`prePrompt`) as the system prompt plus the running chat.
+ * Runs on the free GLM model by default — no setup needed. The space owner can
+ * select OpenAI/Anthropic instead; their API key is a profile/account setting
  * (Settings → Profile → AI Keys, stored server-side, never visible to
- * visitors). Choosing a non-free provider without a stored key navigates the
- * owner there automatically.
+ * visitors) and is spent only through this placed entity, bounded by daily
+ * caps. Choosing a non-free provider without a stored key navigates the owner
+ * there automatically.
  *
- * The persona lives in the `prePrompt` parameter. The server reads it from
- * this entity directly, so visitors cannot override it.
+ * This is just one thing you can build on ai.complete — the same API drives
+ * text tools, classifiers, or any other AI feature (see ai-text-tool.mjs).
  */
 export class AiNpc extends ArrivalScript {
     static scriptName = 'AI NPC';
@@ -147,10 +149,11 @@ export class AiNpc extends ArrivalScript {
         this._renderMessage(question, true);
         const pendingEl = this._renderMessage('…', false);
 
-        const res = await ArrivalSpace.ai.ask({
+        const res = await ArrivalSpace.ai.complete({
             entityId: this.entity._vibeEntityId,
-            question,
-            history: this._history.slice(-10),
+            system: this.prePrompt,
+            provider: this.provider,
+            messages: [...this._history.slice(-10), { role: 'user', content: question }],
         });
 
         this._busy = false;

@@ -356,6 +356,14 @@ declare class ArrivalScript extends pc.Script {
     /** Create a controllable NPC. Convenience wrapper for `ArrivalSpace.createNPC(options)`; returns the NPC controller. */
     createNPC(options?: Record<string, any>): Promise<any>;
 
+    /** Run a one-shot LLM completion (see `ArrivalSpace.ai.complete`), auto-filling this entity's id. */
+    aiComplete(opts?: {
+        system?: string;
+        prompt?: string;
+        messages?: Array<{ role: 'user' | 'assistant'; content: string }>;
+        provider?: 'glm' | 'openai' | 'anthropic';
+    }): Promise<{ answer: string; provider: string; model: string; costUsd: number; inputTokens: number; outputTokens: number } | { error: string } | null>;
+
     // ── Player / physics ──
 
     /** Set the world physics step rate. @returns true on success. */
@@ -1371,32 +1379,35 @@ declare namespace ArrivalSpace {
     const userData: UserData;
 
     /**
-     * One-shot LLM answers for plugins (AI NPC etc.). Free GLM model by
-     * default; entity owners can store their own OpenAI/Anthropic/GLM key
-     * server-side — keys are never exposed to plugins or visitors.
+     * General one-shot LLM completion for plugins — build an NPC, a text tool,
+     * a classifier, anything. The plugin supplies its own system prompt and
+     * messages. Free GLM model by default; entity owners can store their own
+     * OpenAI/Anthropic/GLM key server-side (never exposed to plugins or
+     * visitors), spent only through a placed vibe entity they own.
      *
      * @example
-     * const res = await ArrivalSpace.ai.ask({
-     *     entityId: this.entity._vibeEntityId,
-     *     question: 'Who are you?',
-     * });
+     * const res = await ArrivalSpace.ai.complete({ prompt: 'Who are you?' });
      * if (res?.answer) showBubble(res.answer);
      */
     namespace ai {
         /**
-         * Ask the AI configured on an entity a question. The server reads the
-         * persona (prePrompt), provider and model from the entity's params.
-         * @param opts.entityId - The vibe's own entity ID
-         * @param opts.question - The visitor's question (max 1000 chars)
-         * @param opts.history - Prior turns, last 10 kept
-         * @returns {answer, provider, model, costUsd}; {error} on a server
-         *   error response; null on network failure
+         * Run a one-shot completion. Provide EITHER `prompt` (one user turn, no
+         * history) OR `messages` (a chat, including prior turns).
+         * @param opts.system - System prompt / instructions (max 4000 chars)
+         * @param opts.prompt - A single user message (sugar for messages)
+         * @param opts.messages - Turns, last 20 kept
+         * @param opts.provider - 'glm' (free, default) | 'openai' | 'anthropic'
+         * @param opts.entityId - Placed vibe entity ID; required to spend the owner's paid key
+         * @returns {answer, provider, model, costUsd, inputTokens, outputTokens};
+         *   {error} on a server error response; null on network failure
          */
-        function ask(opts: {
-            entityId: string;
-            question: string;
-            history?: Array<{ role: 'user' | 'assistant'; content: string }>;
-        }): Promise<{ answer: string; provider: string; model: string; costUsd: number } | { error: string } | null>;
+        function complete(opts: {
+            system?: string;
+            prompt?: string;
+            messages?: Array<{ role: 'user' | 'assistant'; content: string }>;
+            provider?: 'glm' | 'openai' | 'anthropic';
+            entityId?: string;
+        }): Promise<{ answer: string; provider: string; model: string; costUsd: number; inputTokens: number; outputTokens: number } | { error: string } | null>;
 
         /** Store a provider API key for the current user (server-side, write-only). */
         function setKey(provider: 'openai' | 'anthropic' | 'glm', apiKey: string): Promise<boolean>;
