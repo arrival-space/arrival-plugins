@@ -218,6 +218,24 @@ export class AiNpc extends ArrivalScript {
         }
     }
 
+    // Built-in lifecycle hook: the client calls this when our placed entity is
+    // moved/rotated in the editor (on gesture finish). The NPC is a separate
+    // entity spawned once in initialize(), so without this it would sit at its
+    // original spawn point until a reload. `position` is a world-space {x,y,z}.
+    onEntityMoved(position) {
+        const pos = position || this.entity.getPosition();
+        const npcEntity = this._npc?.entity;
+        if (!pos || !npcEntity) return;
+        // In dynamicCapsule mode the body drives position, so a plain setPosition
+        // would be overwritten next frame — teleport the rigidbody when present.
+        const rb = npcEntity.rigidbody;
+        if (rb && rb.enabled) {
+            rb.teleport(new pc.Vec3(pos.x, pos.y, pos.z));
+        } else {
+            npcEntity.setPosition(pos.x, pos.y, pos.z);
+        }
+    }
+
     destroy() {
         if (this._npc) {
             this._npc.destroy();
