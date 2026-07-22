@@ -142,6 +142,22 @@ Get the current right virtual joystick input (camera stick on mobile).
 
 ### NPC And Param Schema Helpers
 
+#### `createModel(url, options?)`
+
+Load a GLB/GLTF into the scene **as this vibe's own model**. Returns `Promise<{ entity, asset }>`.
+
+It's a thin instance-method wrapper around [`ArrivalSpace.loadGLB(url, options)`](#arrivalspaceloadglburl-options) that additionally tags the loaded model so that **clicking it in edit mode selects this plugin's entity** for editing (it injects the vibe's host entity as the internal selection target). Prefer `this.createModel(...)` over raw `ArrivalSpace.loadGLB(...)` whenever a plugin spawns its own model — otherwise the loaded GLB isn't clickable-to-edit and feels detached from the vibe. Accepts the same `options` as `loadGLB` (`parent`, `name`, `scale`, `position`, `rotation`, `castShadows`, `onLoad`, …).
+
+```javascript
+async initialize() {
+    const { entity } = await this.createModel('https://.../thing.glb', {
+        parent: this.entity,   // parent to the vibe so it moves/unloads with it
+        scale: 2,
+    });
+    this._model = entity;
+}
+```
+
 #### `createNPC(options?)`
 
 Convenience wrapper for `ArrivalSpace.createNPC(options?)`.
@@ -191,6 +207,16 @@ export class MyPlugin extends ArrivalScript {
         // in-app. Run one-time setup here (e.g. open a config panel).
     }
 
+    onEntityMoved(position, rotation) {
+        // Called when this vibe's entity is moved/rotated in the editor.
+        // Re-anchor anything you spawned separately from this.entity.
+    }
+
+    onEditModeChanged(isEditing, context) {
+        // Called when this vibe's in-app editor opens/closes.
+        // Toggle editor-only helpers, pause gameplay, etc.
+    }
+
     destroy() {
         // Called when plugin is removed/destroyed
     }
@@ -217,6 +243,51 @@ async onInstall(ctx) {
 ```
 
 Requires `ArrivalSpace.VERSION` ≥ `1.12.0` (feature-detect if you target older clients). See [`first-install-setup.mjs`](../examples/first-install-setup.mjs) for a complete example.
+
+#### `onEntityMoved(position, rotation)` — re-anchor on editor move
+
+Optional. Fired when this vibe's placed entity is **moved or rotated in the editor**, right after the transform-gizmo gesture finishes.
+
+- **On finish, not during the drag.** It fires once on mouse-up (gizmo commit), not every frame while dragging — so re-anchoring here won't jitter.
+- **`position`** is the new **world** position `{x, y, z}`; **`rotation`** is **Euler angles in degrees** `{x, y, z}`. Either can be `null` if that part didn't change — guard before reading, or fall back to `this.entity.getPosition()` / `getEulerAngles()`.
+- **You usually only need this for detached content.** Anything parented to `this.entity` moves with it automatically. Reach for this hook when you spawned something *separately* — an NPC (its own scene entity), a rigidbody you drive with `teleport()`, or sub-entities placed on the scene root — that would otherwise stay at its original spot until a reload.
+
+```javascript
+onEntityMoved(position) {
+    // NPC is a separate entity — teleport it to the vibe's new anchor.
+    const pos = position || this.entity.getPosition();
+    if (this._npc) {
+        this._npc.stop();
+        const rb = this._npc.entity.rigidbody;
+        if (rb && rb.enabled) rb.teleport(new pc.Vec3(pos.x, pos.y, pos.z));
+        else this._npc.entity.setPosition(pos.x, pos.y, pos.z);
+    }
+}
+```
+
+See [`lamp.mjs`](../examples/lamp.mjs) (teleports its own rigidbody) and [`npc-character.mjs`](../examples/npc-character.mjs) (repositions a spawned NPC).
+
+#### `onEditModeChanged(isEditing, context)` — react to the editor opening/closing
+
+Optional. Fired when this vibe's **in-app editor** opens or closes for its entity — i.e. when the user selects it (opens the creator/settings panel) or deselects it.
+
+- **`isEditing`** is `true` while the editor is open for this vibe, `false` when it closes.
+- **`context`** is the editor context object (creator-badge state), or `null`.
+- **Also fires once right after `initialize()`** if the vibe finished loading while already selected — so a plugin that loads into an open editor still learns it's in edit mode.
+- **Also fires with `false`** if the entity is unloaded while being edited.
+- Use it to show editor-only helpers (gizmos, bounds, guides), pause gameplay or physics while the owner is arranging the scene, or reveal debug UI that shouldn't appear for visitors.
+
+The same transitions are mirrored on the [plugin event bus](#plugin-event-bus) if you prefer events over the hook — subscribe with `this.on(...)` and unsubscribe in `destroy()`:
+
+- `plugin:editModeChanged` — payload `{ isEditing, entityId, context }`
+- `plugin:editModeEnter` / `plugin:editModeExit` — same payload, split by direction
+
+```javascript
+onEditModeChanged(isEditing) {
+    // Show a wireframe helper only while the owner is editing this vibe.
+    if (this._helper) this._helper.enabled = isEditing;
+}
+```
 
 #### `setParam(name, value, options?)` / `setParams(values, options?)`
 

@@ -43,6 +43,8 @@ export class MyPlugin extends ArrivalScript {
 ## Lifecycle Hooks
 
 - `initialize()` / `update(dt)` / `onPropertyChanged(name, v, old)` / `destroy()` — the usual hooks.
+- `onEntityMoved(position, rotation)` — optional, fires when the vibe's entity is moved/rotated in the editor (on gizmo finish, not per-frame). `position` = world `{x,y,z}`, `rotation` = Euler degrees `{x,y,z}`, either may be null. Only needed to re-anchor content you spawned *separately* from `this.entity` (NPCs, detached sub-entities, teleported rigidbodies) — children of `this.entity` follow it for free. See `examples/npc-character.mjs`.
+- `onEditModeChanged(isEditing, context)` — optional, fires when this vibe's in-app editor opens/closes (`isEditing` bool; `context` = creator-badge state or null). Also fires once after `initialize()` if loaded while already selected. Use it to toggle editor-only helpers or pause gameplay while editing. Mirrored on the event bus as `plugin:editModeChanged` / `plugin:editModeEnter` / `plugin:editModeExit`.
 - `onInstall(ctx)` — optional, fires **once** right after a user adds the vibe to the space in-app (library install, drag-drop, or upload). It does **not** fire on reload, for other visitors, or for CLI/MCP deploys. Use it for one-time setup, e.g. open your own config panel; persist choices into the vibe's real params with `await this.setParams({ ... })` so they show in the editor and apply on every load. **Deploying via CLI/MCP? Set the vibe's `params` at deploy time instead — `onInstall` will not fire on that path.** Requires `ArrivalSpace.VERSION` ≥ `1.12.0`. See `examples/first-install-setup.mjs`.
 
 ## MCP Deployment Notes

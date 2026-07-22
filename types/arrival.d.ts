@@ -241,6 +241,9 @@ interface ArrivalScriptInstallContext {
     spaceId: string;
 }
 
+/** A 3D vector accepted by many helpers: a `pc.Vec3`, a plain `{x, y, z}`, or an `[x, y, z]` tuple. */
+type ArrivalVec3Like = pc.Vec3 | { x: number; y: number; z: number } | [number, number, number];
+
 declare class ArrivalScript extends pc.Script {
     /** Current space/room */
     readonly space: any;
@@ -262,6 +265,135 @@ declare class ArrivalScript extends pc.Script {
     
     /** Find child entity by name */
     findChild(name: string): pc.Entity | null;
+
+    /** True if the current user owns this space. */
+    readonly isOwner: boolean;
+
+    /** Entity the local player is currently standing on, or null. */
+    readonly standingObject: pc.Entity | null;
+
+    /** True when running on a touch/mobile device. */
+    readonly isMobile: boolean;
+
+    // ── Scoped logging (also prints to the console; buffered for remix-agent diagnostics, rate-limited per vibe) ──
+
+    /** Log a message (also `console.log`). */
+    log(...args: any[]): void;
+    /** Log a warning (also `console.warn`). */
+    warn(...args: any[]): void;
+    /** Log an error (also `console.error`). */
+    error(...args: any[]): void;
+
+    // ── Standing-object subscriptions ──
+
+    /** Subscribe to standing-object changes. Returns an unsubscribe function. */
+    onStandingObjectChanged(callback: (entity: pc.Entity | null) => void): () => void;
+    /** Subscribe once to the next standing-object change. Returns an unsubscribe function. */
+    onceStandingObjectChanged(callback: (entity: pc.Entity | null) => void): () => void;
+    /** Remove a standing-object change listener previously added with onStandingObjectChanged. */
+    offStandingObjectChanged(callback: (entity: pc.Entity | null) => void): void;
+
+    // ── Input: keys, locking, mobile sticks ──
+
+    /** Listen for a keydown for a key code or key string. Returns an unsubscribe function; auto-cleaned on destroy. */
+    onKeyDown(key: number | string, callback: (event?: any) => void): () => void;
+    /** Listen for a keyup for a key code or key string. Returns an unsubscribe function; auto-cleaned on destroy. */
+    onKeyUp(key: number | string, callback: (event?: any) => void): () => void;
+    /** Lock game pointer/scene input (e.g. while hovering plugin UI). createUI does this automatically. */
+    lockInput(): void;
+    /** Release a previous lockInput(). */
+    unlockInput(): void;
+    /** Lock keyboard movement (e.g. while typing in a plugin input). createUI does this automatically for inputs. */
+    lockKeyboard(): void;
+    /** Release a previous lockKeyboard(). */
+    unlockKeyboard(): void;
+    /** Mobile left virtual-joystick vector (x = strafe, y = forward), each -1..1. `{x:0,y:0}` on desktop. */
+    getLeftStick(): { x: number; y: number };
+    /** Mobile right virtual-joystick vector, each -1..1. `{x:0,y:0}` on desktop. */
+    getRightStick(): { x: number; y: number };
+
+    // ── 2D UI (HTML overlay above the 3D canvas; auto-removed on destroy) ──
+
+    /** Get (creating on first call) this script's UI container div. Auto-removed on entity destroy. */
+    getUIContainer(): HTMLDivElement;
+    /** Create an HTML element in this script's UI container, with optional styles and auto input/keyboard locking. */
+    createUI(tagName: string, options?: {
+        id?: string;
+        className?: string;
+        innerHTML?: string;
+        style?: Partial<CSSStyleDeclaration> | Record<string, string>;
+        /** Enable pointer events (default true). */
+        interactive?: boolean;
+        /** Lock game input on hover (default true for interactive elements). */
+        lockInput?: boolean;
+        /** Lock keyboard while a contained input/textarea has focus (default true). */
+        lockKeyboard?: boolean;
+    }): HTMLElement;
+    /** Create a styled panel/card in a screen corner or centered. */
+    createPanel(options?: {
+        position?: 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right' | 'center';
+        innerHTML?: string;
+        padding?: number;
+        background?: string;
+        borderRadius?: string;
+        style?: Partial<CSSStyleDeclaration> | Record<string, string>;
+    }): HTMLDivElement;
+    /** Remove this script's UI container and all its contents. Called automatically on destroy. */
+    removeUI(): void;
+    /** Show or hide this script's UI container. */
+    setUIVisible(visible: boolean): void;
+
+    // ── Spawning content owned by this vibe ──
+
+    /**
+     * Load a GLB/GLTF into the scene as THIS vibe's model — clicking it in edit mode selects
+     * this plugin's entity. Prefer this over `ArrivalSpace.loadGLB` when a plugin spawns its own model.
+     * @param url GLB/GLTF URL.
+     * @param options Same options as `ArrivalSpace.loadGLB` (parent, name, scale, position, rotation, …).
+     */
+    createModel(url: string, options?: ArrivalSpace.LoadGLBOptions): Promise<{ entity: pc.Entity; asset: pc.Asset }>;
+
+    /** Create a controllable NPC. Convenience wrapper for `ArrivalSpace.createNPC(options)`; returns the NPC controller. */
+    createNPC(options?: Record<string, any>): Promise<any>;
+
+    // ── Player / physics ──
+
+    /** Set the world physics step rate. @returns true on success. */
+    setPhysicsStepRate(stepHz?: number, maxSubSteps?: number): boolean;
+    /** Local player's flattened (horizontal) forward direction, or null. */
+    getPlayerForward(): pc.Vec3 | null;
+    /** Apply a visual-only offset to the local player avatar (no physics effect). Accepts (x, y, z) or a vec3-like. */
+    setPlayerAvatarOffset(offsetOrX: ArrivalVec3Like | number, y?: number, z?: number): boolean;
+
+    // ── Camera ──
+
+    /** Set camera mode. */
+    setCameraMode(mode: 'free' | 'third' | 'first' | 'orbital'): boolean;
+    /** Current camera mode, or null. */
+    getCameraMode(): 'free' | 'third' | 'first' | 'orbital' | null;
+    /** Set the shared camera target Y offset (first + third person pivots). */
+    setCameraTargetHeightOffset(offsetY?: number): boolean;
+    /** Get the shared camera target Y offset, or null. */
+    getCameraTargetHeightOffset(): number | null;
+    /** Set third-person camera distance (clamped to the allowed range). */
+    setCameraTargetDistance(distance?: number): boolean;
+    /** Position the free camera and optionally aim it at a target (switches to free-cam mode). */
+    setFreeCamPose(position: ArrivalVec3Like, lookAt?: ArrivalVec3Like): boolean;
+    /** Set the free camera's movement speed and/or raise its max-speed cap. Pass null speed to leave it unchanged. */
+    setFreeCamSpeed(speed: number | null, maxSpeed?: number): boolean;
+    /** Get the free camera's current movement speed and maximum, or null. */
+    getFreeCamSpeed(): { speed: number; maxSpeed: number } | null;
+
+    // ── Lighting / splats ──
+
+    /** Replace the current base room lighting override. Pass null to clear. */
+    setLightProbe(config?: any | null): boolean;
+    /** Enable the center collision-mesh splat-light material. */
+    enableSplatLightMaterial(options?: Record<string, any>): boolean;
+    /** Make a light also light splats (moves it to the splat-light layer + enables the splat-light material). */
+    addSplatLight(light: pc.Entity | any, options?: Record<string, any>): boolean;
+    /** Create a positioned localized light probe. */
+    createLocalizedLightProbe(config: any, position: ArrivalVec3Like): any | null;
 
     /** Override post-effect parameters. Only provided keys are changed; omitted keys keep room defaults. */
     setPostEffects(params: ArrivalSpace.PostEffectsParams): boolean;
@@ -294,6 +426,18 @@ declare class ArrivalScript extends pc.Script {
     /** Persist the current `params` to the server without changing any values. */
     save(): Promise<boolean>;
 
+    /** Tell the host parameter editor to re-read this plugin's schema. @returns true if a host entity was found. */
+    refreshParamSchema(): boolean;
+
+    /** Replace the dropdown options for a parameter at runtime. @returns true if the schema was updated. */
+    setParamOptions(paramName: string, options: Array<string | number | object> | object, refresh?: boolean): boolean;
+
+    /** Append (deduped) options to a dropdown parameter at runtime. @returns true if the schema was updated. */
+    appendParamOptions(paramName: string, optionsToAdd: Array<string | number>, refresh?: boolean): boolean;
+
+    /** Get the current dropdown options array for a parameter. */
+    getParamOptions(paramName: string): any[];
+
     /**
      * Optional lifecycle hook fired once — right after a user adds this vibe to the
      * space in-app (library install, drag-drop, or upload), in the browser where they
@@ -304,6 +448,35 @@ declare class ArrivalScript extends pc.Script {
      * @param ctx Install context.
      */
     onInstall?(ctx: ArrivalScriptInstallContext): void | Promise<void>;
+
+    /**
+     * Optional lifecycle hook fired when this vibe's placed entity is moved or rotated
+     * in the editor — on transform-gizmo *finish* (gesture end), not continuously during
+     * the drag. Children of `this.entity` follow it automatically and need no handling;
+     * use this to re-anchor anything you spawned *separately* from the entity (NPCs,
+     * detached sub-entities, physics bodies) so it doesn't sit at its old spot until reload.
+     * @param position New world position `{x, y, z}`, or `null` if unchanged.
+     * @param rotation New Euler rotation in degrees `{x, y, z}`, or `null` if unchanged.
+     */
+    onEntityMoved?(
+        position: { x: number; y: number; z: number } | null,
+        rotation: { x: number; y: number; z: number } | null
+    ): void;
+
+    /**
+     * Optional lifecycle hook fired when this vibe's in-app editor opens or closes for
+     * this entity (the user selects / deselects it in the creator UI). Use it to toggle
+     * editor-only helpers (gizmos, guides), pause gameplay while editing, etc. Also fired
+     * once right after `initialize()` if the vibe loads while already selected, and with
+     * `false` when the entity is unloaded mid-edit.
+     *
+     * The same transitions are mirrored on the plugin event bus (`this.on(...)`):
+     * `plugin:editModeChanged` (payload `{ isEditing, entityId, context }`), plus
+     * `plugin:editModeEnter` / `plugin:editModeExit`.
+     * @param isEditing True while this vibe's editor is open, false when it closes.
+     * @param context Editor context object (creator-badge state), or null.
+     */
+    onEditModeChanged?(isEditing: boolean, context: any | null): void;
 }
 
 /**
@@ -1104,10 +1277,8 @@ declare namespace ArrivalSpace {
         spaceId?: string;
     }
 
-    /**
-     * Simple key-value store for plugins, scoped per space + user.
-     */
-    namespace pluginStore {
+    /** Shape of {@link pluginStore}. */
+    interface PluginStore {
         /**
          * Push a value to the store.
          *
@@ -1118,7 +1289,7 @@ declare namespace ArrivalSpace {
          * // Save a setting (overwrite)
          * await ArrivalSpace.pluginStore.push("my-setting", "dark-mode");
          */
-        function push(key: string, value: string, options?: PluginStorePushOptions): Promise<object | false>;
+        push(key: string, value: string, options?: PluginStorePushOptions): Promise<object | false>;
 
         /**
          * Get entries for a key in the current space.
@@ -1127,12 +1298,54 @@ declare namespace ArrivalSpace {
          * // Leaderboard: top 10 fastest times
          * const board = await ArrivalSpace.pluginStore.get("best-time", { sort: "asc", limit: 10 });
          */
-        function get(key: string, options?: PluginStoreGetOptions): Promise<PluginStoreEntry[] | false>;
+        get(key: string, options?: PluginStoreGetOptions): Promise<PluginStoreEntry[] | false>;
 
         /**
          * Delete own entry for a key.
          */
-        function delete(key: string, options?: PluginStoreDeleteOptions): Promise<boolean>;
+        delete(key: string, options?: PluginStoreDeleteOptions): Promise<boolean>;
+    }
+
+    /**
+     * Simple key-value store for plugins, scoped per space + user.
+     */
+    const pluginStore: PluginStore;
+
+    /** Shape of {@link userData}. */
+    interface UserData {
+        /**
+         * Store a value for the current user. Objects/arrays are auto-JSON-stringified.
+         * @param namespace - Access key / namespace (e.g. your space ID)
+         * @param key - Data key (max 64 chars)
+         * @param value - Any JSON-serialisable value
+         * @returns true on success, false on error
+         */
+        set(namespace: string, key: string, value: any): Promise<boolean>;
+
+        /**
+         * Read a value. Returns the parsed value, null if not found, or false on error.
+         * @param namespace - Access key / namespace
+         * @param key - Data key
+         * @param options.userId - Read another user's data
+         * @param options.raw - Return raw string instead of auto-parsing JSON
+         */
+        get(namespace: string, key: string, options?: { userId?: string; raw?: boolean }): Promise<any | null | false>;
+
+        /**
+         * Delete a key for the current user.
+         * @param namespace - Access key / namespace
+         * @param key - Data key
+         */
+        delete(namespace: string, key: string): Promise<boolean>;
+
+        /**
+         * List keys for the current user (or another user).
+         * @param namespace - Access key / namespace
+         * @param options.prefix - Filter keys by prefix
+         * @param options.userId - List another user's keys
+         * @param options.limit - Max keys to return (default 100)
+         */
+        keys(namespace: string, options?: { prefix?: string; userId?: string; limit?: number }): Promise<string[] | false>;
     }
 
     /**
@@ -1155,41 +1368,7 @@ declare namespace ArrivalSpace {
      * // Read another user's data
      * const other = await ArrivalSpace.userData.get(NS, 'inventory', { userId: '12345678' });
      */
-    namespace userData {
-        /**
-         * Store a value for the current user. Objects/arrays are auto-JSON-stringified.
-         * @param namespace - Access key / namespace (e.g. your space ID)
-         * @param key - Data key (max 64 chars)
-         * @param value - Any JSON-serialisable value
-         * @returns true on success, false on error
-         */
-        function set(namespace: string, key: string, value: any): Promise<boolean>;
-
-        /**
-         * Read a value. Returns the parsed value, null if not found, or false on error.
-         * @param namespace - Access key / namespace
-         * @param key - Data key
-         * @param options.userId - Read another user's data
-         * @param options.raw - Return raw string instead of auto-parsing JSON
-         */
-        function get(namespace: string, key: string, options?: { userId?: string; raw?: boolean }): Promise<any | null | false>;
-
-        /**
-         * Delete a key for the current user.
-         * @param namespace - Access key / namespace
-         * @param key - Data key
-         */
-        function delete(namespace: string, key: string): Promise<boolean>;
-
-        /**
-         * List keys for the current user (or another user).
-         * @param namespace - Access key / namespace
-         * @param options.prefix - Filter keys by prefix
-         * @param options.userId - List another user's keys
-         * @param options.limit - Max keys to return (default 100)
-         */
-        function keys(namespace: string, options?: { prefix?: string; userId?: string; limit?: number }): Promise<string[] | false>;
-    }
+    const userData: UserData;
 
     /**
      * One-shot LLM answers for plugins (AI NPC etc.). Free GLM model by
