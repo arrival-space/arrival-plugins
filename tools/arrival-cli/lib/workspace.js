@@ -80,9 +80,15 @@ function extractPull(zipBuffer, destDir) {
             continue;
         }
         if (!name.startsWith("space/")) continue;
+        const data = entry.getData();
         const abs = path.join(destDir, name);
         fs.mkdirSync(path.dirname(abs), { recursive: true });
-        fs.writeFileSync(abs, entry.getData());
+        fs.writeFileSync(abs, data);
+        // Mirror into .arrival/base/ — the pristine "index" that `status`/`diff` compare the
+        // working tree against (and the source of per-file deltas for a future changeset push).
+        const baseAbs = path.join(destDir, ".arrival", "base", name);
+        fs.mkdirSync(path.dirname(baseAbs), { recursive: true });
+        fs.writeFileSync(baseAbs, data);
     }
     if (manifest) writeManifest(destDir, manifest);
     // Always present the standard skeleton dirs + a guide, even for a space with no plugins/assets
@@ -130,11 +136,57 @@ function buildApplyZip(dir) {
     return zip.toBuffer();
 }
 
-// Compute what `push` would change: working files under space/ vs the baseline manifest (the
-// "index"). Mirrors buildApplyZip's LF-normalization so status agrees with what push sends.
-// Multi-file (directory) plugins are surfaced but not precisely diffed — their baseline is a single
-// server-side dirHash we can't reproduce client-side; that granularity comes with the changeset work.
+// List files recursively under a dir as posix-relative paths.
+function listFilesRec(root) {
+    const out = [];
+    const walk = (absDir) => {
+        let ents;
+        try { ents = fs.readdirSync(absDir, { withFileTypes: true }); } catch { return; }
+        for (const e of ents) {
+            const abs = path.join(absDir, e.name);
+            if (e.isDirectory()) walk(abs);
+            else if (e.isFile()) out.push(path.relative(root, abs).replace(/\\/g, "/"));
+        }
+    };
+    walk(root);
+    return out;
+}
+
+// What `push` would change: the working space/ tree vs the pristine .arrival/base/space mirror
+// captured at pull. Byte-exact after LF-normalization (matching what push sends), precise for every
+// file — including files inside multi-file plugin directories. Falls back to a manifest-sha compare
+// for workspaces pulled before baselines existed (re-pull for full precision + `diff`).
 function computeStatus(dir) {
+    const baseSpace = path.join(dir, ".arrival", "base", "space");
+    const workSpace = path.join(dir, "space");
+    if (!fs.existsSync(baseSpace)) return computeStatusFromManifest(dir);
+
+    const baseFiles = new Set(listFilesRec(baseSpace));
+    const workFiles = new Set(listFilesRec(workSpace));
+    const read = (rootAbs, rel) => normalizeToLF(fs.readFileSync(path.join(rootAbs, rel)), path.extname(rel).toLowerCase());
+
+    const modified = [], added = [], deleted = [];
+    for (const rel of workFiles) {
+        if (!baseFiles.has(rel)) { added.push("space/" + rel); continue; }
+        if (!read(workSpace, rel).equals(read(baseSpace, rel))) modified.push("space/" + rel);
+    }
+    for (const rel of baseFiles) if (!workFiles.has(rel)) deleted.push("space/" + rel);
+
+    modified.sort(); added.sort(); deleted.sort();
+    return { modified, added, deleted, dirPlugins: [] };
+}
+
+// Base + working content of a text file for `diff`. Binary files → { binary: true }.
+function readForDiff(dir, rel) {
+    const ext = path.extname(rel).toLowerCase();
+    if (!TEXT_EXT.has(ext)) return { binary: true };
+    const read = (p) => { try { return normalizeToLF(fs.readFileSync(p), ext).toString("utf8"); } catch { return null; } };
+    return { base: read(path.join(dir, ".arrival", "base", rel)), work: read(path.join(dir, rel)) };
+}
+
+// Legacy fallback: compare working files to the baseline manifest's per-file SHAs (no base mirror).
+// Precise for flat files; multi-file plugins are surfaced but not diffed.
+function computeStatusFromManifest(dir) {
     const manifest = readManifest(dir);
     const sha = (buf) => crypto.createHash("sha256").update(buf).digest("hex");
     const norm = (rel) => String(rel).replace(/\\/g, "/");
@@ -182,4 +234,4 @@ function computeStatus(dir) {
     return { modified, added, deleted, dirPlugins };
 }
 
-module.exports = { extractPull, readManifest, writeManifest, buildApplyZip, computeStatus, normalizeToLF, MANIFEST_REL };
+module.exports = { extractPull, readManifest, writeManifest, buildApplyZip, computeStatus, readForDiff, normalizeToLF, MANIFEST_REL };

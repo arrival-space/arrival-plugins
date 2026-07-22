@@ -127,6 +127,34 @@ program.command("status")
         } catch (e) { fail(e); }
     });
 
+program.command("diff")
+    .description("Show line-level changes since your last pull — local, no network")
+    .option("--dir <path>", "workspace directory (default: current)")
+    .action((opts) => {
+        const dir = path.resolve(opts.dir || ".");
+        try {
+            const st = ws.computeStatus(dir);
+            if (!(st.modified.length + st.added.length + st.deleted.length)) { console.log("✓ Clean — nothing to push."); return; }
+            let diffLines = null;
+            try { ({ diffLines } = require("diff")); } catch { /* dep missing — fall back to headers only */ }
+            const c = { red: "\x1b[31m", green: "\x1b[32m", cyan: "\x1b[36m", dim: "\x1b[2m", reset: "\x1b[0m" };
+            const show = (rel, mark) => {
+                console.log(`${c.cyan}${mark} ${rel}${c.reset}`);
+                const { base, work, binary } = ws.readForDiff(dir, rel);
+                if (binary) { console.log(`  ${c.dim}(binary file)${c.reset}`); return; }
+                if (!diffLines) { console.log(`  ${c.dim}(run \`npm install\` for line diffs, or use \`git diff\`)${c.reset}`); return; }
+                for (const part of diffLines(base || "", work || "")) {
+                    if (!part.added && !part.removed) continue; // skip unchanged context for compactness
+                    const col = part.added ? c.green : c.red, sign = part.added ? "+" : "-";
+                    for (const line of part.value.replace(/\n$/, "").split("\n")) console.log(`  ${col}${sign} ${line}${c.reset}`);
+                }
+            };
+            for (const rel of st.modified) show(rel, "~");
+            for (const rel of st.added) show(rel, "+");
+            for (const rel of st.deleted) show(rel, "-");
+        } catch (e) { fail(e); }
+    });
+
 program.command("validate")
     .description("Server-side dry-run: validate the current workspace without applying")
     .option("--dir <path>", "workspace directory (default: current)")

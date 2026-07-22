@@ -90,6 +90,23 @@ test("computeStatus reports modified / added / deleted vs the baseline manifest"
     fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test("extractPull stores a .arrival/base mirror; readForDiff returns base vs work", () => {
+    const src = new AdmZip();
+    src.addFile("space/entities/e1.json", Buffer.from('{"a":1}'));
+    src.addFile(".materialize-manifest.json", Buffer.from(JSON.stringify({ spaceId: "x", entities: [], plugins: [], assets: [] })));
+    const dir = tmp();
+    ws.extractPull(src.toBuffer(), dir);
+    assert.ok(fs.existsSync(path.join(dir, ".arrival", "base", "space", "entities", "e1.json")), "base mirror written");
+
+    fs.writeFileSync(path.join(dir, "space", "entities", "e1.json"), '{"a":2}');
+    const d = ws.readForDiff(dir, "space/entities/e1.json");
+    assert.equal(d.base, '{"a":1}');
+    assert.equal(d.work, '{"a":2}');
+    // status uses the base mirror → e1 is modified
+    assert.deepEqual(ws.computeStatus(dir).modified, ["space/entities/e1.json"]);
+    fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test("normalizeToLF leaves binary extensions untouched", () => {
     const buf = Buffer.from([0x00, 0x0d, 0x0a, 0xff]);
     assert.equal(ws.normalizeToLF(buf, ".glb"), buf);
