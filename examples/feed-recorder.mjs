@@ -37,9 +37,17 @@
  *       ArrivalSpace.fire("recorder:stop")
  *       ArrivalSpace.fire("recorder:toggle")
  *       ArrivalSpace.fire("recorder:snapshot")   // single frame → PNG download
- *     and it fires back "recorder:started", "recorder:stopped" ({seconds, frames})
- *     and "recorder:saved" ({name, bytes, seconds}) for sequencing (e.g. a cutscene
- *     plugin that starts a recording, plays a camera path, then stops).
+ *     and it fires back "recorder:started" ({width, height, fps}), "recorder:stopped"
+ *     ({seconds, frames}) and "recorder:saved" ({kind, name, bytes, seconds}) for
+ *     sequencing (e.g. a cutscene plugin that starts a recording, plays a camera
+ *     path, then stops). "recorder:query" is answered with "recorder:state"
+ *     ({recording, seconds, fps, width, height}) so a controller UI opening
+ *     mid-recording can sync its display.
+ *   • A controller with its own record UI (rail-camera's operator panel /
+ *     viewfinder) fires "recorder:ui:claim" {id} — the recorder then hides its
+ *     fallback HUD ("recorder:ui:release" {id} restores it; the recorder fires
+ *     "recorder:ui:query" on load so running claimants re-claim). Saved-clip
+ *     toasts ("✓ CLIP SAVED · …") always show, claimed or not.
  *   • `maxDuration` > 0 auto-stops (and saves) after that many seconds.
  *
  * --- Output ---
@@ -72,9 +80,21 @@ const EV_START = "recorder:start";
 const EV_STOP = "recorder:stop";
 const EV_TOGGLE = "recorder:toggle";
 const EV_SNAPSHOT = "recorder:snapshot";
-const EV_STARTED = "recorder:started";
-const EV_STOPPED = "recorder:stopped";
-const EV_SAVED = "recorder:saved";
+const EV_STARTED = "recorder:started";     // fired back: { width, height, fps }
+const EV_STOPPED = "recorder:stopped";     // fired back: { seconds, frames }
+const EV_SAVED = "recorder:saved";         // fired back: { kind, name, bytes, seconds }
+// State handshake: anyone can fire EV_QUERY; the recorder answers with EV_STATE
+// { recording, seconds, fps, width, height } — lets a controller UI that loads
+// (or opens) mid-recording sync its REC display.
+const EV_QUERY = "recorder:query";
+const EV_STATE = "recorder:state";
+// HUD claim: a controller plugin with its OWN record UI (e.g. rail-camera's
+// operator panel / viewfinder) fires EV_UI_CLAIM { id } and the recorder hides
+// its fallback HUD (EV_UI_RELEASE { id } restores it). The recorder fires
+// EV_UI_QUERY on load so already-running claimants can re-claim.
+const EV_UI_CLAIM = "recorder:ui:claim";
+const EV_UI_RELEASE = "recorder:ui:release";
+const EV_UI_QUERY = "recorder:ui:query";
 
 // MediaRecorder container/codec preference order.
 const MIME_CANDIDATES = [
@@ -169,6 +189,9 @@ export class FeedRecorder extends ArrivalScript {
     _keyOff = null;
     _busSubs = [];                   // [name, fn] pairs for ArrivalSpace.off
     _hud = null;                     // { root, btn, time, shot }
+    _uiClaims = new Set();           // controller ids that claimed the record UI
+    _toastEl = null;
+    _toastTimer = null;
 
     initialize() {
         this._destroyed = false;
@@ -180,9 +203,26 @@ export class FeedRecorder extends ArrivalScript {
         sub(EV_STOP, () => this.stopRecording());
         sub(EV_TOGGLE, () => { if (this._recording) this.stopRecording(); else this.startRecording(); });
         sub(EV_SNAPSHOT, () => this.snapshot());
+        sub(EV_QUERY, () => this._fireState());
+        sub(EV_UI_CLAIM, (d) => { if (d?.id) { this._uiClaims.add(d.id); this._updateHudVisibility(); } });
+        sub(EV_UI_RELEASE, (d) => { if (d?.id) { this._uiClaims.delete(d.id); this._updateHudVisibility(); } });
 
         this._bindHotkey();
         this._buildHud();
+        // Ask already-loaded controller UIs (rail-camera etc.) to re-claim the HUD.
+        try { ArrivalSpace.fire(EV_UI_QUERY); } catch (e) { /* ignore */ }
+    }
+
+    _fireState() {
+        try {
+            ArrivalSpace.fire(EV_STATE, {
+                recording: this._recording,
+                seconds: this._recording ? this._elapsed : 0,
+                fps: Math.max(1, Math.min(60, this.captureFps)),
+                width: this._w,
+                height: this._h,
+            });
+        } catch (e) { /* ignore */ }
     }
 
     update(dt) {
@@ -240,6 +280,8 @@ export class FeedRecorder extends ArrivalScript {
         }
         this._busSubs = [];
         if (this._keyOff) { this._keyOff(); this._keyOff = null; }
+        if (this._toastTimer) { clearTimeout(this._toastTimer); this._toastTimer = null; }
+        if (this._toastEl) { try { this._toastEl.remove(); } catch (e) { /* ignore */ } this._toastEl = null; }
         this._destroyHud();
         this._releaseStream();
     }
@@ -309,7 +351,9 @@ export class FeedRecorder extends ArrivalScript {
         this._frames = 0;
         this._captureAccum = 1;      // capture immediately on the next update
         this._updateHudState();
-        try { ArrivalSpace.fire(EV_STARTED, { width: this._w, height: this._h }); } catch (e) { /* ignore */ }
+        try {
+            ArrivalSpace.fire(EV_STARTED, { width: this._w, height: this._h, fps });
+        } catch (e) { /* ignore */ }
     }
 
     stopRecording() {
@@ -341,7 +385,11 @@ export class FeedRecorder extends ArrivalScript {
         if (!ok || this._destroyed) return;
         this._blitFrame(src);
         this._recCanvas.toBlob((blob) => {
-            if (blob) this._download(blob, this._makeName("png"));
+            if (!blob) return;
+            const name = this._makeName("png");
+            this._download(blob, name);
+            this._toast(`PHOTO SAVED · ${name}`);
+            try { ArrivalSpace.fire(EV_SAVED, { kind: "photo", name, bytes: blob.size, seconds: 0 }); } catch (e) { /* ignore */ }
         }, "image/png");
     }
 
@@ -450,7 +498,11 @@ export class FeedRecorder extends ArrivalScript {
         const ext = type.includes("mp4") ? "mp4" : "webm";
         const name = this._makeName(ext);
         this._download(blob, name);
-        try { ArrivalSpace.fire(EV_SAVED, { name, bytes: blob.size, seconds: this._lastSeconds }); } catch (e) { /* ignore */ }
+        const mb = (blob.size / 1048576).toFixed(1);
+        const s = Math.round(this._lastSeconds);
+        const dur = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+        this._toast(`CLIP SAVED · ${name} · ${mb} MB · ${dur}`);
+        try { ArrivalSpace.fire(EV_SAVED, { kind: "video", name, bytes: blob.size, seconds: this._lastSeconds }); } catch (e) { /* ignore */ }
     }
 
     _makeName(ext) {
@@ -566,10 +618,46 @@ export class FeedRecorder extends ArrivalScript {
         shot.addEventListener("click", () => this.snapshot());
         this._hud = { root, btn, time };
         this._updateHudState();
+        this._updateHudVisibility();
     }
 
     _destroyHud() {
         if (this._hud) { try { this._hud.root.remove(); } catch (e) { /* ignore */ } this._hud = null; }
+    }
+
+    // Hide the fallback HUD while a controller plugin (rail-camera etc.) shows its
+    // own record UI. The toast is independent of this — it always shows.
+    _updateHudVisibility() {
+        if (!this._hud) return;
+        this._hud.root.style.display = this._uiClaims.size > 0 ? "none" : "";
+    }
+
+    // Camera-style "written to card" confirmation, bottom-centre, auto-fades.
+    _toast(text) {
+        try {
+            if (this._toastTimer) { clearTimeout(this._toastTimer); this._toastTimer = null; }
+            if (this._toastEl) { this._toastEl.remove(); this._toastEl = null; }
+            const ui = this.getUIContainer();
+            const el = document.createElement("div");
+            el.textContent = `✓ ${text}`;
+            Object.assign(el.style, {
+                position: "fixed", left: "50%", bottom: "84px", transform: "translateX(-50%) translateY(8px)",
+                background: "rgba(13,10,22,0.92)", border: "1px solid rgba(255,255,255,0.14)",
+                color: "#eaf6ea", padding: "8px 16px", borderRadius: "8px",
+                fontFamily: "'Courier New', ui-monospace, monospace", fontSize: "12px",
+                letterSpacing: "1px", whiteSpace: "nowrap", zIndex: "1200",
+                boxShadow: "0 10px 34px rgba(0,0,0,0.5)", pointerEvents: "none",
+                opacity: "0", transition: "opacity .25s ease, transform .25s ease",
+            });
+            ui.appendChild(el);
+            this._toastEl = el;
+            requestAnimationFrame(() => { el.style.opacity = "1"; el.style.transform = "translateX(-50%)"; });
+            this._toastTimer = setTimeout(() => {
+                el.style.opacity = "0";
+                el.style.transform = "translateX(-50%) translateY(8px)";
+                this._toastTimer = setTimeout(() => { el.remove(); if (this._toastEl === el) this._toastEl = null; }, 300);
+            }, 4000);
+        } catch (e) { /* UI unavailable — the download still happened */ }
     }
 
     _updateHudState() {
