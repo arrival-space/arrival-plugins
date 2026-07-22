@@ -213,6 +213,14 @@ export class RailCamera extends ArrivalScript {
     _groundHomeY = null;       // its placed height, held constant while it tracks X/Z
     _recording = false;        // mirror of the Feed Recorder's state (via the event bus)
     _recSubs = [];             // [name, fn] recorder-event subscriptions, for cleanup
+    _recFps = 30;              // capture fps from the recorder (for the timecode FF field)
+    _recInfo = null;           // { width, height } of the feed being recorded (readout)
+    _recBase = 0;              // performance.now() at (re)sync — timecode zero point
+    _recSecs0 = 0;             // seconds already elapsed at that sync (mid-recording join)
+    _claimId = "";             // our id on the recorder's HUD-claim ledger
+    _claimed = false;
+    // REC display elements (viewfinder strip + operator transport), cached on build
+    _vfTcEl = null; _vfInfoEl = null; _opTcEl = null;
     _opLocked = false;
     _opUnlock = null;
     _followEnt = null;
@@ -245,15 +253,71 @@ export class RailCamera extends ArrivalScript {
         this._buildBox();
         this._bindPointer();
         this._escUnsub = this.onKeyDown("escape", () => { if (this._active) this._exit(); });
-        // Mirror the Feed Recorder's state so the controls' REC button reflects it.
+        // Mirror the Feed Recorder's state so the transport UI reflects it. The
+        // timecode is derived locally: (seconds at sync) + wall clock since sync,
+        // frames from the recorder's captureFps.
         const onRec = (name, fn) => { try { ArrivalSpace.on(name, fn); this._recSubs.push([name, fn]); } catch (_) { /* ignore */ } };
-        onRec("recorder:started", () => { this._recording = true; this._updateRecButtons(); });
-        onRec("recorder:stopped", () => { this._recording = false; this._updateRecButtons(); });
+        onRec("recorder:started", (d) => this._syncRecState(true, 0, d));
+        onRec("recorder:stopped", () => this._syncRecState(false, 0, null));
+        // Late join: the recorder answers recorder:query with its live state (it may
+        // already be rolling when we load / when the user opens the panel).
+        onRec("recorder:state", (d) => this._syncRecState(!!d?.recording, d?.seconds || 0, d));
+        // A recorder that loads after us asks UI claimants to re-announce.
+        onRec("recorder:ui:query", () => { if (this._claimed) this._fireClaim(true); });
+        this._claimId = "railcam-" + (this.entity?.getGuid?.() || Math.random().toString(36).slice(2));
+        this._setUiClaim(this.operatorPanel);
+        try { ArrivalSpace.fire("recorder:query"); } catch (_) { /* ignore */ }
         if (this.operatorPanel) this._setOperatorVisible(true);
+    }
+
+    _syncRecState(recording, seconds, info) {
+        this._recording = recording;
+        this._recBase = performance.now();
+        this._recSecs0 = recording ? (seconds || 0) : 0;
+        if (info && info.fps) this._recFps = info.fps;
+        if (info && info.height) this._recInfo = { width: info.width || 0, height: info.height };
+        this._updateRecButtons();
+    }
+
+    // Claim/release the Feed Recorder's fallback HUD while we show our own record
+    // UI (operator panel enabled, or inside the viewfinder).
+    _setUiClaim(want) {
+        want = !!want;
+        if (want === this._claimed) return;
+        this._claimed = want;
+        this._fireClaim(want);
+    }
+
+    _fireClaim(claim) {
+        try { ArrivalSpace.fire(claim ? "recorder:ui:claim" : "recorder:ui:release", { id: this._claimId }); } catch (_) { /* ignore */ }
+    }
+
+    // Seconds since recording started (recorder-reported base + local wall clock).
+    _recSeconds() {
+        if (!this._recording) return 0;
+        return this._recSecs0 + (performance.now() - this._recBase) / 1000;
+    }
+
+    // SMPTE-style timecode HH:MM:SS:FF at the recorder's capture fps.
+    _timecode() {
+        const fps = Math.max(1, Math.min(60, Math.round(this._recFps || 30)));
+        const t = this._recSeconds();
+        const s = Math.floor(t);
+        const p = (n) => String(n).padStart(2, "0");
+        return `${p(Math.floor(s / 3600))}:${p(Math.floor(s / 60) % 60)}:${p(s % 60)}:${p(Math.floor((t - s) * fps))}`;
+    }
+
+    // Tick the running timecode readouts (called from update in both modes).
+    _updateRecClock() {
+        if (!this._recording) return;
+        const tc = this._timecode();
+        if (this._vfTcEl) this._vfTcEl.textContent = tc;
+        if (this._opTcEl) this._opTcEl.textContent = tc;
     }
 
     update(dt) {
         this._updateGroundMesh();   // dolly/tripod tracks the camera's X/Z on the floor
+        this._updateRecClock();     // running SMPTE timecode on whichever REC UI shows
         if (this._active) {
             // Zoom rocker ramps FOV while held; keep the readout in sync (the scroll
             // wheel changes it too).
@@ -306,6 +370,7 @@ export class RailCamera extends ArrivalScript {
         if (name === "operatorPanel") {
             if (this.operatorPanel) this._setOperatorVisible(true);
             else this._destroyOperator();
+            this._setUiClaim(this.operatorPanel || this._active);
             return;
         }
         if (name === "operatorLabel") {
@@ -367,6 +432,8 @@ export class RailCamera extends ArrivalScript {
         if (this._boxEntity) this._boxEntity.enabled = false; // don't tint the view from inside
         this._setOperatorVisible(false);   // hand the screen over to the viewfinder HUD
         this._showHud();
+        this._setUiClaim(true);            // our viewfinder owns the record UI now
+        try { ArrivalSpace.fire("recorder:query"); } catch (_) { /* ignore */ }   // sync REC/timecode
     }
 
     _exit() {
@@ -384,6 +451,8 @@ export class RailCamera extends ArrivalScript {
         if (this._boxEntity) this._boxEntity.enabled = !!this.showBox;
         this._hideHud();
         this._setOperatorVisible(true);    // bring the operator panel back
+        // Keep the claim only if the operator panel still shows record controls.
+        this._setUiClaim(!!this.operatorPanel);
     }
 
     // Capture the rail axes from the ENTITY's local orientation (call before
@@ -666,8 +735,14 @@ export class RailCamera extends ArrivalScript {
         this._zoomMonitors = null;
         const resetBtn = this._opUI.querySelector("[data-reset]");
         if (resetBtn) resetBtn.addEventListener("click", (e) => { e.stopPropagation(); this._resetFollow(); });
-        const recBtn = this._opUI.querySelector("[data-rec]");
-        if (recBtn) recBtn.addEventListener("click", (e) => { e.stopPropagation(); this._toggleRecording(); });
+        this._opUI.querySelectorAll("[data-rec]").forEach((b) =>
+            b.addEventListener("click", (e) => { e.stopPropagation(); this._toggleRecording(); }));
+        const snapBtn = this._opUI.querySelector("[data-snap]");
+        if (snapBtn) snapBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            try { ArrivalSpace.fire("recorder:snapshot"); } catch (_) { /* ignore */ }
+        });
+        this._opTcEl = this._opUI.querySelector(".rcop-tcv");
         this._updateRecButtons();
         const enterBtn = this._opUI.querySelector("[data-enter]");
         if (enterBtn) enterBtn.addEventListener("click", (e) => { e.stopPropagation(); this._enter(); });
@@ -805,14 +880,24 @@ export class RailCamera extends ArrivalScript {
         try { ArrivalSpace.fire("recorder:toggle"); } catch (_) { /* ignore */ }
     }
 
+    // Reflect the recorder state on both transport UIs: the record/stills buttons
+    // swap out for blinking tally + timecode + stop while rolling (operator panel
+    // and viewfinder strip alike), plus the viewfinder's red corner tally. The
+    // running timecode itself ticks in _updateRecClock.
     _updateRecButtons() {
-        const set = (btn) => {
-            if (!btn) return;
-            btn.classList.toggle("is-rec", this._recording);
-            btn.textContent = this._recording ? "■ STOP" : "● REC";
-        };
-        if (this._opUI) set(this._opUI.querySelector("[data-rec]"));
-        if (this._hud) set(this._hud.querySelector("[data-rec]"));
+        const rec = this._recording;
+        const tc = rec ? this._timecode() : "";
+        if (this._opUI) {
+            const t = this._opUI.querySelector(".rcop-trans");
+            if (t) t.classList.toggle("is-rec", rec);
+        }
+        if (this._opTcEl) this._opTcEl.textContent = rec ? tc : "00:00:00:00";
+        if (this._hud) this._hud.classList.toggle("rcvf-recording", rec);
+        if (this._vfTcEl) this._vfTcEl.textContent = rec ? tc : "00:00:00:00";
+        if (this._vfInfoEl) {
+            const i = this._recInfo;
+            this._vfInfoEl.textContent = i ? `${i.height}P · WEBM · ${Math.round(this._recFps)}` : "";
+        }
     }
 
     _destroyOperator() {
@@ -822,6 +907,7 @@ export class RailCamera extends ArrivalScript {
         this._opVel.set(0, 0, 0);
         if (this._opLocked) { this._opLocked = false; try { this.unlockInput(); } catch (_) { /* ignore */ } }
         if (this._opUI) { this._opUI.remove(); this._opUI = null; }
+        this._opTcEl = null;
     }
 
     // Show only when the panel is enabled, we're not inside the camera, and not editing.
@@ -874,22 +960,56 @@ export class RailCamera extends ArrivalScript {
                 box-shadow:0 2px 10px rgba(122,90,248,0.5); pointer-events:none;
                 display:flex; align-items:center; justify-content:center;
                 color:rgba(255,255,255,0.55); font-size:6px; font-weight:700; text-transform:uppercase; letter-spacing:0.2px; }
-            .rcop-vert { display:flex; flex-direction:column; gap:5px; flex:none; }
-            .rcop-vert .rcop-btn { width:48px; height:30px; border-radius:7px; font-size:15px; }
+            /* vert + zoom columns are both exactly 100px tall (45+10+45 vs
+               34+5+22+5+34), so UP's top edge lines up with T's and DN's bottom
+               edge with W's. */
+            .rcop-vert { display:flex; flex-direction:column; gap:10px; flex:none; }
+            .rcop-vert .rcop-btn { width:48px; height:45px; box-sizing:border-box; border-radius:7px; font-size:15px; }
             .rcop-vert small { font-size:7px; opacity:0.55; margin-left:2px; letter-spacing:1px; }
             .rcop-zoom { display:flex; flex-direction:column; align-items:center; gap:5px; flex:none; }
-            .rcop-zoom .rcop-btn { width:44px; border-radius:7px; font-size:14px; font-weight:700;
-                flex-direction:column; gap:0; line-height:1; padding:4px 0; }
+            .rcop-zoom .rcop-btn { width:44px; height:34px; box-sizing:border-box; border-radius:7px;
+                font-size:14px; font-weight:700; flex-direction:column; gap:0; line-height:1; padding:0; }
             .rcop-zoom .rcop-btn small { font-size:6px; letter-spacing:1px; opacity:0.55; font-weight:normal; }
-            .rcop-mm { color:#f3f1fa; line-height:1.05; text-align:center; }
+            .rcop-mm { color:#f3f1fa; line-height:1.05; text-align:center; height:22px;
+                display:flex; align-items:center; justify-content:center; }
             .rcop-mm b { font-size:14px; font-weight:700; }
             .rcop-mm small { font-size:8px; opacity:0.6; letter-spacing:1px; margin-left:1px; }
             .rcop-reset { position:absolute; top:8px; right:10px; padding:3px 10px; border-radius:6px;
                 font-size:10px; letter-spacing:1px; text-transform:uppercase; }
-            .rcop-rec { position:absolute; top:8px; left:10px; padding:3px 10px; border-radius:6px;
-                font-size:10px; letter-spacing:1px; text-transform:uppercase;
-                color:#ff8585; border-color:rgba(229,57,53,0.45); }
-            .rcop-rec.is-rec { background:#c81e1e; border-color:#c81e1e; color:#fff; }
+            /* right column: ENTER with the record transport underneath. Idle the
+               transport shows a round record button + a stills button; while
+               rolling those swap out for the blinking tally + timecode + a small
+               stop control (modern camera-app pattern). */
+            .rcop-right { display:flex; flex-direction:column; align-items:stretch; gap:8px; flex:none; }
+            .rcop-trans { display:flex; align-items:center; justify-content:center; gap:12px;
+                min-height:40px; }
+            .rcop-tcwrap { display:none; align-items:center; gap:7px; font-size:12px;
+                letter-spacing:1px; color:#ff453a; font-variant-numeric:tabular-nums; white-space:nowrap; }
+            .rcop-trans.is-rec .rcop-tcwrap { display:flex; }
+            .rcop-dot { width:9px; height:9px; border-radius:50%; background:#ff453a; flex:none;
+                animation:rcopBlink 1s steps(1) infinite; }
+            @keyframes rcopBlink { 50% { opacity:0; } }
+            .rcop-shutter { width:40px; height:40px; border-radius:50%; position:relative; flex:none;
+                cursor:pointer; padding:0; background:transparent;
+                border:3px solid rgba(255,255,255,0.92); -webkit-tap-highlight-color:transparent; }
+            .rcop-shutter::after { content:''; position:absolute; inset:3px; border-radius:50%;
+                background:#e53935; transition:background .15s ease; }
+            .rcop-shutter:hover::after { background:#ff453a; }
+            .rcop-photo { width:28px; height:28px; border-radius:50%; position:relative; flex:none;
+                cursor:pointer; padding:0; background:transparent;
+                border:2px solid rgba(255,255,255,0.7); -webkit-tap-highlight-color:transparent; }
+            .rcop-photo::after { content:''; position:absolute; inset:4px; border-radius:50%;
+                background:rgba(255,255,255,0.85); transition:transform .12s ease; }
+            .rcop-photo:active::after { transform:scale(0.55); }
+            .rcop-stop { display:none; width:28px; height:28px; border-radius:50%; position:relative;
+                flex:none; cursor:pointer; padding:0; background:transparent;
+                border:2px solid rgba(255,255,255,0.85); -webkit-tap-highlight-color:transparent;
+                transition:border-color .15s ease; }
+            .rcop-stop::after { content:''; position:absolute; inset:8px; border-radius:2px;
+                background:#ff453a; }
+            .rcop-stop:hover { border-color:#ff453a; }
+            .rcop-trans.is-rec .rcop-shutter, .rcop-trans.is-rec .rcop-photo { display:none; }
+            .rcop-trans.is-rec .rcop-stop { display:inline-block; }
             .rcop-enter { padding:0 20px; height:52px; border-radius:9px; font-size:14px; letter-spacing:2px;
                 color:#fff; background:#7a5af8; border:1px solid #7a5af8;
                 box-shadow:0 3px 16px rgba(122,90,248,0.5); }
@@ -904,7 +1024,6 @@ export class RailCamera extends ArrivalScript {
         <div class="rcop">
             <div class="rcop-cap">Camera Control</div>
             <button class="rcop-btn rcop-reset" data-reset aria-label="Reset camera">reset</button>
-            <button class="rcop-btn rcop-rec" data-rec aria-label="Record feed">● REC</button>
             <div class="rcop-controls">
                 <div class="rcop-stickwrap">
                     <div class="rcop-pan" aria-label="Pan angle"><div class="rcop-pan-knob">yaw</div></div>
@@ -922,7 +1041,15 @@ export class RailCamera extends ArrivalScript {
                     <div class="rcop-mm"><b>${this._focalFromFov(this._currentFov)}</b><small>mm</small></div>
                     <button class="rcop-btn" data-zoom="wide" aria-label="Zoom wide">W<small>WIDE</small></button>
                 </div>
-                <button class="rcop-btn rcop-enter" data-enter aria-label="Enter camera">ENTER</button>
+                <div class="rcop-right">
+                    <button class="rcop-btn rcop-enter" data-enter aria-label="Enter camera">ENTER</button>
+                    <div class="rcop-trans">
+                        <button class="rcop-shutter" data-rec aria-label="Record" title="Record"></button>
+                        <button class="rcop-photo" data-snap aria-label="Snapshot" title="Snapshot"></button>
+                        <div class="rcop-tcwrap"><span class="rcop-dot"></span><span class="rcop-tcv">00:00:00:00</span></div>
+                        <button class="rcop-stop" data-rec aria-label="Stop recording" title="Stop"></button>
+                    </div>
+                </div>
             </div>
         </div>`;
     }
@@ -1170,12 +1297,21 @@ export class RailCamera extends ArrivalScript {
             btn.addEventListener("mouseenter", () => this.lockInput());
             btn.addEventListener("mouseleave", () => this.unlockInput());
         }
-        const recBtn = this._hud.querySelector("[data-rec]");
-        if (recBtn) {
-            recBtn.addEventListener("click", () => this._toggleRecording());
-            recBtn.addEventListener("mouseenter", () => this.lockInput());
-            recBtn.addEventListener("mouseleave", () => this.unlockInput());
+        // Status strip: transport click = start/stop, stills circle = snapshot;
+        // free the pointer while hovering the strip so the clicks register.
+        const strip = this._hud.querySelector(".rcvf-strip");
+        if (strip) {
+            strip.addEventListener("mouseenter", () => this.lockInput());
+            strip.addEventListener("mouseleave", () => this.unlockInput());
         }
+        this._hud.querySelectorAll("[data-rec]").forEach((b) =>
+            b.addEventListener("click", () => this._toggleRecording()));
+        const snapBtn = this._hud.querySelector("[data-snap]");
+        if (snapBtn) snapBtn.addEventListener("click", () => {
+            try { ArrivalSpace.fire("recorder:snapshot"); } catch (_) { /* ignore */ }
+        });
+        this._vfTcEl = this._hud.querySelector(".rcvf-tc");
+        this._vfInfoEl = this._hud.querySelector(".rcvf-fmt");
         this._updateRecButtons();
 
         // Immersive viewport: hide the app's built-in UI while in the camera.
@@ -1210,6 +1346,7 @@ export class RailCamera extends ArrivalScript {
         }
         if (this._hud) { this._hud.remove(); this._hud = null; }
         this._frameEl = this._fovEl = this._markEl = this._evEl = null;
+        this._vfTcEl = this._vfInfoEl = null;
         this._padStrafe = this._padVert = this._padForward = this._zoomDir = this._zoomVel = this._expoDir = 0;
         this._hudYaw = this._hudPitch = 0;
         this._hdrNeutral = false;
@@ -1287,15 +1424,55 @@ export class RailCamera extends ArrivalScript {
                 border-radius:9px; font-size:14px; letter-spacing:1px;
                 background:#7a5af8; border-color:#7a5af8; box-shadow:0 3px 16px rgba(122,90,248,0.5); }
             .rcvf-btn.rcvf-exit:hover, .rcvf-btn.rcvf-exit:active { background:#8b6dff; border-color:#8b6dff; }
-            .rcvf-btn.rcvf-rec { position:absolute; top:30px; left:40px; padding:0 14px; height:36px;
-                border-radius:9px; font-size:13px; letter-spacing:1px;
-                color:#ff8585; border-color:rgba(229,57,53,0.5); }
-            .rcvf-btn.rcvf-rec.is-rec { background:#c81e1e; border-color:#c81e1e; color:#fff; }
+            /* cine status strip — top-left. Idle: record button + stills button ·
+               cam label. Rolling: the buttons swap out for the blinking tally +
+               SMPTE timecode + a small stop control (same pattern as the operator
+               panel's transport) · cam label · format readout. */
+            .rcvf-strip { display:flex; align-items:center;
+                gap:12px; height:36px; padding:0 14px; pointer-events:auto;
+                background:#0d0a16; border:1px solid rgba(255,255,255,0.10); border-radius:9px;
+                box-shadow:0 16px 50px rgba(0,0,0,0.55); }
+            .rcvf-shutter { width:26px; height:26px; border-radius:50%; position:relative; flex:none;
+                cursor:pointer; padding:0; background:transparent;
+                border:2px solid rgba(255,255,255,0.9); -webkit-tap-highlight-color:transparent; }
+            .rcvf-shutter::after { content:''; position:absolute; inset:3px; border-radius:50%;
+                background:#e53935; transition:background .15s ease; }
+            .rcvf-shutter:hover::after { background:#ff453a; }
+            .rcvf-tcwrap { display:none; align-items:center; gap:8px; color:#ff453a; }
+            .rcvf-dot { width:9px; height:9px; border-radius:50%; background:#ff453a; flex:none;
+                animation:rcvfBlink 1s steps(1) infinite; }
+            @keyframes rcvfBlink { 50% { opacity:0; } }
+            .rcvf-tc { font-size:13px; letter-spacing:1px; font-variant-numeric:tabular-nums; }
+            .rcvf-stop { display:none; width:24px; height:24px; border-radius:50%; position:relative;
+                flex:none; cursor:pointer; padding:0; background:transparent;
+                border:2px solid rgba(255,255,255,0.85); -webkit-tap-highlight-color:transparent;
+                transition:border-color .15s ease; }
+            .rcvf-stop::after { content:''; position:absolute; inset:7px; border-radius:2px;
+                background:#ff453a; }
+            .rcvf-stop:hover { border-color:#ff453a; }
+            /* recording: the buttons swap out for the running timecode + stop */
+            .rcvf-recording .rcvf-shutter, .rcvf-recording .rcvf-snap { display:none; }
+            .rcvf-recording .rcvf-tcwrap { display:flex; }
+            .rcvf-recording .rcvf-stop { display:inline-block; }
+            .rcvf-cam { font-size:10px; letter-spacing:2px; opacity:0.7; }
+            .rcvf-fmt { font-size:10px; letter-spacing:1px; opacity:0.55;
+                font-variant-numeric:tabular-nums; }
+            .rcvf-snap { width:24px; height:24px; border-radius:50%; position:relative; flex:none;
+                cursor:pointer; padding:0; background:transparent;
+                border:2px solid rgba(255,255,255,0.7); -webkit-tap-highlight-color:transparent; }
+            .rcvf-snap::after { content:''; position:absolute; inset:3px; border-radius:50%;
+                background:rgba(255,255,255,0.85); transition:transform .12s ease; }
+            .rcvf-snap:active::after { transform:scale(0.55); }
+            /* camcorder tally: the frame corners go red while rolling */
+            .rcvf-corner { transition:border-color .2s ease; }
+            .rcvf-recording .rcvf-corner { border-color:#ff453a; }
             .rcvf-raw { position:absolute; bottom:32px; left:40px; background:#000; color:#fff;
                 padding:4px 13px; border-radius:5px; font-size:16px; letter-spacing:2px; }
 
             /* operator control cluster — bottom-right; identical look to the outer panel */
-            .rcvf-cluster { position:absolute; right:40px; bottom:30px; pointer-events:none; }
+            /* bottom-right stack: record strip above the operator control panel */
+            .rcvf-cluster { position:absolute; right:40px; bottom:30px; pointer-events:none;
+                display:flex; flex-direction:column; align-items:flex-end; gap:10px; }
             .rcvf-panel { display:flex; align-items:center; gap:12px; pointer-events:auto;
                 background:#0d0a16; border:1px solid rgba(255,255,255,0.10); border-radius:12px;
                 padding:10px 12px; box-shadow:0 16px 50px rgba(0,0,0,0.55);
@@ -1328,14 +1505,18 @@ export class RailCamera extends ArrivalScript {
                 box-shadow:0 2px 10px rgba(122,90,248,0.5); pointer-events:none;
                 display:flex; align-items:center; justify-content:center;
                 color:rgba(255,255,255,0.55); font-size:6px; font-weight:700; text-transform:uppercase; letter-spacing:0.2px; }
-            .rcvf-vert { display:flex; flex-direction:column; gap:5px; flex:none; }
-            .rcvf-vert .rcvf-btn { width:48px; height:30px; border-radius:7px; font-size:15px; }
+            /* vert + zoom columns are both exactly 100px tall (45+10+45 vs
+               34+5+22+5+34), so UP/DN edges line up with T/W — same as the
+               operator panel. */
+            .rcvf-vert { display:flex; flex-direction:column; gap:10px; flex:none; }
+            .rcvf-vert .rcvf-btn { width:48px; height:45px; box-sizing:border-box; border-radius:7px; font-size:15px; }
             .rcvf-vert small { font-size:7px; opacity:0.55; margin-left:2px; letter-spacing:1px; }
             .rcvf-zoom { display:flex; flex-direction:column; align-items:center; gap:5px; flex:none; }
-            .rcvf-zoom .rcvf-btn { width:44px; border-radius:7px; font-size:14px; font-weight:700;
-                flex-direction:column; gap:0; line-height:1; padding:4px 0; }
+            .rcvf-zoom .rcvf-btn { width:44px; height:34px; box-sizing:border-box; border-radius:7px;
+                font-size:14px; font-weight:700; flex-direction:column; gap:0; line-height:1; padding:0; }
             .rcvf-zoom .rcvf-btn small { font-size:6px; letter-spacing:1px; opacity:0.55; font-weight:normal; }
-            .rcvf-mm { color:#f3f1fa; line-height:1.05; text-align:center; }
+            .rcvf-mm { color:#f3f1fa; line-height:1.05; text-align:center; height:22px;
+                display:flex; align-items:center; justify-content:center; }
             .rcvf-mm .rcvf-fov { font-size:14px; font-weight:700; }
             .rcvf-mm small { font-size:8px; opacity:0.6; letter-spacing:1px; margin-left:1px; }
 
@@ -1369,9 +1550,16 @@ export class RailCamera extends ArrivalScript {
             <div class="rcvf-cross"></div>
         </div>
         <button class="rcvf-btn rcvf-exit" aria-label="Exit camera">Exit</button>
-        <button class="rcvf-btn rcvf-rec" data-rec aria-label="Record feed">● REC</button>
         <div class="rcvf-raw">RAW</div>
         <div class="rcvf-cluster">
+            <div class="rcvf-strip">
+                <button class="rcvf-shutter" data-rec aria-label="Record" title="Record"></button>
+                <button class="rcvf-snap" data-snap aria-label="Snapshot" title="Snapshot"></button>
+                <div class="rcvf-tcwrap"><span class="rcvf-dot"></span><span class="rcvf-tc">00:00:00:00</span></div>
+                <button class="rcvf-stop" data-rec aria-label="Stop recording" title="Stop"></button>
+                <span class="rcvf-cam">${this.operatorLabel || "CAM 01"}</span>
+                <span class="rcvf-fmt"></span>
+            </div>
             <div class="rcvf-panel">
                 <div class="rcvf-stickwrap">
                     <div class="rcvf-pan" aria-label="Yaw"><div class="rcvf-pan-knob">yaw</div></div>
@@ -1442,6 +1630,7 @@ export class RailCamera extends ArrivalScript {
         this._setFollowMeshHidden(false);   // never leave the camera body hidden
         this._unbindPointer();
         this._escUnsub?.();
+        this._setUiClaim(false);           // give the recorder its fallback HUD back
         for (const [n, fn] of (this._recSubs || [])) { try { ArrivalSpace.off(n, fn); } catch (_) { /* ignore */ } }
         this._recSubs = [];
         this._hideHud();
