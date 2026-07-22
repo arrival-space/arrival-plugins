@@ -8,6 +8,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const AdmZip = require("adm-zip");
 
 const MANIFEST_REL = path.join(".arrival", "manifest.json");
@@ -129,4 +130,56 @@ function buildApplyZip(dir) {
     return zip.toBuffer();
 }
 
-module.exports = { extractPull, readManifest, writeManifest, buildApplyZip, normalizeToLF, MANIFEST_REL };
+// Compute what `push` would change: working files under space/ vs the baseline manifest (the
+// "index"). Mirrors buildApplyZip's LF-normalization so status agrees with what push sends.
+// Multi-file (directory) plugins are surfaced but not precisely diffed — their baseline is a single
+// server-side dirHash we can't reproduce client-side; that granularity comes with the changeset work.
+function computeStatus(dir) {
+    const manifest = readManifest(dir);
+    const sha = (buf) => crypto.createHash("sha256").update(buf).digest("hex");
+    const norm = (rel) => String(rel).replace(/\\/g, "/");
+
+    const entries = [
+        ...(manifest.entities || []),
+        ...(manifest.plugins || []),
+        ...(manifest.assets || []),
+    ].filter((e) => e && e.file);
+    const tracked = new Set(entries.map((e) => norm(e.file)));
+    const dirPluginDirs = (manifest.plugins || []).filter((p) => p && p.isDir && p.file).map((p) => norm(p.file));
+
+    const modified = [], deleted = [], added = [], dirPlugins = [];
+    for (const e of entries) {
+        const rel = norm(e.file);
+        const abs = path.join(dir, e.file);
+        if (e.isDir) {
+            if (!fs.existsSync(abs)) deleted.push(rel);
+            else dirPlugins.push(rel);
+            continue;
+        }
+        let buf;
+        try { buf = fs.readFileSync(abs); } catch { deleted.push(rel); continue; }
+        if (sha(normalizeToLF(buf, path.extname(rel).toLowerCase())) !== e.sha) modified.push(rel);
+    }
+
+    const spaceDir = path.join(dir, "space");
+    const walk = (absDir) => {
+        let ents;
+        try { ents = fs.readdirSync(absDir, { withFileTypes: true }); } catch { return; }
+        for (const de of ents) {
+            const abs = path.join(absDir, de.name);
+            const rel = norm(path.relative(dir, abs));
+            if (de.isDirectory()) { walk(abs); continue; }
+            if (!de.isFile()) continue;
+            if (tracked.has(rel)) continue;
+            if (rel === "space/README.md" || rel === "space/logs.md") continue;      // server-generated
+            if (dirPluginDirs.some((dp) => rel.startsWith(dp + "/"))) continue;      // inside a tracked dir plugin
+            added.push(rel);
+        }
+    };
+    if (fs.existsSync(spaceDir)) walk(spaceDir);
+
+    modified.sort(); added.sort(); deleted.sort();
+    return { modified, added, deleted, dirPlugins };
+}
+
+module.exports = { extractPull, readManifest, writeManifest, buildApplyZip, computeStatus, normalizeToLF, MANIFEST_REL };

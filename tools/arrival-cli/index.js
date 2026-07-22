@@ -105,6 +105,28 @@ program.command("pull")
         }
     });
 
+program.command("status")
+    .description("Show what `push` would change since your last pull (added / modified / deleted) — local, no network")
+    .option("--dir <path>", "workspace directory (default: current)")
+    .action((opts) => {
+        const dir = path.resolve(opts.dir || ".");
+        try {
+            const st = ws.computeStatus(dir);
+            const total = st.modified.length + st.added.length + st.deleted.length;
+            if (!total) {
+                console.log("✓ Clean — nothing to push.");
+            } else {
+                for (const p of st.modified) console.log(`  ~ ${p}`);
+                for (const p of st.added) console.log(`  + ${p}`);
+                for (const p of st.deleted) console.log(`  - ${p}`);
+                console.log(`\n${total} change${total === 1 ? "" : "s"} — \`arrival validate\` to dry-run, \`arrival push\` to apply.`);
+            }
+            if (st.dirPlugins.length) {
+                console.log(`  note: ${st.dirPlugins.length} multi-file plugin${st.dirPlugins.length === 1 ? "" : "s"} present but not line-diffed here — use git for those.`);
+            }
+        } catch (e) { fail(e); }
+    });
+
 program.command("validate")
     .description("Server-side dry-run: validate the current workspace without applying")
     .option("--dir <path>", "workspace directory (default: current)")
