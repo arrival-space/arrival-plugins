@@ -2,7 +2,7 @@
   "version": 1,
   "updated_at": "2026-07-22",
   "source": "curated",
-  "total_entries": 57,
+  "total_entries": 60,
   "entries": [
     {
       "path": "README.md",
@@ -440,6 +440,30 @@
       "summary": "Reveals ANOTHER scene splat only through a rectangular opening, via a stencil mask on the shared 'Splats' layer. The target can be a splat that is HIDDEN (disabled) in the scene — enableTargetSplat (default on) force-enables it so it appears ONLY through the window, then restores it on unload. Options: near-clip (hide splats in front), horizontal screen curve, additive glossy env reflection, and a solid-screen mode that hides everything behind while objects in front still occlude it. Picks the target with an entity picker (filterTypes:['splat']). See the file for the rendering details.",
       "script_name": "Splat Portal",
       "keywords": ["splat", "portal", "window", "stencil", "stencil mask", "stencil buffer", "StencilParameters", "FUNC_EQUAL", "STENCILOP_REPLACE", "near clip", "clip plane", "clip offset", "half-space clip", "gsplatModifyVS", "clip in front", "curved screen", "horizontal curve", "screen curve", "subdivided mesh", "glass", "reflection", "glossy", "gloss", "envAtlas", "additive blend", "metalness mirror", "depth write", "occlude behind", "solid screen", "black backside", "back panel", "gsplat", "reveal", "peephole", "doorway", "Splats layer", "AfterSplat", "stencilMaskIds", "unified splat", "force non-unified", "entity picker", "filterTypes splat", "glowing frame", "emissive frame", "playcanvas splat-portal", "another world", "enableTargetSplat", "enable hidden splat", "reveal hidden splat", "show hidden splat", "make splat visible", "enable splat", "disabled splat", "webgl", "webgpu"]
+    },
+    {
+      "path": "examples/splat-monitor.mjs",
+      "kind": "example",
+      "title": "Splat Monitor",
+      "summary": "A flat screen showing a LIVE render-to-texture feed of the space (or one isolated splat) from a second hidden camera — a monitor / CCTV panel. POV sources: a camera entity (with flip + forward offset), follow the player camera, or a fixed world viewpoint; windowMode turns it into an off-axis-projection portal window with optional per-fragment curve compensation. Feed FX: resolution, pixelated, tint/gain, scanlines, LED pixel raster; plus on-demand rendering (freeze when static), clip-in-front of feed splats, screen curve, collision box, and a glowing frame. Its pc.RenderTarget can be recorded to video by the Feed Recorder plugin.",
+      "script_name": "Splat Monitor",
+      "keywords": ["splat", "monitor", "screen", "cctv", "camera feed", "live feed", "render to texture", "rtt", "render target", "RenderTarget", "second camera", "priority -1", "gsplatDirector", "per-camera splat", "isolate splat", "private layer", "window mode", "off-axis projection", "calculateProjection", "trompe l'oeil", "portal", "follow player", "camera entity", "pov", "flip pov", "pov forward", "fixed viewpoint", "aim at target", "curved screen", "curve compensation", "scanlines", "crt", "pixelated", "led wall", "pixel raster", "video wall", "tint", "brightness", "on-demand render", "render every frame", "freeze frame", "clip in front", "gsplatModifyVS", "collision box", "glowing frame", "backdrop color", "reveal hidden splat", "webgl", "webgpu"]
+    },
+    {
+      "path": "examples/feed-recorder.mjs",
+      "kind": "example",
+      "title": "Feed Recorder",
+      "summary": "Records a Splat Monitor's render-target feed to a downloadable video file (WebM via MediaRecorder). Async GPU texture readback into a canvas at a configurable capture FPS and bitrate, with a fallback HUD record/stop button + PNG snapshot, a toggle hotkey, max-duration auto-stop, and local event-bus control (recorder:start/stop/toggle/snapshot fired by other plugins; fires recorder:started/stopped/saved back; recorder:query answered with recorder:state). Controller plugins with their own record UI (e.g. rail-camera) claim/hide the fallback HUD via recorder:ui:claim/release. Shows a 'CLIP SAVED' toast on download. Auto-discovers the first Splat Monitor or records any picked plugin entity exposing a pc.RenderTarget (_rt/_texture); auto-corrects flipPov feeds. Keeps an on-demand monitor rendering while recording.",
+      "script_name": "Feed Recorder",
+      "keywords": ["recorder", "record", "video", "capture", "webm", "mp4", "MediaRecorder", "captureStream", "requestFrame", "download video", "save video", "screen recording", "feed", "render target", "RenderTarget", "render to texture", "rtt", "texture read", "readback", "readTextureAsync", "gpu readback", "canvas", "snapshot", "png", "screenshot", "splat monitor", "cctv", "clip", "movie", "fps", "bitrate", "max duration", "hotkey", "hud button", "event bus", "recorder:start", "recorder:stop", "recorder:saved", "recorder:state", "recorder:ui:claim", "toast", "flip y", "flipPov", "getPlugins", "inter-plugin"]
+    },
+    {
+      "path": "examples/rail-camera.mjs",
+      "kind": "example",
+      "title": "Rail Camera",
+      "summary": "Click a box (or use a 2D camera-operator panel) to enter a constrained free-fly studio camera that slides only along enabled local axes with per-axis travel limits — a virtual dolly/rail rig. Cine viewfinder HUD with corner brackets, crosshair, letterbox aspect, joystick + pan/tilt sliders, zoom rocker with mm readout, EV exposure meter with HDR Neutral toggle, and an ARRI-style record status strip (blinking tally, SMPTE timecode, snapshot button) driving the Feed Recorder over the event bus (recorder:toggle/query, claims the recorder HUD). Operator panel has a morphing round shutter button + stills button + timecode. Can pin a follow entity to the camera (pair with a Splat Monitor's Camera-POV for a live filming rig), slide a dolly/tripod model along the floor, and sync zoom to linked monitors.",
+      "script_name": "Rail Camera",
+      "keywords": ["rail camera", "dolly", "camera rig", "studio camera", "free camera", "constrained camera", "camera on rails", "setCameraMode", "setFreeCamPose", "freeCamView", "viewfinder", "letterbox", "aspect ratio", "corner brackets", "crosshair", "zoom", "focal length", "mm", "fov", "exposure", "EV", "brightness", "HDR", "tone mapping", "TONEMAP_NEUTRAL", "setPostEffects", "operator panel", "joystick", "pan tilt", "pedestal", "record button", "shutter button", "rec", "tally", "smpte", "timecode", "recorder:toggle", "feed recorder", "follow entity", "camera pov", "splat monitor", "ground entity", "tripod", "trigger box", "wheel fov", "setAppUIVisible"]
     },
     {
       "path": "types/arrival.d.ts",
