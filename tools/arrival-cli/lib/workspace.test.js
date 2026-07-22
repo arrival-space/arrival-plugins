@@ -107,6 +107,29 @@ test("extractPull stores a .arrival/base mirror; readForDiff returns base vs wor
     fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test("buildChangeset emits puts for modified/added + deletes; commitBase resets status", () => {
+    const src = new AdmZip();
+    src.addFile("space/room.json", Buffer.from('{"id":"RoomInfo"}'));
+    src.addFile("space/entities/e1.json", Buffer.from('{"id":"e1"}'));
+    src.addFile(".materialize-manifest.json", Buffer.from(JSON.stringify({ spaceId: "x", entities: [], plugins: [], assets: [] })));
+    const dir = tmp();
+    ws.extractPull(src.toBuffer(), dir);
+
+    fs.writeFileSync(path.join(dir, "space", "room.json"), '{"id":"RoomInfo","t":1}');
+    fs.writeFileSync(path.join(dir, "space", "entities", "e2.json"), '{"id":"e2"}');
+    fs.rmSync(path.join(dir, "space", "entities", "e1.json"));
+
+    const cs = ws.buildChangeset(dir);
+    assert.deepEqual(cs.puts.map((p) => p.path).sort(), ["space/entities/e2.json", "space/room.json"]);
+    assert.deepEqual(cs.deletes, ["space/entities/e1.json"]);
+    assert.equal(cs.puts.find((p) => p.path === "space/room.json").content, '{"id":"RoomInfo","t":1}');
+
+    ws.commitBase(dir);
+    const st = ws.computeStatus(dir);
+    assert.deepEqual([st.modified, st.added, st.deleted], [[], [], []], "clean after commitBase");
+    fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test("normalizeToLF leaves binary extensions untouched", () => {
     const buf = Buffer.from([0x00, 0x0d, 0x0a, 0xff]);
     assert.equal(ws.normalizeToLF(buf, ".glb"), buf);

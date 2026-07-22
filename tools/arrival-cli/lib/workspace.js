@@ -234,4 +234,36 @@ function computeStatusFromManifest(dir) {
     return { modified, added, deleted, dirPlugins };
 }
 
-module.exports = { extractPull, readManifest, writeManifest, buildApplyZip, computeStatus, readForDiff, normalizeToLF, MANIFEST_REL };
+// Build a per-file changeset from the workspace: puts (modified + added; text LF-normalized,
+// binary base64) + explicit deletes. Reuses computeStatus, so it's precise for every file
+// (including files inside multi-file plugin directories).
+function buildChangeset(dir) {
+    const st = computeStatus(dir);
+    const puts = [];
+    for (const rel of [...st.modified, ...st.added]) {
+        const ext = path.extname(rel).toLowerCase();
+        const raw = fs.readFileSync(path.join(dir, rel));
+        if (TEXT_EXT.has(ext)) puts.push({ path: rel, content: normalizeToLF(raw, ext).toString("utf8") });
+        else puts.push({ path: rel, encoding: "base64", content: raw.toString("base64") });
+    }
+    return { puts, deletes: st.deleted, status: st };
+}
+
+// After a successful push the working tree IS the new server state — refresh the .arrival/base
+// mirror so status/diff read clean again. (A re-pull re-syncs anything the server normalized.)
+function commitBase(dir) {
+    const baseSpace = path.join(dir, ".arrival", "base", "space");
+    const workSpace = path.join(dir, "space");
+    fs.rmSync(baseSpace, { recursive: true, force: true });
+    const copy = (src, dst) => {
+        fs.mkdirSync(dst, { recursive: true });
+        for (const e of fs.readdirSync(src, { withFileTypes: true })) {
+            const s = path.join(src, e.name), d = path.join(dst, e.name);
+            if (e.isDirectory()) copy(s, d);
+            else if (e.isFile()) fs.copyFileSync(s, d);
+        }
+    };
+    if (fs.existsSync(workSpace)) copy(workSpace, baseSpace);
+}
+
+module.exports = { extractPull, readManifest, writeManifest, buildApplyZip, computeStatus, readForDiff, buildChangeset, commitBase, normalizeToLF, MANIFEST_REL };

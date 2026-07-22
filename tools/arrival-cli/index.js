@@ -156,15 +156,15 @@ program.command("diff")
     });
 
 program.command("validate")
-    .description("Server-side dry-run: validate the current workspace without applying")
+    .description("Server-side dry-run: validate the pending changes without applying")
     .option("--dir <path>", "workspace directory (default: current)")
     .action(async (opts) => {
         const cfg = config.load();
         const dir = path.resolve(opts.dir || ".");
         try {
             const spaceId = ws.readManifest(dir).spaceId;
-            const zip = ws.buildApplyZip(dir);
-            const { status, json } = await api.apply(cfg, spaceId, zip, { dryRun: true });
+            const cs = ws.buildChangeset(dir);
+            const { status, json } = await api.applyChangeset(cfg, spaceId, { puts: cs.puts, deletes: cs.deletes }, { dryRun: true });
             if (status === 200) { console.log(json.noChanges ? "✓ Valid — no changes to apply." : "✓ Valid."); return; }
             if (status === 422) { printValidationErrors(json); process.exitCode = 1; return; }
             fail(new Error(json.message || `Validate failed (${status})`));
@@ -172,38 +172,43 @@ program.command("validate")
     });
 
 program.command("push")
-    .description("Apply the current workspace to the live space")
+    .description("Push your changes to the live space — only changed files are sent")
     .option("--dir <path>", "workspace directory (default: current)")
-    .option("--force", "confirm deletions / take last-writer-wins")
+    .option("--force", "confirm deletions")
     .option("--dry-run", "validate only, don't apply")
     .action(async (opts) => {
         const cfg = config.load();
         const dir = path.resolve(opts.dir || ".");
         try {
             const spaceId = ws.readManifest(dir).spaceId;
-            const zip = ws.buildApplyZip(dir);
-            const { status, json } = await api.apply(cfg, spaceId, zip, { dryRun: opts.dryRun, force: opts.force });
+            const cs = ws.buildChangeset(dir);
+            const st = cs.status;
+            const total = st.modified.length + st.added.length + st.deleted.length;
+            if (!total) { console.log("✓ Nothing to push — workspace matches your last pull."); return; }
 
-            if (status === 200) {
-                if (json.noChanges) { console.log("✓ Nothing to push — workspace matches the live space."); return; }
-                if (json.dryRun) { console.log("✓ Valid (dry run) — not applied."); return; }
-                const applied = json.applied || [];
-                console.log(`✓ Pushed — ${applied.length} change${applied.length === 1 ? "" : "s"}${json.status === "partial" ? " (some writes failed)" : ""}`);
-                for (const a of applied) console.log(`  ${String(a.op).replace(/_/g, " ")} ${a.target}`);
-                for (const f of (json.failed || [])) console.log(`  ! ${String(f.op).replace(/_/g, " ")} ${f.target}: ${f.error}`);
-                if (json.manifest) ws.writeManifest(dir, json.manifest); // persist the advanced baseline
-                if (json.status === "partial") process.exitCode = 1;
-                return;
-            }
-            if (status === 422) { printValidationErrors(json); process.exitCode = 1; return; }
-            if (status === 409) {
-                console.error(`✗ This push would DELETE ${(json.plannedDeletes || []).length} entit${(json.plannedDeletes || []).length === 1 ? "y" : "ies"}:`);
-                for (const id of (json.plannedDeletes || [])) console.error(`    - ${id}`);
+            // Deletions are confirmed on the client before they're sent.
+            if (st.deleted.length && !opts.force && !opts.dryRun) {
+                console.error(`✗ This push would DELETE ${st.deleted.length} file${st.deleted.length === 1 ? "" : "s"}:`);
+                for (const p of st.deleted) console.error(`    - ${p}`);
                 console.error("  If that's intended, re-run with --force.");
                 process.exitCode = 1;
                 return;
             }
-            if (status === 423) { fail(new Error(json.message || "Space is locked by another session — try again shortly.")); }
+
+            const { status, json } = await api.applyChangeset(cfg, spaceId, { puts: cs.puts, deletes: cs.deletes }, { dryRun: opts.dryRun });
+            if (status === 200) {
+                if (json.dryRun) { console.log("✓ Valid (dry run) — not applied."); return; }
+                if (json.noChanges) { console.log("✓ Nothing to push."); return; }
+                const applied = json.applied || [];
+                console.log(`✓ Pushed ${total} local change${total === 1 ? "" : "s"} → ${applied.length} server op${applied.length === 1 ? "" : "s"}${json.status === "partial" ? " (some writes failed)" : ""}`);
+                for (const a of applied) console.log(`  ${String(a.op).replace(/_/g, " ")} ${a.target}`);
+                for (const f of (json.failed || [])) console.log(`  ! ${String(f.op).replace(/_/g, " ")} ${f.target}: ${f.error}`);
+                ws.commitBase(dir); // the pushed state is the new baseline (status/diff read clean)
+                if (json.status === "partial") process.exitCode = 1;
+                return;
+            }
+            if (status === 422) { printValidationErrors(json); process.exitCode = 1; return; }
+            if (status === 423) { fail(new Error(json.message || "Space is locked by another session — try again shortly.")); return; }
             fail(new Error(json.message || `Push failed (${status})`));
         } catch (e) { fail(e); }
     });

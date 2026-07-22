@@ -47,4 +47,15 @@ async function apply(cfg, spaceId, zipBuffer, { dryRun, force } = {}) {
     return { status: res.status, json: json || {} };
 }
 
-module.exports = { listSpaces, pull, apply };
+// Per-file changeset apply. Sent as application/octet-stream so the backend's global JSON parser
+// (100 kb limit) doesn't claim it — the server collects the raw body and parses it.
+async function applyChangeset(cfg, spaceId, changeset, { dryRun } = {}) {
+    const apiPath = `/api/v1/spaces/${encodeURIComponent(spaceId)}/changeset${dryRun ? "?dryRun=1" : ""}`;
+    const { res, json } = await request(cfg, "POST", apiPath, {
+        body: Buffer.from(JSON.stringify(changeset), "utf8"),
+        headers: { "Content-Type": "application/octet-stream" },
+    });
+    return { status: res.status, json: json || {} };
+}
+
+module.exports = { listSpaces, pull, apply, applyChangeset };
