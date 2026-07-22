@@ -207,7 +207,7 @@ export class AiNpc extends ArrivalScript {
         }
     }
 
-    onPropertyChanged(name) {
+    async onPropertyChanged(name) {
         if (!this._npc) return;
         if (name === 'npcName') {
             this._npc.setHeadLabel(this.npcName);
@@ -215,6 +215,9 @@ export class AiNpc extends ArrivalScript {
         }
         if (name === 'provider') {
             this._checkProviderKey();
+        }
+        if (name === 'avatarConfig') {
+            await this._npc.applyAvatarConfig(this.avatarConfig);
         }
     }
 
