@@ -105,6 +105,25 @@ program.command("pull")
         }
     });
 
+program.command("upload")
+    .description("Upload a file (splat / model / image) straight to the CDN; prints a URL for an entity's glbUrl")
+    .argument("<file>", "path to the file to upload")
+    .action(async (file) => {
+        const cfg = config.load();
+        try {
+            if (!fs.existsSync(file)) throw new Error(`file not found: ${file}`);
+            const mb = (fs.statSync(file).size / 1048576).toFixed(1);
+            console.log(`Uploading ${path.basename(file)} (${mb} MB) directly to S3…`);
+            const { url, resource_key } = await api.uploadFile(cfg, file);
+            if (url) {
+                console.log(`✓ ${url}`);
+                console.log(`  set an entity's "glbUrl" to this URL, then \`arrival push\``);
+            } else {
+                console.log(`✓ Uploaded (resource_key: ${resource_key})`);
+            }
+        } catch (e) { fail(e); }
+    });
+
 program.command("status")
     .description("Show what `push` would change since your last pull (added / modified / deleted) — local, no network")
     .option("--dir <path>", "workspace directory (default: current)")
