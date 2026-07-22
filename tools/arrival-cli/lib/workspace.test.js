@@ -42,7 +42,7 @@ test("buildApplyZip normalizes CRLF to LF in text files (SHA-stability)", () => 
     fs.rmSync(dir, { recursive: true, force: true });
 });
 
-test("extractPull always creates assets/plugins skeleton + a workspace README (not pushed)", () => {
+test("extractPull creates skeleton dirs + a fallback AGENTS.md (not pushed) when the server bundled none", () => {
     const src = new AdmZip();
     src.addFile("space/room.json", Buffer.from('{"id":"RoomInfo"}'));
     src.addFile(".materialize-manifest.json", Buffer.from(JSON.stringify({ spaceId: "1_0001", entities: [], plugins: [], assets: [] })));
@@ -50,10 +50,31 @@ test("extractPull always creates assets/plugins skeleton + a workspace README (n
     ws.extractPull(src.toBuffer(), dir);
     assert.ok(fs.existsSync(path.join(dir, "space", "assets")), "space/assets/ created even with no assets");
     assert.ok(fs.existsSync(path.join(dir, "space", "plugins")), "space/plugins/ created");
-    assert.ok(fs.existsSync(path.join(dir, "README.md")), "workspace README written");
-    // the README is at the workspace root (outside space/) — it must never end up in the apply zip
+    assert.ok(fs.existsSync(path.join(dir, "AGENTS.md")), "fallback AGENTS.md written");
+    assert.ok(!fs.existsSync(path.join(dir, "README.md")), "no README.md — AGENTS.md only");
+    // AGENTS.md is at the workspace root (outside space/) — buildApplyZip only walks space/, so never pushed
     const zip = new AdmZip(ws.buildApplyZip(dir));
-    assert.ok(!zip.getEntries().some((e) => e.entryName.replace(/\\/g, "/") === "README.md"), "workspace README is not pushed");
+    assert.ok(!zip.getEntries().some((e) => e.entryName.replace(/\\/g, "/") === "AGENTS.md"), "AGENTS.md is not pushed");
+    fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("extractPull uses the server-bundled AGENTS.md + reference/, and never pushes/mirrors them", () => {
+    const src = new AdmZip();
+    src.addFile("space/room.json", Buffer.from('{"id":"RoomInfo"}'));
+    src.addFile("AGENTS.md", Buffer.from("# server-bundled\n"));
+    src.addFile("CLAUDE.md", Buffer.from("See AGENTS.md.\n"));
+    src.addFile("reference/docs/00-agent-quickstart.md", Buffer.from("# quickstart\n"));
+    src.addFile(".materialize-manifest.json", Buffer.from(JSON.stringify({ spaceId: "x", entities: [], plugins: [], assets: [] })));
+    const dir = tmp();
+    ws.extractPull(src.toBuffer(), dir);
+    assert.equal(fs.readFileSync(path.join(dir, "AGENTS.md"), "utf8"), "# server-bundled\n", "uses the bundled AGENTS.md, not the fallback");
+    assert.ok(fs.existsSync(path.join(dir, "reference", "docs", "00-agent-quickstart.md")), "reference/ extracted");
+    assert.ok(!fs.existsSync(path.join(dir, ".arrival", "base", "AGENTS.md")), "AGENTS.md not base-mirrored");
+    assert.ok(!fs.existsSync(path.join(dir, ".arrival", "base", "reference")), "reference/ not base-mirrored");
+    const names = new AdmZip(ws.buildApplyZip(dir)).getEntries().map((e) => e.entryName.replace(/\\/g, "/"));
+    assert.ok(!names.some((n) => n === "AGENTS.md" || n === "CLAUDE.md" || n.startsWith("reference/")), "context not pushed");
+    // status must ignore the context entirely (clean right after pull)
+    assert.deepEqual(ws.computeStatus(dir).added, [], "reference/AGENTS not seen as space changes");
     fs.rmSync(dir, { recursive: true, force: true });
 });
 

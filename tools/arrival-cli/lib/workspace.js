@@ -13,40 +13,22 @@ const AdmZip = require("adm-zip");
 
 const MANIFEST_REL = path.join(".arrival", "manifest.json");
 
-// Written to the workspace ROOT on pull (outside space/, so it's never pushed or mistaken for an
-// asset). Makes the layout + the assets token scheme discoverable even for a space that has no
-// plugins/assets yet — empty dirs don't survive the pull zip, so without this there's nothing to
-// see. Backticks are literal here (double-quoted lines), no escaping needed.
-const WORKSPACE_README = [
-    "# Arrival space workspace",
+// Minimal fallback AGENTS.md, written only when the server didn't bundle one (older backend). The
+// full guide + reference/ docs come from the server on pull. Double-quoted lines, backticks literal.
+const FALLBACK_AGENTS_MD = [
+    "# AGENTS.md — working on this Arrival.Space space",
     "",
-    "This folder is an Arrival.Space space checked out as files. Edit anything under `space/`,",
-    "then run `arrival validate` and `arrival push`. This README and `.arrival/` are generated —",
-    "don't edit them.",
+    "A checked-out Arrival space. Edit files under `space/`, then `arrival validate` and `arrival push`",
+    "(`--force` to confirm deletions). Don't edit `.arrival/`.",
     "",
-    "## Layout",
+    "- `space/room.json`, `space/entities/*.json` — the space's entities (`{ id, type, data }`)",
+    "- `space/plugins/<name>.mjs` — plugins (ArrivalScript)",
+    "- `space/assets/<name>` — files referenced from source/data as the literal `\"assets/<name>\"`",
+    "- Large splat / model / image → `arrival upload <file>` → set an entity's `glbUrl`",
+    "- `space/README.md` — the map of this space",
     "",
-    "- `space/room.json`       — the space itself (title, privacy, …)",
-    "- `space/entities/*.json` — one file per entity in the space",
-    "- `space/plugins/`        — plugin code: `<name>.mjs` (ArrivalScript), or a folder `<name>/`",
-    "                            with an `index.mjs` for a multi-file plugin",
-    "- `space/assets/`         — images / models / audio that a plugin or entity uses",
-    "",
-    "## Assets (textures, models, audio)",
-    "",
-    "Drop a file in `space/assets/` with a flat name, e.g. `space/assets/wood.webp`. Reference it",
-    'as the **literal string** "assets/wood.webp" in plugin source or in an entity\'s data (e.g. a',
-    "param). On `arrival push` the file is uploaded to the CDN and every \"assets/<name>\" reference",
-    "is replaced with the real URL automatically.",
-    "",
-    "- Prefer `.webp` (smallest download); `.png` / `.jpg` / `.glb` / … also work. Max 25 MB each.",
-    "- Only real asset files belong in `space/assets/` — a `.md` / `.gitkeep` / etc. there will fail",
-    "  validation. Plugin code goes in `space/plugins/`, not here.",
-    "",
-    "## Commands",
-    "",
-    "- `arrival validate` — server-side dry-run (catch problems before applying)",
-    "- `arrival push`     — apply your edits to the live space (`--force` to confirm deletions)",
+    "Full plugin docs + examples ship under `reference/` when you pull against an updated server;",
+    "meanwhile see https://github.com/arrival-space/arrival-plugins .",
     "",
 ].join("\n");
 
@@ -65,12 +47,15 @@ function normalizeToLF(buf, ext) {
     return Buffer.from(s.replace(/\r\n/g, "\n").replace(/\r/g, "\n"), "utf8");
 }
 
-// Extract a pull archive (space/** + .materialize-manifest.json) into destDir; store the manifest
-// as the .arrival/manifest.json baseline. Returns the manifest.
+// Extract a pull archive into destDir: space/** + .materialize-manifest.json, plus AGENTS.md /
+// CLAUDE.md / reference/** when the server bundled agent docs. space/ is mirrored into the
+// .arrival/base baseline that status/diff compare against; the agent context is read-only. Returns
+// the manifest.
 function extractPull(zipBuffer, destDir) {
     const zip = new AdmZip(zipBuffer);
     fs.mkdirSync(destDir, { recursive: true });
     let manifest = null;
+    let gotAgentsMd = false;
     for (const entry of zip.getEntries()) {
         if (entry.isDirectory) continue;
         const name = entry.entryName.replace(/\\/g, "/").replace(/^\/+/, "");
@@ -79,23 +64,29 @@ function extractPull(zipBuffer, destDir) {
             manifest = JSON.parse(entry.getData().toString("utf8"));
             continue;
         }
-        if (!name.startsWith("space/")) continue;
+        // space/** is the editable space (mirrored into .arrival/base); AGENTS.md/CLAUDE.md/reference/**
+        // are read-only agent context. Ignore anything else.
+        const isSpace = name.startsWith("space/");
+        const isContext = name === "AGENTS.md" || name === "CLAUDE.md" || name.startsWith("reference/");
+        if (!isSpace && !isContext) continue;
         const data = entry.getData();
         const abs = path.join(destDir, name);
         fs.mkdirSync(path.dirname(abs), { recursive: true });
         fs.writeFileSync(abs, data);
-        // Mirror into .arrival/base/ — the pristine "index" that `status`/`diff` compare the
-        // working tree against (and the source of per-file deltas for a future changeset push).
-        const baseAbs = path.join(destDir, ".arrival", "base", name);
-        fs.mkdirSync(path.dirname(baseAbs), { recursive: true });
-        fs.writeFileSync(baseAbs, data);
+        if (isSpace) {
+            // Mirror into .arrival/base/ — the pristine "index" that status/diff/push diff against.
+            const baseAbs = path.join(destDir, ".arrival", "base", name);
+            fs.mkdirSync(path.dirname(baseAbs), { recursive: true });
+            fs.writeFileSync(baseAbs, data);
+        }
+        if (name === "AGENTS.md") gotAgentsMd = true;
     }
     if (manifest) writeManifest(destDir, manifest);
-    // Always present the standard skeleton dirs + a guide, even for a space with no plugins/assets
-    // yet (empty dirs don't survive the pull zip). The README is at the workspace root, OUTSIDE
-    // space/, so it is never zipped back on push.
+    // Skeleton dirs so an empty space still shows where plugins/assets go (empty dirs don't survive
+    // the zip). If the server didn't bundle an AGENTS.md (older backend), write a minimal fallback.
+    // Both live at the workspace root — outside space/, so never pushed back.
     for (const d of ["entities", "plugins", "assets"]) fs.mkdirSync(path.join(destDir, "space", d), { recursive: true });
-    fs.writeFileSync(path.join(destDir, "README.md"), WORKSPACE_README);
+    if (!gotAgentsMd) fs.writeFileSync(path.join(destDir, "AGENTS.md"), FALLBACK_AGENTS_MD);
     return manifest;
 }
 

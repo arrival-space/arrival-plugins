@@ -95,7 +95,7 @@ program.command("pull")
             const manifest = ws.extractPull(buf, dir);
             console.log(`✓ Pulled ${spaceId} → ${dir}`);
             if (manifest) console.log(`  ${summarizeManifest(manifest)}`);
-            console.log(`  layout + how plugins & assets work: ${path.join(dir, "README.md")}`);
+            console.log(`  start here (workflow + plugin docs): ${path.join(dir, "AGENTS.md")}`);
             console.log(`  edit files under space/, then \`arrival validate\` / \`arrival push\``);
         } catch (e) {
             fail(e);
