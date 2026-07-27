@@ -338,11 +338,56 @@ records. Setting them on `RoomInfo.data` does nothing.
 - **Per-entity model settings** — brightness/contrast/tone-map/`videoURL`/
   `animationIndex`/`doubleSided`/`autoPlay`/`loop`/etc. → the entity's own `data`
   (`space/entities/<id>.json`).
-- **Spawn points** — a `SpawnPoint` entity's `data`, not `room.json`.
+- **Spawn points** — `SpawnPoint` entities, not `room.json`. Full schema in the
+  ["Spawn points" section](#spawn-points-spawnpoint-entities) below.
 - **Domain / URL** — `domainData.domain` / `domainData.alias` → the DomainInfo
   record.
 - **Git binding** — `gitRepoName` / `gitUser` → written by the Versioning panel.
 - **Space pin/hide** — `pinned` / `hidden` → set through other endpoints.
+
+---
+
+## Spawn points (`SpawnPoint` entities) {#spawn-points-spawnpoint-entities}
+
+Where visitors appear when they enter the space. Each spawn point is a normal
+entity (`space/entities/<id>.json`) with `"type": "SpawnPoint"` — create, move,
+or delete them like any other entity. There is **no spawn field in `room.json`**
+(the old singular `roomData.spawnPoint {x,y,z,azimuth}` survives only as a
+read-only fallback for spaces that never adopted the entities — never write it).
+
+```json
+{
+  "id": "<uuid>",
+  "type": "SpawnPoint",
+  "data": {
+    "position": { "x": 0, "y": 0, "z": 4 },
+    "rotation": { "x": 0, "y": 180, "z": 0 },
+    "isDefaultThirdPerson": true,
+    "isDefaultFreeCam": false,
+    "alwaysSnapBack": false,
+    "hidden": false,
+    "displayName": "Main entrance"
+  }
+}
+```
+
+| key | type | default | effect |
+|---|---|---|---|
+| `position` | `{x,y,z}` | — | Where the avatar's character-controller root lands — **on the ground**, not eye level. A free-cam spawn recorded from the flying camera is at eye/camera height instead (see `capturedIn`) |
+| `rotation.y` | number (deg) | `180` | Facing azimuth/yaw. **0° faces −Z**, 90° faces −X (forward = `(−sin y, 0, −cos y)`) |
+| `rotation.x` | number (deg) | `0` | Look pitch, positive = up. Only meaningful for free-cam spawns; avatars always spawn upright |
+| `rotation.z` | number | `0` | Always 0 |
+| `isDefaultThirdPerson` | bool | first spawn point: `true` | The spawn used in normal avatar/third-person mode. **Exclusive — at most ONE spawn point may have it `true`**; clear it on the old holder when moving the role |
+| `isDefaultFreeCam` | bool | first spawn point: `true` | The spawn used when the space opens in free camera. Same exclusivity rule. Falls back to the third-person spawn if none has it |
+| `alwaysSnapBack` | bool | `false` | Opt-in: teleports the avatar back to this spawn on **every free-cam exit**, not just on space load |
+| `capturedIn` | `"avatar"` \| `"freeCam"` | — | Which rig recorded the position: `"avatar"` = character root on the ground, `"freeCam"` = detached camera at eye level. Set it to match how you derived the coordinates |
+| `hidden` | bool | `false` | `true` deactivates the spawn point (skipped when picking where to spawn) without deleting it |
+| `displayName` | string | `"Spawn Point"` | Editor-facing label only |
+
+If a space has **no** (visible) SpawnPoint entity and no legacy fallback, the
+client uses its built-in default. To "set the spawn point here", create (or
+move) a SpawnPoint entity at the target position with `isDefaultThirdPerson:
+true` — making sure no other visible spawn point still holds that flag.
 
 ---
 
