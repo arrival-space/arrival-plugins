@@ -39,6 +39,23 @@ async function listSpaces(cfg, { limit = 100, search } = {}) {
     return (json && json.data && json.data.spaces) || (json && json.spaces) || (json && Array.isArray(json.data) ? json.data : []) || [];
 }
 
+// Create a space. The server mints the id (userId_4digits); returns { spaceId, roomId, title }.
+async function createSpace(cfg, { title, description, privacy, spaceType } = {}) {
+    const body = { title };
+    if (description !== undefined) body.description = description;
+    if (privacy !== undefined) body.privacy = privacy;
+    if (spaceType !== undefined) body.space_type = spaceType;
+    const { res, json } = await request(cfg, "POST", "/api/v1/spaces", {
+        body: JSON.stringify(body),
+        headers: { "Content-Type": "application/json" },
+    });
+    if (!res.ok) throw new Error((json && json.message) || `Create failed (${res.status})`);
+    // Tolerate wrapper shape variations: { data: { spaceId } } | { spaceId }.
+    const d = (json && json.data) || json || {};
+    if (!d.spaceId) throw new Error("Space created but the server returned no spaceId");
+    return { spaceId: d.spaceId, roomId: d.roomId, title: d.title || title };
+}
+
 async function pull(cfg, spaceId) {
     const { res, buffer } = await request(cfg, "POST", `/api/v1/spaces/${encodeURIComponent(spaceId)}/pull`, { raw: true });
     if (!res.ok) {
@@ -116,4 +133,4 @@ async function uploadFile(cfg, filePath) {
     throw new Error((done.json && done.json.message) || `Upload finalize failed (${done.res.status})`);
 }
 
-module.exports = { listSpaces, pull, apply, applyChangeset, uploadFile };
+module.exports = { listSpaces, createSpace, pull, apply, applyChangeset, uploadFile };

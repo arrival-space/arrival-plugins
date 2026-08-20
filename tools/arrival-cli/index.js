@@ -3,6 +3,7 @@
 //
 //   arrival login                 sign in with your browser (OAuth)
 //   arrival spaces                list your spaces
+//   arrival create <title>        create a new space (--pull to check it out at once)
 //   arrival pull <spaceId>        download a space into ./<spaceId>/
 //   arrival validate              server-side dry-run of the current workspace
 //   arrival push                  apply the current workspace to the live space
@@ -79,6 +80,54 @@ program.command("spaces")
         } catch (e) { fail(e); }
     });
 
+// Download <spaceId> into dir and report. Shared by `pull` and `create --pull`.
+async function pullInto(cfg, spaceId, dir, force) {
+    if (fs.existsSync(dir) && fs.readdirSync(dir).length && !force) {
+        throw new Error(`${dir} exists and is not empty — pass --force to overwrite`);
+    }
+    const buf = await api.pull(cfg, spaceId);
+    const manifest = ws.extractPull(buf, dir);
+    console.log(`✓ Pulled ${spaceId} → ${dir}`);
+    if (manifest) console.log(`  ${summarizeManifest(manifest)}`);
+    console.log(`  start here (workflow + plugin docs): ${path.join(dir, "AGENTS.md")}`);
+    console.log(`  edit files under space/, then \`arrival validate\` / \`arrival push\``);
+}
+
+program.command("create")
+    .description("Create a new space")
+    .argument("<title>", "space title")
+    .option("--description <text>", "space description")
+    .option("--privacy <mode>", "Open | Closed (default: Closed)")
+    .option("--type <kind>", "infinite | hub (default: infinite)")
+    .option("--pull", "check the new space out into a local workspace right away")
+    .option("--dir <path>", "target directory for --pull (default: ./<spaceId>)")
+    .action(async (title, opts) => {
+        const cfg = config.load();
+        try {
+            // Checked client-side too: a typo should cost a message, not a wrongly-created space.
+            if (opts.privacy && !["Open", "Closed"].includes(opts.privacy)) {
+                throw new Error(`--privacy must be Open or Closed (got "${opts.privacy}")`);
+            }
+            if (opts.type && !["infinite", "hub"].includes(opts.type)) {
+                throw new Error(`--type must be infinite or hub (got "${opts.type}")`);
+            }
+            const { spaceId } = await api.createSpace(cfg, {
+                title,
+                description: opts.description,
+                privacy: opts.privacy,
+                spaceType: opts.type,
+            });
+            console.log(`✓ Created ${spaceId}${opts.privacy ? ` [${opts.privacy}]` : ""}  ${title}`);
+            if (!opts.pull) {
+                console.log(`  \`arrival pull ${spaceId}\` to check it out into a workspace`);
+                return;
+            }
+            // The space is brand new, so a non-empty target dir is the user's own doing: honour --force
+            // semantics rather than silently writing into it.
+            await pullInto(cfg, spaceId, path.resolve(opts.dir || spaceId), false);
+        } catch (e) { fail(e); }
+    });
+
 program.command("pull")
     .description("Download a space into a local workspace")
     .argument("<spaceId>", "space id, e.g. 45637586_1234")
@@ -88,15 +137,7 @@ program.command("pull")
         const cfg = config.load();
         const dir = path.resolve(opts.dir || spaceId);
         try {
-            if (fs.existsSync(dir) && fs.readdirSync(dir).length && !opts.force) {
-                throw new Error(`${dir} exists and is not empty — pass --force to overwrite`);
-            }
-            const buf = await api.pull(cfg, spaceId);
-            const manifest = ws.extractPull(buf, dir);
-            console.log(`✓ Pulled ${spaceId} → ${dir}`);
-            if (manifest) console.log(`  ${summarizeManifest(manifest)}`);
-            console.log(`  start here (workflow + plugin docs): ${path.join(dir, "AGENTS.md")}`);
-            console.log(`  edit files under space/, then \`arrival validate\` / \`arrival push\``);
+            await pullInto(cfg, spaceId, dir, opts.force);
         } catch (e) {
             fail(e);
             if (/\b404\b|not found/i.test(e.message || "")) {

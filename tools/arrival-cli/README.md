@@ -20,6 +20,7 @@ npm link          # optional: puts `arrival` on your PATH
 ```bash
 arrival login                    # sign in with your browser (OAuth); token saved to ~/.arrival/config.json
 arrival spaces                   # list your spaces
+arrival create "Photo wall"      # create a new space; prints its id
 arrival pull 45637586_1234       # download into ./45637586_1234/
 cd 45637586_1234
 #   edit files under space/ (room.json, entities/*.json, plugins/*.mjs, assets/*) with any editor + git
@@ -28,6 +29,20 @@ arrival push                     # apply to the live space
 ```
 
 `arrival login --server https://api-dev.arrival.space` targets dev instead of live.
+
+### Starting from scratch
+
+`arrival create` mints a space server-side (the id is `<userId>_<4 digits>`) and `--pull` checks it
+out in the same step, so a new space is one command away from being editable files:
+
+```bash
+arrival create "Photo wall" --privacy Open --pull
+cd 45637586_1234
+```
+
+Options: `--description <text>`, `--privacy Open|Closed` (default `Closed`), `--type infinite|hub`
+(default `infinite`), `--pull` (+ `--dir <path>` to choose where). Without `--pull` it just prints
+the id for a follow-up `arrival pull`.
 
 ## Workspace layout
 

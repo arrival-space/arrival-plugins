@@ -1,6 +1,6 @@
 {
   "name": "arrival-cli",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Arrival.Space CLI — manage your spaces as local files (pull / push / validate)",
   "bin": {
     "arrival": "index.js"

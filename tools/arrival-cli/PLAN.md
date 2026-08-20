@@ -24,7 +24,8 @@ findings are folded in below (Parts D + E especially).
   (**zip** body). Auth `authenticateAPI` + `canEditSpace`; `safeUnzipToDir` guards zip entry names.
 
 ### CLI (arrival-plugins-public/tools/arrival)
-- `login` (loopback-PKCE OAuth), `spaces`, `pull`, `validate` (server dry-run), `push`, `logout`.
+- `login` (loopback-PKCE OAuth), `spaces`, `create` (`POST /api/v1/spaces`, `--pull` to check out in
+  one step), `pull`, `validate` (server dry-run), `push`, `logout`.
 - `lib/workspace.js` (zip↔workspace, CRLF→LF, skeleton dirs + workspace README), `process.exitCode`
   (not `process.exit`, which crashed on Windows via undici teardown).
 

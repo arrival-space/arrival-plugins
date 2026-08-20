@@ -87,6 +87,7 @@ npm link                        # optional: puts `arrival` on your PATH
 
 arrival login                   # one-time OAuth sign-in (opens browser); token in ~/.arrival/config.json
 arrival spaces                  # list your spaces
+arrival create "<title>" --pull # create a new space and check it out (--privacy Open|Closed, --type infinite|hub)
 arrival pull <spaceId>          # download into ./<spaceId>/ (edit files under space/)
 arrival validate                # server-side dry-run — catch problems before applying
 arrival push                    # apply the workspace to the live space
