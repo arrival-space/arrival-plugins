@@ -28,8 +28,6 @@ arrival validate                 # server-side dry-run — catch problems before
 arrival push                     # apply to the live space
 ```
 
-`arrival login --server https://api-dev.arrival.space` targets dev instead of live.
-
 ### Starting from scratch
 
 `arrival create` mints a space server-side (the id is `<userId>_<4 digits>`) and `--pull` checks it

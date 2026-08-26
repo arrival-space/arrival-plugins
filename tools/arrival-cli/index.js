@@ -43,7 +43,7 @@ program
 // (or a coding agent pointed at https://codex.arrival.space/api/cli) to get from install to push.
 program.addHelpText("after", `
 Quick start:
-  arrival login                    sign in with your browser (--server https://api-dev.arrival.space for dev)
+  arrival login                    sign in with your browser
   arrival create "My space" --pull create a space and check it out    (or: arrival pull <spaceId>)
   cd <spaceId>                     edit files under space/ with any editor + git
   arrival status | diff            what changed since the pull        (local, no network)
@@ -171,7 +171,7 @@ program.command("pull")
         } catch (e) {
             fail(e);
             if (/\b404\b|not found/i.test(e.message || "")) {
-                console.error(`  (targeting ${config.serverUrl(cfg)} — check the space id looks like "userId_1234", and that you're logged into the right server: \`arrival login --server https://api-dev.arrival.space\`)`);
+                console.error(`  (targeting ${config.serverUrl(cfg)} — check the space id looks like "userId_1234", and that you're logged in as a user who can edit it)`);
             }
         }
     });
