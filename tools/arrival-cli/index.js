@@ -39,6 +39,36 @@ program
     .description("Arrival.Space CLI — manage your spaces as local files")
     .version(pkg.version);
 
+// The help text is the CLI's onboarding: `arrival --help` alone should be enough for a new user
+// (or a coding agent pointed at https://codex.arrival.space/api/cli) to get from install to push.
+program.addHelpText("after", `
+Quick start:
+  arrival login                    sign in with your browser (--server https://api-dev.arrival.space for dev)
+  arrival create "My space" --pull create a space and check it out    (or: arrival pull <spaceId>)
+  cd <spaceId>                     edit files under space/ with any editor + git
+  arrival status | diff            what changed since the pull        (local, no network)
+  arrival validate                 server-side dry-run                (run before pushing)
+  arrival push                     apply to the live space            (--force to confirm deletions)
+
+The workspace:
+  AGENTS.md              start here — workflow + the rules plugins must follow
+  space/README.md        the map of THIS space (entities, plugins, positions)
+  space/room.json        the space itself (title, privacy)
+  space/entities/*.json  one file per entity
+  space/plugins/*.mjs    plugins (an ArrivalScript class); a folder for multi-file plugins
+  space/assets/*         files referenced as the literal string "assets/<name>"
+  reference/             bundled plugin docs, API reference, types, example plugins
+  .arrival/              the pull baseline — don't edit
+
+Good to know:
+  No hot reload — reload the browser tab to see a push. Last-writer-wins: pull fresh before big
+  edits (every push snapshots server-side first, so a bad push is undoable in-app). Assets <= 25 MB.
+  Big splat/model/image: \`arrival upload <file>\` prints a CDN URL for an entity's glbUrl.
+
+Docs: https://codex.arrival.space/api/cli
+Token: ${config.CONFIG_FILE} (it is your API key; \`logout\` only forgets it locally)
+`);
+
 program.command("login")
     .description("Sign in with your browser and store the API token")
     .option("--server <url>", "backend server URL (default: api-live.arrival.space)")
