@@ -234,6 +234,57 @@ playCutscene() {
 }
 ```
 
+### For Lists (Arrays)
+
+An array-valued property renders as a **growable list**: a `+` button adds a
+row and each row has a trash button.
+
+A plain array default is enough — no schema entry needed:
+
+```javascript
+export class MyPlugin extends ArrivalScript {
+
+    tags = ["red", "blue"];   // → growable list of text rows
+}
+```
+
+Rows are edited as **entity pickers** when the property declares
+`editor: 'entity'`, and as **text fields** otherwise. `filterTypes` applies per
+row, exactly as it does for a single entity property.
+
+```javascript
+export class MyPlugin extends ArrivalScript {
+
+    groupEntities = [];
+    tags = [];
+
+    static properties = {
+        groupEntities: { title: "Entities", editor: "entity", array: true,
+                         filterTypes: ["glb", "splat"] },
+        tags:          { title: "Tags", array: true },
+    };
+}
+```
+
+`array: true` forces list rendering. It is only needed when the default is
+**not** already an array (e.g. the property starts as `null`) — the list UI is
+inferred from an array default on its own.
+
+Keep list items **strings** (text, or entity ids) for now. Other item types —
+vec3, color, number, boolean — are stored fine but edit as text rows, so an
+object item shows as `[object Object]` and typing in the row replaces it with a
+string.
+
+Rows are written back as a new array, so read the property normally:
+
+```javascript
+onPropertyChanged(name) {
+    if (name === 'tags') this._rebuildTags(this.tags);
+}
+```
+
+See `examples/visibility-groups.mjs`.
+
 ## Reserved Names
 
 Do not use built-in script property names as plugin parameters. In particular, avoid:

@@ -57,8 +57,8 @@
       "path": "docs/properties.md",
       "kind": "doc",
       "title": "Properties",
-      "summary": "Explains supported property types, static property schema, dynamic options, vec3 fields, file/asset upload fields (editor: 'asset'), restricting upload file types via the 'accept' extension list, and runtime updates in the editor UI.",
-      "keywords": ["properties", "schema", "editor ui", "numbers", "boolean", "string", "color", "vec3", "asset", "upload", "file", "url", "glb", "texture", "accept", "restrict", "extension", "file type", "file types"]
+      "summary": "Explains supported property types, static property schema, dynamic options, vec3 fields, file/asset upload fields (editor: 'asset'), restricting upload file types via the 'accept' extension list, growable array/list properties (array: true, entity and text rows), and runtime updates in the editor UI.",
+      "keywords": ["properties", "schema", "editor ui", "numbers", "boolean", "string", "color", "vec3", "asset", "upload", "file", "url", "glb", "texture", "accept", "restrict", "extension", "file type", "file types", "array", "list", "repeatable", "add row"]
     },
     {
       "path": "docs/sequences.md",
