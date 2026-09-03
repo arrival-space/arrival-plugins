@@ -340,6 +340,10 @@ records. Setting them on `RoomInfo.data` does nothing.
   (`space/entities/<id>.json`).
 - **Spawn points** — `SpawnPoint` entities, not `room.json`. Full schema in the
   ["Spawn points" section](#spawn-points-spawnpoint-entities) below.
+- **Navigation portals** — the Back / Home / Featured portals are `NavigationPortal`
+  entities with fixed ids; only their placement lives there. Their visibility stays in
+  `room.json` (`hideBackPortal` / `hideHomePortal` / `hideFeaturedPortal`). See the
+  ["Navigation portals" section](#navigation-portals-navigationportal-entities) below.
 - **Domain / URL** — `domainData.domain` / `domainData.alias` → the DomainInfo
   record.
 - **Git binding** — `gitRepoName` / `gitUser` → written by the Versioning panel.
@@ -388,6 +392,47 @@ If a space has **no** (visible) SpawnPoint entity and no legacy fallback, the
 client uses its built-in default. To "set the spawn point here", create (or
 move) a SpawnPoint entity at the target position with `isDefaultThirdPerson:
 true` — making sure no other visible spawn point still holds that flag.
+
+---
+
+## Navigation portals (`NavigationPortal` entities) {#navigation-portals-navigationportal-entities}
+
+The three navigation portals of the standard scene — **Back**, **Home** and
+**Featured** — are static scene objects, but the creator can move and turn them.
+Their placement is stored as a `NavigationPortal` entity with a **fixed id** per
+portal; the row only exists once the portal was moved or renamed. Never create
+portals with other ids, and never delete these rows to "remove" a portal —
+deleting only resets it to the scene default.
+
+| id | `data.kind` | hidden by (`room.json`) |
+|---|---|---|
+| `portal-back` | `"back"` | `hideBackPortal` |
+| `portal-home` | `"home"` | `hideHomePortal` |
+| `portal-featured` | `"featured"` | `hideFeaturedPortal` |
+
+```json
+{
+  "id": "portal-back",
+  "type": "NavigationPortal",
+  "data": {
+    "kind": "back",
+    "position": { "x": -2.5, "y": 0, "z": 6 },
+    "rotation": { "x": 0, "y": 90, "z": 0 },
+    "displayName": "Exit"
+  }
+}
+```
+
+| field | type | default | notes |
+|---|---|---|---|
+| `kind` | `"back" \| "home" \| "featured"` | — | Fixed per id; do not change |
+| `position` | `{x,y,z}` | scene default | World position. Omit both transform fields to restore the default placement |
+| `rotation` | `{x,y,z}` | scene default | Only `y` (yaw) is used — portals always stay upright |
+| `displayName` | string | "Back Portal" etc. | Editor-facing label only |
+| `folderId` | string | — | Content-list folder |
+
+Visibility is **not** an entity field: use `hideBackPortal` / `hideHomePortal` /
+`hideFeaturedPortal` in `room.json` (`hideNavigationPortals` hides all three).
 
 ---
 
