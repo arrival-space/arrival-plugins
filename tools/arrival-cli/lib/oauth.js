@@ -16,9 +16,16 @@ function b64url(buf) {
 
 function openBrowser(url) {
     try {
-        if (process.platform === "win32") spawn("cmd", ["/c", "start", "", url], { detached: true, stdio: "ignore" }).unref();
-        else if (process.platform === "darwin") spawn("open", [url], { detached: true, stdio: "ignore" }).unref();
-        else spawn("xdg-open", [url], { detached: true, stdio: "ignore" }).unref();
+        // cmd.exe splits an unquoted URL at the first `&`, so the browser would only ever get
+        // `/authorize?response_type=code` (→ "invalid_request: client_id undefined"). Quote the URL,
+        // and pass the args verbatim so node doesn't re-quote them (`""` is start's window title).
+        if (process.platform === "win32") {
+            spawn("cmd", ["/c", "start", '""', `"${url}"`], { detached: true, stdio: "ignore", windowsVerbatimArguments: true }).unref();
+        } else if (process.platform === "darwin") {
+            spawn("open", [url], { detached: true, stdio: "ignore" }).unref();
+        } else {
+            spawn("xdg-open", [url], { detached: true, stdio: "ignore" }).unref();
+        }
     } catch { /* fall back to the printed URL */ }
 }
 
