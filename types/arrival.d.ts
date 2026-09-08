@@ -368,6 +368,8 @@ declare class ArrivalScript extends pc.Script {
 
     /** Set the world physics step rate. @returns true on success. */
     setPhysicsStepRate(stepHz?: number, maxSubSteps?: number): boolean;
+    /** Set local player velocity once in world-space m/s. Omitted axes are preserved. Requires API 1.14.0. */
+    setPlayerVelocity(velocity: ArrivalSpace.PlayerVelocity): boolean;
     /** Local player's flattened (horizontal) forward direction, or null. */
     getPlayerForward(): pc.Vec3 | null;
     /** Apply a visual-only offset to the local player avatar (no physics effect). Accepts (x, y, z) or a vec3-like. */
@@ -930,6 +932,21 @@ declare namespace ArrivalSpace {
      * const pos = player?.getPosition();
      */
     function getPlayer(): pc.Entity | null;
+
+    /** At least one axis is required. Zero stops an axis; omitted/undefined axes retain their velocity. */
+    type PlayerVelocity =
+        | { x: number; y?: number; z?: number }
+        | { x?: number; y: number; z?: number }
+        | { x?: number; y?: number; z: number };
+
+    /**
+     * Set local world-space velocity once in m/s, preserving omitted axes.
+     * Handles takeoff damping; normal physics/input continue. Returns false without changes
+     * for invalid input or an unavailable player. Requires API 1.14.0.
+     * @example
+     * ArrivalSpace.setPlayerVelocity({ y: 10 });
+     */
+    function setPlayerVelocity(velocity: PlayerVelocity): boolean;
 
     /** Local player movement input intent (from keyboard, joystick, or gamepad). */
     interface MoveInput {

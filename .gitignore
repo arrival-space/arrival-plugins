@@ -16,3 +16,6 @@ Thumbs.db
 .idea/
 .vscode/
 /examples/.claude/settings.local.json
+/data_local
+/internal
+/workspaces

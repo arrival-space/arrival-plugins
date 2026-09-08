@@ -106,6 +106,7 @@ See [Multiplayer Documentation](docs/multiplayer.md) for details.
 | [Sound Trigger](examples/sound-trigger.mjs)                             | Play sound on proximity                                                                                                                                                                                                                                                                                                                                                                   |
 | [Vehicle Physics Model](examples/vehicle-physics-model.mjs)             | Driveable vehicle with custom chassis/wheel GLB models, headlights, suspension, and input controls                                                                                                                                                                                                                                                                                        |
 | [VRM Tuning & Debug](examples/vrm-tuning-debug.mjs)                     | Live control panel + visualizer for the engine's native VRM systems (which run automatically for every loaded VRM). Sliders tune the global `window.VRMSpringBones` (ropiness, air resistance, stiffness/gravity/drag, collision iterations) and `window.VRMToonMaterial` (diffuse/emissive/ambient/specular, skybox & tonemap); debug toggles draw the engine's real colliders and bones |
+| [Velocity Pad](examples/velocity-pad.mjs) | Sets player velocity when standing on a pad (API 1.14.0) |
 
 ## MCP Search Index Maintenance
 

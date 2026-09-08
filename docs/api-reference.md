@@ -639,6 +639,26 @@ Get the player's avatar mesh entity (`ReadyPlayerMe`) which has the `anim` compo
 
 **Returns:** `pc.Entity | null`
 
+#### `ArrivalSpace.setPlayerVelocity(velocity)`
+
+Set the local player's world-space velocity in metres per second. Accepts `{ x?, y?, z? }`
+or a `pc.Vec3`; at least one finite numeric axis is required. Omitted/`undefined` axes are
+preserved; `0` stops an axis. Also available as `this.setPlayerVelocity(velocity)` (API 1.14.0).
+
+```javascript
+ArrivalSpace.setPlayerVelocity({ y: 10 }); // Preserve X/Z.
+```
+
+**Returns:** `boolean`. `false` without changes for invalid input, an unavailable or suspended
+player, disabled controller/rigidbody/collision, non-dynamic rigidbody, paused world, or active
+sequence editor.
+
+This sets velocity once. Gravity, collisions and player input continue afterward; steering can
+change X/Z on the next movement update. Upward motion releases ground support and prevents
+ground damping during takeoff. Normal ground handling resumes on descent.
+
+See [Velocity Pad](../examples/velocity-pad.mjs).
+
 #### `ArrivalSpace.getMoveInput()`
 
 Get the local player's current movement input intent. Works on desktop (W/S/A/D, arrow keys) and mobile (virtual joystick) — sourced from the same input pipeline the character controller uses, so plugins do not need to poll the keyboard or `getLeftStick()` separately.

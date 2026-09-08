@@ -80,6 +80,7 @@ export class MyPlugin extends ArrivalScript {
 - Avatar visual offset: `ArrivalSpace.setPlayerAvatarOffset`
 - Player input hooks: `this.onKeyDown`, `this.onKeyUp`
 - Standing-object detection: `ArrivalSpace.getStandingObject`, `ArrivalSpace.onStandingObjectChanged`
+- Player velocity: `ArrivalSpace.setPlayerVelocity` (API 1.14.0)
 - NPC behavior: `ArrivalSpace.createNPC`
 - Cutscenes / animations / sequences (same system — keyframe playback): authored ones via `ArrivalSpace.getCutsceneScript(entityId)` → `playCutscene({ onComplete })` / `on("sequence:marker", ...)`; react to the end via `onComplete`. Play one in **reverse** with `cutscene.setData({ reverse: true })` *before* `playCutscene()` (reset to `false` after). The controller creates its `sequencePlayer` per run and destroys it on completion, so don't grab `entity.script.sequencePlayer` for authored cutscenes — use the `sequencePlayer` script directly (`reverse`/`loop`/`autoplay`/`playSequence`) only for **code-driven** sequences you own. See `docs/sequences.md`. To **create** a cutscene headlessly (MCP/CLI) as a `.path` file — no plugin — see `docs/cutscenes-via-mcp.md`.
 - Multiplayer state: `attribute(default, { sync: true, authority: ... })`

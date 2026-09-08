@@ -75,6 +75,7 @@ Distilled reference for the ArrivalScript / ArrivalSpace runtime API (PlayCanvas
 ## Player & input
 
 - `getPlayer()` — Get the local player entity (the 'CharacterController' node).
+- `setPlayerVelocity(velocity: {x?: number, y?: number, z?: number})` → `boolean` — Set local world-space velocity once in m/s; omitted axes are preserved. Handles takeoff damping; normal physics/input continue. Returns false for invalid input or an unavailable player. Also `this.setPlayerVelocity` (API 1.14.0).
 - `getPlayerMesh()` — Get the player's avatar mesh entity ('ReadyPlayerMe'), which carries the anim component.
 - `getPlayerForward()` — Get the player's horizontal forward vector based on the avatar mesh facing (Y zeroed, normalized, negated).
 - `getMoveInput()` — Get the local player's current movement intent (keyboard / mobile joystick / gamepad converge in firstPersonView) instead of polling the keyboard directly.
