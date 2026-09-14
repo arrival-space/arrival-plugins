@@ -18,16 +18,16 @@ There is **no build step for the plugins themselves** — `.mjs` files are the d
 
 The `ArrivalScript` base class and the entire `window.ArrivalSpace` global are **not** in this repo — they live in the client at:
 
-- `C:\Dev\arrival.space\client_git\scripts\pluginUtils.js` — The full plugin adapter (~6900 lines). Defines `class ArrivalScript extends pc.Script`, every helper exposed via `ArrivalSpace.*` (asset loading, panels, NPCs, avatar parts, animation, post-effects, plugin event bus, multiplayer `attribute()` sync, `_createNetNamespace`, plugin file storage, etc.), and the global export block at the bottom (`window.ArrivalScript = ...; window.ArrivalSpace = { ... }`). The exported `VERSION` string at the bottom is what `ArrivalSpace.VERSION` returns.
+- `C:\Dev\arrival.space\client_git\scripts\arrival-api.js` — The full plugin adapter (~6900 lines). Defines `class ArrivalScript extends pc.Script`, every helper exposed via `ArrivalSpace.*` (asset loading, panels, NPCs, avatar parts, animation, post-effects, plugin event bus, multiplayer `attribute()` sync, `_createNetNamespace`, plugin file storage, etc.), and the global export block at the bottom (`window.ArrivalScript = ...; window.ArrivalSpace = { ... }`). The exported `VERSION` string at the bottom is what `ArrivalSpace.VERSION` returns.
 - `C:\Dev\arrival.space\client_git\scripts\plugin-host.js` — Tiny PlayCanvas script (`pluginHost`) that owns `app.pluginHost` and runs the per-frame attachment/seating logic for `attachPlayerToEntity` (riding entities like the hover-board / vehicle).
 - `C:\Dev\arrival.space\client_git\scripts\arrival-plugin-system.js` — **LEGACY**, do not extend. The old `PlugIn` base class predating `ArrivalScript`. Kept for backwards compatibility only.
-- `C:\Dev\arrival.space\client_git\scripts\user-model-entity.js` — Hosts each plugin instance on a scene entity; calls into `_ArrivalMultiplayer.processAttributes` / `cleanupSyncSubscriptions` (exported from `pluginUtils.js`) to wire up `attribute()`-synced fields.
+- `C:\Dev\arrival.space\client_git\scripts\user-model-entity.js` — Hosts each plugin instance on a scene entity; calls into `_ArrivalMultiplayer.processAttributes` / `cleanupSyncSubscriptions` (exported from `arrival-api.js`) to wire up `attribute()`-synced fields.
 
 When extending the adapter:
 
-1. Add the new helper as a top-level function in `pluginUtils.js` (follow the existing JSDoc style — the public docs in this repo are written by hand from those signatures).
-2. Wire it into the `window.ArrivalSpace = { ... }` block near the bottom of `pluginUtils.js` (currently around line 6761) so plugins can call `ArrivalSpace.newThing()`.
-3. If it should also be available as `this.newThing()` on plugin instances, add a thin forwarding method on the `ArrivalScript` class (around line 2146 in `pluginUtils.js`, e.g. the existing `setPhysicsStepRate` forwarder at line 2216 is the pattern).
+1. Add the new helper as a top-level function in `arrival-api.js` (follow the existing JSDoc style — the public docs in this repo are written by hand from those signatures).
+2. Wire it into the `window.ArrivalSpace = { ... }` block near the bottom of `arrival-api.js` (currently around line 6761) so plugins can call `ArrivalSpace.newThing()`.
+3. If it should also be available as `this.newThing()` on plugin instances, add a thin forwarding method on the `ArrivalScript` class (around line 2146 in `arrival-api.js`, e.g. the existing `setPhysicsStepRate` forwarder at line 2216 is the pattern).
 4. Bump `VERSION` at the bottom of the `ArrivalSpace` object if plugins might want to feature-detect.
 5. Mirror the change in **this** repo:
     - Add or update the relevant section in `docs/api-reference.md`.
@@ -130,6 +130,28 @@ details, auto-play/loop, and a corner-spin recipe are in
 [`docs/cutscenes-via-mcp.md`](docs/cutscenes-via-mcp.md) (+ `examples/spin-image.path`).
 When a request is "animate/move/spin X", prefer this over a vibe unless
 logic/UI/input/physics is needed — and if it's ambiguous, ask the user which they want.
+
+## When the Client's API Changes
+
+`types/arrival.d.ts` is what an agent reads to decide whether a call exists, so
+it has to match the real `window.ArrivalSpace = { ... }` literal in the client's
+`scripts/arrival-api.js`. A missing declaration tells the agent a real function
+does not exist; a stale one invites a call that throws.
+
+After adding or removing anything on `ArrivalSpace`, run:
+
+```bash
+node tools/check-api-types.mjs          # defaults to ../client_git
+```
+
+It fails if either side has a member the other lacks. Then update
+`docs/api-reference.md` to match.
+
+**Receiver rule** — keep this true when adding APIs: `this.*` is the vibe (its
+entity, params, UI, input locks, logging, auto-cleaned listeners);
+`ArrivalSpace.*` is the world. New world APIs go on `ArrivalSpace` only. The
+pass-through delegates still on `ArrivalScript` are marked `@deprecated` and kept
+only so existing vibes don't break — don't add more, and don't document them.
 
 ## When Adding/Renaming/Removing Examples
 

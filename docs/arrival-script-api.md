@@ -1,6 +1,6 @@
 # ArrivalScript / ArrivalSpace Runtime API Reference
 
-Distilled reference for the ArrivalScript / ArrivalSpace runtime API (PlayCanvas v2.x), generated from pluginUtils.js. This is the authoritative API surface — prefer it over reading engine source.
+Distilled reference for the ArrivalScript / ArrivalSpace runtime API (PlayCanvas v2.x), generated from arrival-api.js. This is the authoritative API surface — prefer it over reading engine source.
 
 ## Lifecycle
 
@@ -23,15 +23,37 @@ Distilled reference for the ArrivalScript / ArrivalSpace runtime API (PlayCanvas
 
 ## ArrivalScript instance helpers
 
+> **This section is the complete `this.*` surface.** `this.*` is *your vibe*: its
+> entity, params, 2D UI, input locks, logging, and the listeners that get
+> auto-cleaned when it unloads. Everything about *the world* — player, camera,
+> physics, loading, materials, avatars, space, files — is `ArrivalSpace.*` and
+> lives in [`api-reference.md`](api-reference.md). If a name is in neither list,
+> it does not exist.
+>
+> So it is `ArrivalSpace.getPlayer()`, never `this.getPlayer()`.
+>
+> **Deprecated tail:** a handful of world functions are also still reachable as
+> `this.setPhysicsStepRate()`, `this.teleportPlayer()`, `this.setPlayerVelocity()`,
+> `this.setCameraMode()`, `this.space`, `this.isOwner`, `this.find()` and similar.
+> They keep working so existing vibes don't break, and they are marked
+> `@deprecated` in the typings — but they are not part of this surface. Write
+> `ArrivalSpace.*` instead.
+>
+> One of them has no exact replacement: `this.space` returns the live
+> `customTravelCenter` controller, while `ArrivalSpace.getRoom()` returns a
+> summary `{roomId, roomName, roomData, owner}`. Use `getRoom()` when the summary
+> is enough, otherwise `this.app.customTravelCenter`.
+>
+> **`this.on` / `this.fire` are NOT the plugin event bus.** They are pc.Script's
+> own emitter, so `this.on("myEvent")` will silently never fire. The bus is
+> `ArrivalSpace.fire/on/off/once`.
+
 - `this.app, this.entity` — Inherited pc.Script accessors: the running PlayCanvas app and the script's host entity. Listed among reserved property names a plugin must not shadow.
   - _gotcha:_ Reserved names — do not declare plugin properties named app/entity (full reserved list at line 2370-2373).
-- `get space()` — Current space/room. Returns this.app.customTravelCenter.
-- `get isOwner()` — True if the current user is the owner of this space. Delegates to isOwner().
 - `get position() / set position(v)` — World position shortcut. Getter returns this.entity.getPosition(); setter calls this.entity.setPosition(v.x, v.y, v.z).
 - `get localPosition() / set localPosition(v)` — Local position shortcut. Getter returns this.entity.getLocalPosition(); setter calls this.entity.setLocalPosition(v.x, v.y, v.z).
   - _gotcha:_ Setter reads v.x/v.y/v.z, so pass a Vec3 or {x,y,z} object (not separate args).
 - `get rotation() / set rotation(v)` — Rotation (Euler angles) shortcut. Getter returns this.entity.getEulerAngles(); setter calls this.entity.setEulerAngles(v.x, v.y, v.z).
-- `get standingObject()` — Entity the player is currently standing on. Delegates to getStandingObject().
 - `get isMobile()` — True if running on a touch/mobile device. Returns !!(this.app.touch).
 - `log(...args)` — Log a message (also outputs to console as `[plugin]`). Buffered for remix-agent diagnostics.
   - _gotcha:_ Rate-limited per vibe to VIBE_LOG_RATE_MAX (>200/s over a 1000ms window); when the cap is hit a one-time suppression notice is emitted and further lines are dropped until the window resets. Consecutive identical messages from the same entity are deduped into a count.
@@ -75,7 +97,7 @@ Distilled reference for the ArrivalScript / ArrivalSpace runtime API (PlayCanvas
 ## Player & input
 
 - `getPlayer()` — Get the local player entity (the 'CharacterController' node).
-- `setPlayerVelocity(velocity: {x?: number, y?: number, z?: number})` → `boolean` — Set local world-space velocity once in m/s; omitted axes are preserved. Handles takeoff damping; normal physics/input continue. Returns false for invalid input or an unavailable player. Also `this.setPlayerVelocity` (API 1.14.0).
+- `setPlayerVelocity(velocity: {x?: number, y?: number, z?: number})` → `boolean` — Set local world-space velocity once in m/s; omitted axes are preserved. Handles takeoff damping; normal physics/input continue. Returns false for invalid input or an unavailable player. 14.0).
 - `getPlayerMesh()` — Get the player's avatar mesh entity ('ReadyPlayerMe'), which carries the anim component.
 - `getPlayerForward()` — Get the player's horizontal forward vector based on the avatar mesh facing (Y zeroed, normalized, negated).
 - `getMoveInput()` — Get the local player's current movement intent (keyboard / mobile joystick / gamepad converge in firstPersonView) instead of polling the keyboard directly.

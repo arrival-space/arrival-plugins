@@ -66,6 +66,26 @@ export class MyPlugin extends ArrivalScript {
 - Entity picker: a string property with `editor: "entity"`. Optional `filterTypes` (string or array) restricts the list — `"all"` (default), model subtypes `"glb"`/`"splat"`/`"image"`/`"cutscene"`/`"plugin"`, top-level `"custom-sound-entity"`/`"annotation"`/`"voicey"`/`"dynamic-gate"`/`"center-asset"`, or `"camera"` to also offer the room's main camera. Combine types in an array; unknown values fall back to `"all"`. The stored value is the picked entity id (`""` when cleared) — resolve it at runtime and guard for `null`. Full list in `docs/properties.md`.
 - Editor button: a schema key with `editor: "action"` whose name matches a method on the plugin; pressing it calls that method.
 
+## Which Receiver? (`this.` vs `ArrivalSpace.`)
+
+One rule, no exceptions:
+
+> **`this.*` is your vibe** — its entity, params, 2D UI, input locks, logging, and
+> the listeners that get auto-cleaned when it unloads. The full list is in
+> [`arrival-script-api.md`](arrival-script-api.md).
+> **`ArrivalSpace.*` is the world** — player, camera, physics, loading, materials,
+> avatars, space, files, net, xr, ai. The full list is in
+> [`api-reference.md`](api-reference.md).
+>
+> If a name is not in one of those two lists, it does not exist.
+
+So it is `ArrivalSpace.getPlayer()`, not `this.getPlayer()`. When in doubt, reach
+for `ArrivalSpace.` — the world surface is the big one.
+
+Older vibes may call a handful of world functions as `this.setPhysicsStepRate()`,
+`this.teleportPlayer()` and similar. Those still work, but they are deprecated and
+not documented — do not write new code that way.
+
 ## API Selection Guide
 
 - Load models: `ArrivalSpace.loadGLB`
@@ -86,7 +106,7 @@ export class MyPlugin extends ArrivalScript {
 - Multiplayer state: `attribute(default, { sync: true, authority: ... })`
 - Multiplayer events: `ArrivalSpace.net.send/on/...`
 - Plugin event bus (local inter-plugin communication): `ArrivalSpace.fire/on/off/once`
-- Space utilities: `getPlayer`, `getCamera`, `getRoom`, `findEntity`, etc.
+- Space utilities: `ArrivalSpace.getPlayer`, `ArrivalSpace.getCamera`, `ArrivalSpace.getRoom`, `ArrivalSpace.findEntity`, etc.
 
 ## Multiplayer Pattern
 

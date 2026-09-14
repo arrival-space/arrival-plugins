@@ -212,7 +212,7 @@ export class VehiclePhysicsModel extends ArrivalScript {
             stepHz: 1 / this.app.systems.rigidbody.fixedTimeStep,
             maxSubSteps: this.app.systems.rigidbody.maxSubSteps,
         };
-        this.setPhysicsStepRate(this.physicsHz, this.physicsSubSteps);
+        ArrivalSpace.setPhysicsStepRate(this.physicsHz, this.physicsSubSteps);
         this._buildPhysics();
         await this._buildVisuals();
         this._createHeadlights();
@@ -1133,7 +1133,7 @@ export class VehiclePhysicsModel extends ArrivalScript {
 
     destroy() {
         if (this._savedStepRate) {
-            this.setPhysicsStepRate(this._savedStepRate.stepHz, this._savedStepRate.maxSubSteps);
+            ArrivalSpace.setPhysicsStepRate(this._savedStepRate.stepHz, this._savedStepRate.maxSubSteps);
         }
 
         if (this._mounted) this._dismount();

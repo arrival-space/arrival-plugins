@@ -95,6 +95,7 @@ declare namespace pc {
         rigidbody?: any;
         sound?: any;
         script?: any;
+        light?: any;
     }
 
     class Application {
@@ -1850,4 +1851,371 @@ declare namespace ArrivalSpace {
         /** Show help */
         help(): void;
     } | undefined;
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // SPACE / OWNERSHIP
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * True if the current user owns the current space.
+     * @example
+     * if (ArrivalSpace.isOwner()) showOwnerControls();
+     */
+    function isOwner(): boolean;
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // PLAYER — movement, physics, body
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Teleport the local player to a world position, optionally facing a direction.
+     * Same path as the platform's own spawn/teleport (no physics sweep in between).
+     * Returns false when there is no local player or the position is not finite.
+     * @example
+     * ArrivalSpace.teleportPlayer({ x: 0, y: 1, z: 5 }, { forward: { x: 0, y: 0, z: -1 } });
+     */
+    function teleportPlayer(
+        position: ArrivalVec3Like,
+        options?: {
+            /** Horizontal look direction after the jump (Y ignored). */
+            forward?: ArrivalVec3Like;
+            /** Look direction in degrees (firstPersonView convention); alternative to `forward`. */
+            azimuth?: number;
+        },
+    ): boolean;
+
+    /**
+     * Set the physics world gravity. Default `{x: 0, y: -9.81, z: 0}`; a bare number sets the
+     * vertical component only. Affects every dynamic body including the player — restore it
+     * in `destroy()`.
+     * @example
+     * ArrivalSpace.setGravity(-1.62);  // Moon
+     */
+    function setGravity(gravity: number | ArrivalVec3Like): boolean;
+
+    /** Get the physics world gravity. */
+    function getGravity(): { x: number; y: number; z: number } | null;
+
+    /** Jump height multiplier (1.0 = the room's default); scales the jump impulse. */
+    function setPlayerJumpHeight(multiplier: number): void;
+
+    /** The player's horizontal forward vector, from the avatar mesh facing (Y zeroed). */
+    function getPlayerForward(): pc.Vec3 | null;
+
+    /** The player's avatar mesh entity ("ReadyPlayerMe"), which carries the anim component. */
+    function getPlayerMesh(): pc.Entity | null;
+
+    /**
+     * Enable or disable the player's collision capsule. Useful when the player is seated in a
+     * vehicle and the capsule would interfere.
+     */
+    function setPlayerCollision(enabled: boolean): void;
+
+    /**
+     * Visually offset the player's avatar mesh without affecting physics — for animations that
+     * sit too high or too low. Accepts `(x, y, z)` or a single Vec3-like. Pass `0, 0, 0` to reset.
+     */
+    function setPlayerAvatarOffset(offsetOrX: number | ArrivalVec3Like, y?: number, z?: number): boolean;
+
+    /**
+     * Set the global physics step rate for the whole world (not just this plugin).
+     * Latest call wins.
+     * @param stepHz Physics tick rate in Hz (e.g. 60, 120, 180). Default 60.
+     * @param maxSubSteps Maximum Bullet substeps per frame. Default 10.
+     */
+    function setPhysicsStepRate(stepHz?: number, maxSubSteps?: number): boolean;
+
+    /**
+     * Enable Bullet continuous collision detection on an entity's rigidbody, to stop fast
+     * movers tunnelling through geometry. Requires a rigidbody with a backing Ammo body;
+     * `radius` / `motionThreshold` default from the collision shape.
+     */
+    function enableContinuousCollisionDetection(
+        entity: pc.Entity,
+        options?: { radius?: number; motionThreshold?: number },
+    ): boolean;
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // STANDING OBJECT
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /** The entity the player is currently standing on. */
+    function getStandingObject(): pc.Entity | null;
+
+    /**
+     * Subscribe to standing-object changes. Returns an unsubscribe function.
+     * Prefer `this.onStandingObjectChanged(...)` inside a vibe — that form auto-unsubscribes
+     * when the vibe unloads.
+     */
+    function onStandingObjectChanged(
+        callback: (current: pc.Entity | null, previous: pc.Entity | null) => void,
+        scope?: any,
+    ): () => void;
+
+    /** Subscribe once to the next standing-object change. Returns a cancel function. */
+    function onceStandingObjectChanged(
+        callback: (current: pc.Entity | null, previous: pc.Entity | null) => void,
+        scope?: any,
+    ): () => void;
+
+    /** Remove a standing-object listener registered with the same callback and scope. */
+    function offStandingObjectChanged(
+        callback: (current: pc.Entity | null, previous: pc.Entity | null) => void,
+        scope?: any,
+    ): void;
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // CAMERA TARGET
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /** Shared Y offset for first- and third-person camera targets. Call on state changes, not per frame. */
+    function setCameraTargetHeightOffset(offsetY?: number): boolean;
+
+    /** Third-person camera distance in world units, clamped to the current min/max zoom. */
+    function setCameraTargetDistance(distance?: number): boolean;
+
+    /** The current shared camera target Y offset. */
+    function getCameraTargetHeightOffset(): number | null;
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // PLAYER ANIMATION
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /** Animation states that can be overridden. */
+    type PlayerAnimState = "Idle" | "Forward" | "Jumping" | "Signature1" | "Signature2" | "Signature3" | "Signature4";
+
+    /**
+     * Replace a character animation state by loading a GLB (or an avatar-catalog entry).
+     * Persists across avatar reloads until cleared by passing `null`.
+     * @example
+     * await ArrivalSpace.setPlayerAnimation("Idle", "dancing.glb");
+     * await ArrivalSpace.setPlayerAnimation("Idle", null); // restore
+     */
+    function setPlayerAnimation(
+        state: PlayerAnimState | string,
+        animationRef: string | null,
+        options?: {
+            /** Strip root-bone movement so the animation plays in place. Default true. */
+            inPlace?: boolean;
+            inPlaceBoneName?: string;
+            inPlaceBoneTargetLocalPosition?: ArrivalVec3Like;
+            /** Catalog gender override when `animationRef` is not a full URL. */
+            gender?: string;
+            /** Start the animation at this offset in seconds. Default 0. */
+            startTime?: number;
+        },
+    ): Promise<boolean>;
+
+    /**
+     * Animation-speed multiplier for one state (multiplies the system's computed speed).
+     * Pass null/undefined to delete the override.
+     */
+    function setPlayerAnimSpeed(state: PlayerAnimState | string, speed: number): void;
+
+    /** Character movement speed multiplier (1.0 = default). Scales physics and walk animation together. */
+    function setPlayerSpeed(multiplier: number): void;
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // AVATAR
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Create a lightweight controllable NPC (avatar + animation + locomotion helpers).
+     * Prefer `this.createNPC(...)` inside a vibe. Throws if the multiplayer remote-player
+     * template is unavailable.
+     */
+    function createNPC(options?: Record<string, any>): Promise<any>;
+
+    /** The avatar parts catalog (body, head, hair, top, bottom, footwear, …). */
+    function getAvatarCatalog(gender?: "male" | "female"): Promise<{ baseUrl: string; categories: Record<string, any> } | null>;
+
+    /** Available avatar animation file paths for a gender. */
+    function getAvatarAnimationCatalog(gender?: "male" | "female"): Promise<string[] | null>;
+
+    /** The current avatar's modular parts config. Null if the avatar is not parts-based (e.g. VRM). */
+    function getAvatarConfig(): Promise<{ parts: Record<string, any>; tints: Record<string, any>; gender: string } | null>;
+
+    /**
+     * Change one or more avatar parts and re-render. Temporary (visual only) — does NOT save to
+     * the user's profile. Part ids come from the catalog; set a part to null to remove it.
+     * Call `resetAvatar()` in `destroy()` to undo.
+     * @example
+     * await ArrivalSpace.setAvatarParts({ headwear: "headwear-5.glb" });
+     */
+    function setAvatarParts(
+        partsToSet: Record<string, string | null>,
+        options?: { tints?: Record<string, any>; gender?: string },
+    ): Promise<{ ok: boolean; error?: string }>;
+
+    /** Reset the avatar to the user's saved state. Call in `destroy()` after any temporary change. */
+    function resetAvatar(): Promise<boolean>;
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // APP UI
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Show or hide the app's built-in UI ("UI Game Overlay" — HUD, overlays, name tags) for
+     * immersive viewports.
+     */
+    function setAppUIVisible(visible: boolean, keepMobileControls?: boolean): void;
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // LIGHTING — splat lighting and probes
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Enable the center collision-mesh splat-light material so plugins can light splats from
+     * the collision mesh. Also forces HDR post-effects.
+     */
+    function enableSplatLightMaterial(options?: Record<string, any>): boolean;
+
+    /** A PlayCanvas light component, or an entity that owns one. */
+    type LightLike = pc.Entity | { enabled?: boolean; layers?: number[]; [key: string]: any };
+
+    /**
+     * Wire a light so it also lights splats (adds the "AfterSplat" layer and enables the
+     * splat-light material on it). Prefer this over wiring layers by hand.
+     * @example
+     * ArrivalSpace.addSplatLight(lightEntity.light);
+     */
+    function addSplatLight(light: LightLike, options?: Record<string, any>): boolean;
+
+
+    /** Lighting payload used by `setLightProbe()` and localized probes. */
+    interface LightProbeConfig {
+        enabled?: boolean;
+        priority?: number;
+        primaryLight?: {
+            direction?: ArrivalVec3Like;
+            color?: string | ArrivalVec3Like;
+            intensity?: number;
+            shadowIntensity?: number;
+        };
+        environment?: {
+            hdrUrl?: string | null;
+            hdrEncoding?: "linear" | "rgbm" | "rgbp";
+            rotation?: number;
+            intensity?: number;
+        };
+        postEffects?: {
+            saturation?: number;
+            contrast?: number;
+            brightness?: number;
+            sharpness?: number;
+            bloomIntensity?: number;
+            bloomThreshold?: number;
+        };
+    }
+
+    /** Handle returned by `createLocalizedLightProbe()`. */
+    interface LocalizedLightProbe {
+        update(config: LightProbeConfig): boolean;
+        setPosition(position: ArrivalVec3Like): boolean;
+        getPosition(): pc.Vec3 | null;
+        setEnabled(enabled: boolean): boolean;
+        destroy(): boolean;
+    }
+
+    /** Replace the base room lighting override. Pass null to clear and fall back to room lighting. */
+    function setLightProbe(config?: LightProbeConfig | null): boolean;
+
+    /** Create a positioned localized light probe. */
+    function createLocalizedLightProbe(
+        config: LightProbeConfig,
+        position: ArrivalVec3Like,
+    ): LocalizedLightProbe | null;
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // USER FILES  (stored under "plugins/<fileName>")
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Save a file to the current user's storage. Returns the uploaded URL, or false.
+     * @example
+     * const url = await ArrivalSpace.saveUserFile('my-plugin/settings.json', JSON.stringify(data));
+     */
+    function saveUserFile(fileName: string, data: string | ArrayBuffer | Blob, mimeType?: string): Promise<string | false>;
+
+    /**
+     * Load a file from the current user's storage (or another user's).
+     * @example
+     * const resp = await ArrivalSpace.loadUserFile('my-plugin/settings.json');
+     * if (resp) { const data = await resp.json(); }
+     */
+    function loadUserFile(fileName: string, userId?: string): Promise<Response | false>;
+
+    /** Delete a file from the current user's storage. */
+    function deletePluginFile(fileName: string): Promise<boolean>;
+
+    /** The public URL for a user file. */
+    function getPluginFileURL(fileName: string, userId?: string): string | false;
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // PLAYER ATTACHMENT  (vehicles / mounts)
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /**
+     * Attach the local player to an entity for multiplayer riding (vehicles, mounts). Handles
+     * collision, camera, animations, mount broadcast and a sideband for the entity quaternion.
+     * Only one local attachment at a time — returns null if already attached. Call the returned
+     * `detach()` to restore collision/camera/animations.
+     */
+    function attachPlayerToEntity(
+        entity: pc.Entity,
+        options?: {
+            /** Seat offset in entity local space. */
+            offset?: ArrivalVec3Like;
+            /** Animation overrides, e.g. `{ Idle: url, Forward: url }`. */
+            animations?: Record<string, string>;
+            disableCollision?: boolean;
+            camera?: { heightOffset?: number; distance?: number };
+            /** Sideband broadcast rate in Hz. Default 20. */
+            rate?: number;
+            /** Returns extra per-tick data, e.g. `{ steer, spd }`. */
+            extra?: () => Record<string, any>;
+            /** Returns a local visual mesh euler offset. */
+            meshEuler?: () => { x: number; y: number; z: number };
+            /** Visual mesh follow lag in seconds; 0 = instant. */
+            meshRotationLag?: number | (() => number);
+        },
+    ): { detach: () => void } | null;
+
+    /** The local player's current attachment state entry, if riding an entity. */
+    function getLocalPlayerAttachment(): any | null;
+
+    /** The entity the local player is currently riding, if any. */
+    function getLocalAttachedEntity(): pc.Entity | null;
+
+    /**
+     * Listen for remote players mounting/dismounting an entity. The callback gets an info
+     * object when mounted, or null when dismounted. Returns an unsubscribe function.
+     */
+    function onEntityAttachChanged(entity: pc.Entity, callback: (info: any | null) => void): () => void;
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // XR / PASSTHROUGH
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /** XR / passthrough controls. See the XR section of api-reference.md. */
+    const xr: {
+        /** True while an XR session is active. */
+        readonly active: boolean;
+        getState(): any;
+        isAvailable(mode?: string): Promise<boolean>;
+        enter(options?: Record<string, any>): Promise<boolean>;
+        exit(): Promise<boolean>;
+        onStateChange(callback: (state: any) => void): () => void;
+    };
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // DIAGNOSTICS
+    // ═══════════════════════════════════════════════════════════════════════════
+
+    /** The buffered vibe log lines (what `this.log/warn/error` write). */
+    function getVibeLogs(): any[];
+
+    /** Clear the buffered vibe log lines. */
+    function clearVibeLogs(): void;
+
 }

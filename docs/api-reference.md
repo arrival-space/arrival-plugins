@@ -16,49 +16,29 @@ export class MyPlugin extends ArrivalScript {
 |----------|------|-------------|
 | `this.entity` | `pc.Entity` | The entity this plugin is attached to |
 | `this.app` | `pc.Application` | The PlayCanvas application |
-| `this.space` | `object` | Current room/space |
-| `this.isOwner` | `boolean` | Whether current user owns the current space |
 | `this.position` | `pc.Vec3` | World position (get/set) |
 | `this.localPosition` | `pc.Vec3` | Local position (get/set) |
 | `this.rotation` | `pc.Vec3` | Euler rotation in degrees (get/set) |
-| `this.standingObject` | `pc.Entity \| null` | Entity the local player is currently standing on |
 
 Avoid reserved plugin property names such as `enabled`, `app`, and `entity`.
 
+> **Which receiver?** `this.*` is *your vibe* — entity, params, 2D UI, input
+> locks, logging, auto-cleaned listeners. Everything about *the world* is
+> `ArrivalSpace.*` (see [ArrivalSpace](#arrivalspace) below): player, camera,
+> physics, loading, materials, avatars, space, files. So `ArrivalSpace.getPlayer()`,
+> never `this.getPlayer()`.
+>
+> Note `this.on` / `this.fire` are pc.Script's own emitter, **not** the plugin
+> event bus — that is `ArrivalSpace.fire/on/off/once`.
+
 ### Scene Methods
-
-#### `find(name)`
-
-Find an entity by name in the scene.
-
-#### `findByTag(tag)`
-
-Find all entities with a specific tag.
 
 #### `findChild(name)`
 
-Find a child entity by name.
+Find a child entity by name. For the whole scene use `ArrivalSpace.findEntity(name)`
+or `ArrivalSpace.findByTag(tag)`.
 
 ### Player Helpers
-
-#### `setPhysicsStepRate(stepHz, maxSubSteps?)`
-
-Set the global physics simulation step rate for the current world.
-
-This affects the shared physics world, not just this plugin.
-
-| Param | Type | Description |
-|-------|------|-------------|
-| `stepHz` | `number` | Physics tick rate in Hz (for example `60`, `120`, `180`) |
-| `maxSubSteps` | `number` | Maximum Bullet substeps per frame (default: `10`) |
-
-**Returns:** `boolean`
-
-#### `setPlayerAvatarOffset(x, y, z)`
-
-Apply a visual local offset to the local player's avatar mesh without affecting physics. This is useful when a custom animation makes the avatar appear too high or too low.
-
-Pass `0, 0, 0` to reset the offset.
 
 #### `onStandingObjectChanged(callback)`
 
@@ -643,7 +623,7 @@ Get the player's avatar mesh entity (`ReadyPlayerMe`) which has the `anim` compo
 
 Set the local player's world-space velocity in metres per second. Accepts `{ x?, y?, z? }`
 or a `pc.Vec3`; at least one finite numeric axis is required. Omitted/`undefined` axes are
-preserved; `0` stops an axis. Also available as `this.setPlayerVelocity(velocity)` (API 1.14.0).
+preserved; `0` stops an axis. 14.0).
 
 ```javascript
 ArrivalSpace.setPlayerVelocity({ y: 10 }); // Preserve X/Z.
@@ -663,7 +643,7 @@ See [Velocity Pad](../examples/velocity-pad.mjs).
 
 Get the local player's current movement input intent. Works on desktop (W/S/A/D, arrow keys) and mobile (virtual joystick) — sourced from the same input pipeline the character controller uses, so plugins do not need to poll the keyboard or `getLeftStick()` separately.
 
-Also available as `this.getMoveInput()` on plugin instances.
+
 
 **Returns:** `{ forward: number, strafe: number, jump: boolean }`
 
@@ -745,7 +725,7 @@ Get camera entity. Use this for the player's **viewing direction** (heading/yaw)
 
 #### `ArrivalSpace.setCameraMode(mode)`
 
-Switch the camera mode. Also available as `this.setCameraMode(mode)`.
+Switch the camera mode. 
 
 | Param | Type | Description |
 |-------|------|-------------|
@@ -760,13 +740,13 @@ ArrivalSpace.setCameraMode("third");
 
 #### `ArrivalSpace.getCameraMode()`
 
-Get the current camera mode. Also available as `this.getCameraMode()`.
+Get the current camera mode. 
 
 **Returns:** `"free" | "third" | "first" | "orbital" | null`
 
 #### `ArrivalSpace.setFreeCamPose(position, lookAt?)`
 
-Position the free camera and optionally aim it at a target. Switches to free cam mode first if it is not already active. The horizon is kept level (roll = 0). Also available as `this.setFreeCamPose(position, lookAt)`. *(VERSION ≥ 1.11.0)*
+Position the free camera and optionally aim it at a target. Switches to free cam mode first if it is not already active. The horizon is kept level (roll = 0).  *(VERSION ≥ 1.11.0)*
 
 | Param | Type | Description |
 |-------|------|-------------|
@@ -783,7 +763,7 @@ ArrivalSpace.setFreeCamPose({ x: target.x + 4, y: target.y + 2, z: target.z + 4 
 
 #### `ArrivalSpace.setFreeCamSpeed(speed, maxSpeed?)`
 
-Set the free camera's movement speed and/or raise its maximum. The scroll-wheel speed adjustment clamps to the max (default 50 m/s, good for room-scale spaces) — raise it for large streamed worlds, e.g. flying across a Google 3D Tiles city. Requires free cam mode to be active. Also available as `this.setFreeCamSpeed(speed, maxSpeed)`. *(VERSION ≥ 1.11.2)*
+Set the free camera's movement speed and/or raise its maximum. The scroll-wheel speed adjustment clamps to the max (default 50 m/s, good for room-scale spaces) — raise it for large streamed worlds, e.g. flying across a Google 3D Tiles city. Requires free cam mode to be active.  *(VERSION ≥ 1.11.2)*
 
 | Param | Type | Description |
 |-------|------|-------------|
@@ -800,7 +780,7 @@ ArrivalSpace.setFreeCamSpeed(null, 2000); // only raise the cap
 
 #### `ArrivalSpace.getFreeCamSpeed()`
 
-Get the free camera's current movement speed and maximum. Lets plugins that drive the speed (e.g. altitude-proportional flying) detect the user's scroll-wheel adjustments instead of stomping them. Also available as `this.getFreeCamSpeed()`. *(VERSION ≥ 1.11.2)*
+Get the free camera's current movement speed and maximum. Lets plugins that drive the speed (e.g. altitude-proportional flying) detect the user's scroll-wheel adjustments instead of stomping them.  *(VERSION ≥ 1.11.2)*
 
 **Returns:** `{ speed, maxSpeed } | null` — null if the free cam is not available (not in free cam mode yet)
 

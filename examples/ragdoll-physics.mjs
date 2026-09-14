@@ -146,7 +146,7 @@ export class RagdollPhysics extends ArrivalScript {
 
     // ================================================================ lifecycle
     initialize() {
-        this.setPhysicsStepRate(120);
+        ArrivalSpace.setPhysicsStepRate(120);
         this._onKeyDown = (e) => {
             const key = this.activateKey && pc[`KEY_${this.activateKey.toUpperCase()}`];
             if (key && e.key === key) {
@@ -221,7 +221,7 @@ export class RagdollPhysics extends ArrivalScript {
         if (Date.now() - this._activatedAt < this.minActiveTime * 1000) return;
         // Wake the ragdoll when the user tries to move forward.
         const fwd = this.getMoveInput
-            ? this.getMoveInput().forward > 0.1
+            ? ArrivalSpace.getMoveInput().forward > 0.1
             : this.app.keyboard.isPressed(pc.KEY_W); // TODO: remove fallback once getMoveInput ships
         if (fwd) this.deactivate();
     }

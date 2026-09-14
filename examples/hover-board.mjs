@@ -93,10 +93,10 @@ export class HoverBoard extends ArrivalScript {
             if (isStandingOnBoard) {
                 this._applyRideIdle();
                 this._applyRideActionAnimation();
-                this.setPlayerAvatarOffset(0, this.playerOffsetY, 0);
+                ArrivalSpace.setPlayerAvatarOffset(0, this.playerOffsetY, 0);
                 this._showHint(true);
             } else if (wasStandingOnBoard) {
-                this.setPlayerAvatarOffset(0, 0, 0);
+                ArrivalSpace.setPlayerAvatarOffset(0, 0, 0);
                 ArrivalSpace.setPlayerAnimation("Idle", null);
                 ArrivalSpace.setPlayerAnimation("Signature1", null);
                 this._setRideActionActive(false);
@@ -107,7 +107,7 @@ export class HoverBoard extends ArrivalScript {
         if (this._isPlayerStandingOnBoard) {
             await this._applyRideIdle();
             await this._applyRideActionAnimation();
-            this.setPlayerAvatarOffset(0, this.playerOffsetY, 0);
+            ArrivalSpace.setPlayerAvatarOffset(0, this.playerOffsetY, 0);
             this._showHint(true);
         }
 
@@ -126,7 +126,7 @@ export class HoverBoard extends ArrivalScript {
         }
 
         if (this._rideActionActive && this.entity.rigidbody && this.pushForce > 0) {
-            const forward = this.getPlayerForward();
+            const forward = ArrivalSpace.getPlayerForward();
             if (forward) {
                 this.entity.rigidbody.applyForce(
                     forward.x * this.pushForce,
@@ -145,7 +145,7 @@ export class HoverBoard extends ArrivalScript {
 
     postUpdate() {
         if (!this._isPlayerStandingOnBoard) return;
-        this.setPlayerAvatarOffset(0, this.playerOffsetY, 0);
+        ArrivalSpace.setPlayerAvatarOffset(0, this.playerOffsetY, 0);
     }
 
     resetToInitial() {
@@ -410,11 +410,11 @@ export class HoverBoard extends ArrivalScript {
         if (this._isPlayerStandingOnBoard) {
             ArrivalSpace.setPlayerAnimation("Idle", null);
             ArrivalSpace.setPlayerAnimation("Signature1", null);
-            this.setPlayerAvatarOffset(0, 0, 0);
+            ArrivalSpace.setPlayerAvatarOffset(0, 0, 0);
             this._isPlayerStandingOnBoard = false;
         }
         this._setRideActionActive(false);
-        this.setPlayerAvatarOffset(0, 0, 0);
+        ArrivalSpace.setPlayerAvatarOffset(0, 0, 0);
 
         if (this.entity.rigidbody) {
             this.entity.removeComponent("rigidbody");

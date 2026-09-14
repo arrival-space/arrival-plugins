@@ -44,7 +44,7 @@
       "path": "docs/arrival-script-api.md",
       "kind": "doc",
       "title": "ArrivalScript / ArrivalSpace API Reference (full, distilled)",
-      "summary": "Complete distilled API surface of the ArrivalScript base class and the ArrivalSpace runtime, generated from pluginUtils.js: lifecycle, ArrivalScript instance helpers, player & input, entities & geometry, materials, UI & panels, audio, events, camera, room & user, persistence (pluginStore/userData), and multiplayer (net + synced attribute()).",
+      "summary": "Complete distilled API surface of the ArrivalScript base class and the ArrivalSpace runtime, generated from arrival-api.js: lifecycle, ArrivalScript instance helpers, player & input, entities & geometry, materials, UI & panels, audio, events, camera, room & user, persistence (pluginStore/userData), and multiplayer (net + synced attribute()).",
       "keywords": ["api", "reference", "arrivalscript", "arrivalspace", "pluginstore", "userdata", "persistence", "attribute", "sync", "net", "multiplayer", "lifecycle", "ui", "panel", "camera", "audio", "events"]
     },
     {
