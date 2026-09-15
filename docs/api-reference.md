@@ -692,6 +692,38 @@ Get the player's avatar mesh entity (`ReadyPlayerMe`) which has the `anim` compo
 
 **Returns:** `pc.Entity | null`
 
+#### `ArrivalSpace.teleportPlayer(position, options?)`
+
+Move the local player to a world position, optionally setting which way they end up facing.
+Same path as the platform's own spawn/teleport — no physics sweep between the two points.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `position` | `{x,y,z}` | World position |
+| `options.azimuth` | `number` | Heading in degrees. **0° faces −Z**, 90° faces −X — the same convention as a spawn point's `rotation.y` (see `room-config.md`) |
+| `options.forward` | `{x,y,z}` | Heading as a direction vector instead (Y ignored, normalised for you) |
+
+**Returns:** `boolean` — `false` if there is no local player or the position isn't finite.
+
+Pass one of `azimuth` or `forward`; both set the first/third-person look direction. Without
+either, the player keeps their current heading, which is why a plugin that teleports someone
+to face a painting or down a corridor has to say so explicitly.
+
+```javascript
+// Face down −Z at the destination
+ArrivalSpace.teleportPlayer({ x: 0, y: 1, z: 5 }, { azimuth: 0 });
+
+// Or aim at a target entity
+const to = target.getPosition().clone().sub(ArrivalSpace.getPlayer().getPosition());
+ArrivalSpace.teleportPlayer({ x: 0, y: 1, z: 5 }, { forward: { x: to.x, y: 0, z: to.z } });
+```
+
+Heading is ignored while an XR session is active — the headset owns the view direction. There
+is no supported way to turn the player *smoothly* to a heading without teleporting; this sets
+it instantly, as part of the jump.
+
+---
+
 #### `ArrivalSpace.setPlayerVelocity(velocity)`
 
 Set the local player's world-space velocity in metres per second. Accepts `{ x?, y?, z? }`
