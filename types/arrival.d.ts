@@ -745,6 +745,26 @@ declare namespace ArrivalSpace {
     /** Create a texture panel (supports transparency) */
     function createTexturePanel(options: CreateTexturePanelOptions): Promise<pc.Entity | null>;
 
+    /**
+     * Make a 3D entity clickable. Mesh-accurate framebuffer picking - no per-frame raycast
+     * and no collider needed. Bubbles, so binding a host entity catches clicks on its child
+     * meshes. Prefer this over `rigidbody.raycastFirst` from an unprojected mouse position,
+     * which returns the first collider along the ray (usually the room shell or a splat).
+     * @returns Unsubscribe; called automatically when the entity is destroyed.
+     */
+    function onEntityClick(entity: pc.Entity, handler: (event: object) => void): () => void;
+
+    /**
+     * Highlight a 3D entity on hover, using the same picking as {@link onEntityClick}.
+     * `leave` also fires if picking is switched off while hovered, so a highlight cannot
+     * get stuck on.
+     * @returns Unsubscribe; called automatically when the entity is destroyed.
+     */
+    function onEntityHover(
+        entity: pc.Entity,
+        handlers: { enter?: () => void; leave?: () => void },
+    ): () => void;
+
     /** Safely dispose an entity and its resources */
     function disposeEntity(entity: pc.Entity, options?: DisposeEntityOptions): void;
 

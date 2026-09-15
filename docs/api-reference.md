@@ -510,6 +510,79 @@ Create a texture-rendered 3D panel with alpha support. Best for transparent over
 
 ---
 
+### 3D Interaction
+
+Making your own 3D objects clickable and hoverable. The platform picks by rendering entity
+ids to a framebuffer, so a hit is **mesh-accurate**, costs **nothing per frame**, and needs
+**no collision or rigidbody** on the entity. Both events **bubble**: bind your plugin's host
+entity and you catch interaction on any of its child meshes.
+
+> **Don't roll your own.** The common mistake is a DOM `mousemove` listener plus
+> `camera.screenToWorld()` and `rigidbody.raycastFirst()`. A physics ray returns the *first*
+> collider along it, which in a real space is usually the room shell or a splat's collision
+> mesh, not your object — so it works in an empty test room and silently stops working once
+> there is anything in front. It also needs a collider on everything you want to hit, and
+> raycasting per frame is expensive.
+
+#### `ArrivalSpace.onEntityClick(entity, handler)`
+
+Call `handler` when `entity` (or a descendant) is clicked. A click is press and release on
+the same entity within 500ms and 4px, so dragging to orbit the camera is not a click.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `entity` | `pc.Entity` | Entity to listen on (descendants included) |
+| `handler` | `(event) => void` | Called on click |
+
+**Returns:** `() => void` — unsubscribe. Called automatically if the entity is destroyed.
+
+```javascript
+export class ColorCubes extends ArrivalScript {
+    static scriptName = "colorCubes";
+
+    initialize() {
+        this._offs = [];
+        for (const cube of this._buildCubes()) {
+            const mat = cube.render.meshInstances[0].material;
+
+            this._offs.push(ArrivalSpace.onEntityClick(cube, () => {
+                mat.diffuse = new pc.Color(Math.random(), Math.random(), Math.random());
+                mat.update();
+            }));
+
+            this._offs.push(ArrivalSpace.onEntityHover(cube, {
+                enter: () => { mat.emissive = new pc.Color(0.35, 0.35, 0.35); mat.update(); },
+                leave: () => { mat.emissive = new pc.Color(0, 0, 0); mat.update(); },
+            }));
+        }
+    }
+
+    destroy() {
+        this._offs.forEach((off) => off());
+    }
+}
+```
+
+#### `ArrivalSpace.onEntityHover(entity, handlers)`
+
+`enter` fires when the pointer moves onto `entity` or a descendant, `leave` when it moves
+off. `leave` also fires if picking is switched off while the entity is hovered, so a
+highlight cannot get stuck on.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `entity` | `pc.Entity` | Entity to listen on (descendants included) |
+| `handlers.enter` | `() => void` | Pointer entered |
+| `handlers.leave` | `() => void` | Pointer left |
+
+**Returns:** `() => void` — unsubscribe. Called automatically if the entity is destroyed.
+
+**Already interactive without this:** NPCs take `onClick` / `onHoverEnter` / `onHoverLeave`
+in `createNPC`, and `createTexturePanel` takes an `onClick(href)` for anchors in its HTML.
+Use these two calls for everything else — your own meshes, loaded GLBs, procedural geometry.
+
+---
+
 ### Cleanup
 
 #### `ArrivalSpace.disposeEntity(entity, options?)`
