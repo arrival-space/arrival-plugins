@@ -126,13 +126,21 @@ Get the current right virtual joystick input (camera stick on mobile).
 
 Load a GLB/GLTF into the scene **as this vibe's own model**. Returns `Promise<{ entity, asset }>`.
 
-It's a thin instance-method wrapper around [`ArrivalSpace.loadGLB(url, options)`](#arrivalspaceloadglburl-options) that additionally tags the loaded model so that **clicking it in edit mode selects this plugin's entity** for editing (it injects the vibe's host entity as the internal selection target). Prefer `this.createModel(...)` over raw `ArrivalSpace.loadGLB(...)` whenever a plugin spawns its own model — otherwise the loaded GLB isn't clickable-to-edit and feels detached from the vibe. Accepts the same `options` as `loadGLB` (`parent`, `name`, `scale`, `position`, `rotation`, `castShadows`, `onLoad`, …).
+It's an instance-method wrapper around [`ArrivalSpace.loadGLB(url, options)`](#arrivalspaceloadglburl-options) that wires the model to this vibe in two ways:
+
+- **It parents the model to this plugin's entity**, so the editor gizmo moves, rotates and scales it, and it unloads with the vibe.
+- **Clicking it in edit mode selects this plugin's entity** for editing (the vibe's host entity is injected as the internal selection target).
+
+Prefer `this.createModel(...)` over raw `ArrivalSpace.loadGLB(...)` whenever a plugin spawns its own model. Raw `loadGLB` with no `parent` drops the GLB on the scene root: the gizmo then moves the vibe's entity while the visible mesh stays where it was, which looks like a broken editor.
+
+Accepts the same `options` as `loadGLB` (`parent`, `name`, `scale`, `position`, `rotation`, `castShadows`, `onLoad`, …). `position` and `rotation` are **relative to this vibe's entity** and accept `[x, y, z]`, `{ x, y, z }` or a `pc.Vec3`. Pass `parent` explicitly to attach the model somewhere else — a bone, a sub-container, or `pc.app.root` for a world-space object that must not inherit the entity's transform.
 
 ```javascript
 async initialize() {
+    // Parented to this vibe by default — gizmo-movable, clickable-to-edit.
     const { entity } = await this.createModel('https://.../thing.glb', {
-        parent: this.entity,   // parent to the vibe so it moves/unloads with it
         scale: 2,
+        position: [0, 1, 0],   // 1 m above the vibe's entity
     });
     this._model = entity;
 }
@@ -580,6 +588,37 @@ highlight cannot get stuck on.
 **Already interactive without this:** NPCs take `onClick` / `onHoverEnter` / `onHoverLeave`
 in `createNPC`, and `createTexturePanel` takes an `onClick(href)` for anchors in its HTML.
 Use these two calls for everything else — your own meshes, loaded GLBs, procedural geometry.
+
+#### `this.setOutline(entity?, on?)` / `ArrivalSpace.setOutline(entity, on?)`
+
+Draw the platform's **silhouette outline** on an entity — the same highlight the editor puts
+on an object you hover, but switched on when *you* decide rather than by the pointer. Marks a
+quest target, shows what's selected, flashes a hint. Applies to the entity and its descendants
+that have a `render` component.
+
+| Param | Type | Default | Description |
+|-------|------|---------|-------------|
+| `entity` | `pc.Entity \| boolean` | `this.entity` | What to outline. A boolean here is shorthand for this vibe's own entity — `this.setOutline(false)` |
+| `on` | `boolean` | `true` | `true` to outline, `false` to clear |
+
+```javascript
+this.setOutline();                        // outline my own model
+this.setOutline(false);                   // clear it
+this.setOutline(this._target);            // outline something else
+this.setOutline(this._target, false);     // clear that
+```
+
+Idempotent, so calling it every frame from `update()` is fine.
+
+**Prefer `this.setOutline(...)` over `ArrivalSpace.setOutline(...)` inside a plugin.** The
+outline system reference-counts outlined entities and detaches its post-processing pass when
+the count reaches zero; an outline left switched on — or an entity destroyed while outlined —
+never decrements it, so the pass stays attached for **every visitor for the rest of the
+session**. The instance method tracks what it switched on and clears it when the plugin or the
+entity is destroyed. `this.clearOutlines()` clears them all by hand.
+
+Outline **colour and thickness are app-wide**, set on the space's camera — a vibe gets the
+space's outline style, it doesn't choose its own.
 
 ---
 
