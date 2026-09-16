@@ -491,7 +491,7 @@
       "path": "examples/piano.mjs",
       "kind": "example",
       "title": "Piano",
-      "summary": "Playable keyboard built from boxes with no colliders: silhouette outline on hover, key press and a synthesised note on click, and stopPropagation so keys are solid to the pointer.",
+      "summary": "Playable 5-octave keyboard built from boxes with no colliders: silhouette outline plus a soft note on hover (glissando as you brush across), a full-force strike on click, and stopPropagation so keys are solid to the pointer.",
       "script_name": "Piano",
       "keywords": ["piano", "keyboard", "music", "note", "instrument", "play", "outline", "silhouette", "highlight", "setOutline", "hover", "click", "stopPropagation", "onEntityClick", "onEntityHover", "webaudio", "sound", "synth", "procedural geometry"]
     }

@@ -4,6 +4,10 @@
  * Every key is a plain box with no collider. It is clickable and hoverable anyway,
  * because the platform picks by rendering entity ids, not by raycasting physics.
  *
+ * Brushing the pointer across the keys plays them softly — a glissando, since `enter`
+ * fires once per key entered. Clicking strikes the same note at full force: louder,
+ * brighter and longer, with the key driven all the way down.
+ *
  * Features demonstrated:
  * - `this.setOutline(entity, on)` — the editor's silhouette highlight, driven by the
  *   vibe rather than by the pointer
@@ -16,23 +20,25 @@
 export class Piano extends ArrivalScript {
     static scriptName = "Piano";
 
-    octaves = 2;
-    baseOctave = 4;
-    keyWidth = 0.023;
-    keyLength = 0.145;
+    octaves = 5;
+    baseOctave = 2;
+    keyWidth = 0.0345;
+    keyLength = 0.218;
     volume = 0.35;
-    pressDepth = 0.008;
+    hoverVelocity = 0.35;
+    pressDepth = 0.012;
     whiteColor = "#f7f5f0";
     blackColor = "#141418";
     bodyColor = "#5a3825";
     showBody = true;
 
     static properties = {
-        octaves: { title: "Octaves", min: 1, max: 4, step: 1 },
-        baseOctave: { title: "Lowest Octave", min: 1, max: 6, step: 1 },
-        keyWidth: { title: "White Key Width (m)", min: 0.012, max: 0.08 },
-        keyLength: { title: "White Key Length (m)", min: 0.05, max: 0.4 },
+        octaves: { title: "Octaves", min: 1, max: 7, step: 1 },
+        baseOctave: { title: "Lowest Octave", min: 0, max: 6, step: 1 },
+        keyWidth: { title: "White Key Width (m)", min: 0.012, max: 0.12 },
+        keyLength: { title: "White Key Length (m)", min: 0.05, max: 0.6 },
         volume: { title: "Volume", min: 0, max: 1 },
+        hoverVelocity: { title: "Hover Loudness", min: 0, max: 1 },
         pressDepth: { title: "Key Travel (m)", min: 0, max: 0.05 },
         whiteColor: { title: "White Keys" },
         blackColor: { title: "Black Keys" },
@@ -148,6 +154,9 @@ export class Piano extends ArrivalScript {
                 enter: (event) => {
                     event.stopPropagation();
                     this.setOutline(key);
+                    /// enter fires once per key entered, so dragging the pointer across the
+                    /// keyboard glissandos instead of retriggering one note.
+                    if (this.hoverVelocity > 0) this._strike(record, this.hoverVelocity);
                 },
                 leave: () => this.setOutline(key, false),
             }),
@@ -158,7 +167,7 @@ export class Piano extends ArrivalScript {
                 /// Without this the click ALSO reaches whatever sits behind the key, and
                 /// the player walks to where you clicked.
                 event.stopPropagation();
-                this._strike(record);
+                this._strike(record, 1);
             }),
         );
 
@@ -167,7 +176,6 @@ export class Piano extends ArrivalScript {
 
     /* ── Sound ────────────────────────────────────────────────────────────── */
 
-    /// Created on the first click: browsers only allow audio to start from a gesture.
     _context() {
         if (this._audio) return this._audio;
 
@@ -181,11 +189,28 @@ export class Piano extends ArrivalScript {
         this._master = this._audio.createGain();
         this._master.gain.value = this.volume;
         this._master.connect(this._audio.destination);
+
+        /// Hovering is NOT a user gesture, so if the visitor's first contact with the piano
+        /// is the pointer crossing a key, the context starts suspended and resume() is
+        /// refused. Unlock on the next pointer press anywhere on the page instead.
+        if (this._audio.state === "suspended") {
+            this._unlock = () => this._audio?.resume();
+            window.addEventListener("pointerdown", this._unlock, { once: true, capture: true });
+        }
+
         return this._audio;
     }
 
-    _strike(key) {
-        key.held = 1;
+    /**
+     * Play one key. `velocity` is how hard it was struck, 0..1 — brushing past with the
+     * pointer is soft, clicking is full force.
+     */
+    _strike(key, velocity = 1) {
+        const v = Math.max(0, Math.min(1, velocity));
+        if (v <= 0) return;
+
+        /// The key dips in proportion, so a hover nudges it and a click drives it down.
+        key.held = Math.max(key.held, v);
 
         const ctx = this._context();
         if (!ctx) return;
@@ -193,17 +218,20 @@ export class Piano extends ArrivalScript {
 
         const freq = 440 * Math.pow(2, (key.midi - 69) / 12);
         const now = ctx.currentTime;
-        const dur = 1.6;
+        /// Softer strikes ring shorter, the way a real string does.
+        const dur = 0.9 + v * 0.9;
 
         const env = ctx.createGain();
         env.gain.setValueAtTime(0.0001, now);
-        env.gain.exponentialRampToValueAtTime(1, now + 0.006);      // hammer strike
-        env.gain.exponentialRampToValueAtTime(0.0001, now + dur);   // string decay
+        env.gain.exponentialRampToValueAtTime(v, now + 0.004 + (1 - v) * 0.02);  // hammer
+        env.gain.exponentialRampToValueAtTime(0.0001, now + dur);                // decay
         env.connect(this._master);
 
-        /// Fundamental plus a quieter octave — enough overtone to read as a piano
-        /// rather than a test tone, without loading a sample.
-        for (const [type, mult, gain] of [["triangle", 1, 0.6], ["sine", 2, 0.18]]) {
+        /// Fundamental plus a quieter octave — enough overtone to read as a piano rather
+        /// than a test tone, without loading a sample. The partial scales with velocity
+        /// squared, so a hard strike is brighter as well as louder.
+        for (const [type, mult, gain] of [["triangle", 1, 0.6], ["sine", 2, 0.18 * v * v]]) {
+            if (gain <= 0) continue;
             const osc = ctx.createOscillator();
             osc.type = type;
             osc.frequency.value = freq * mult;
@@ -254,6 +282,10 @@ export class Piano extends ArrivalScript {
 
     destroy() {
         this._teardownKeys();
+        if (this._unlock) {
+            window.removeEventListener("pointerdown", this._unlock, { capture: true });
+            this._unlock = null;
+        }
         if (this._audio) {
             this._audio.close();
             this._audio = null;
