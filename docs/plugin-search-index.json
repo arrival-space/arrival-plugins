@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "updated_at": "2026-09-08",
+  "updated_at": "2026-09-16",
   "source": "curated",
-  "total_entries": 62,
+  "total_entries": 63,
   "entries": [
     {
       "path": "examples/velocity-pad.mjs",
@@ -486,6 +486,14 @@
       "title": "Generating 3D Models",
       "summary": "Build geometry with a Blender Python script via generate_model: the output contract, metric scale reference, materials, and recipes for bevel, subdivision, array, boolean, lathe and 3D text.",
       "keywords": ["generate_model", "model", "3d model", "mesh", "geometry", "glb", "blender", "bpy", "modelling", "modeling", "procedural geometry", "bevel", "subdivision", "boolean", "lathe", "extrude", "array", "3d text", "createModel", "shape", "curved", "organic", "statue", "furniture", "prop", "sculpture"]
+    },
+    {
+      "path": "examples/piano.mjs",
+      "kind": "example",
+      "title": "Piano",
+      "summary": "Playable keyboard built from boxes with no colliders: silhouette outline on hover, key press and a synthesised note on click, and stopPropagation so keys are solid to the pointer.",
+      "script_name": "Piano",
+      "keywords": ["piano", "keyboard", "music", "note", "instrument", "play", "outline", "silhouette", "highlight", "setOutline", "hover", "click", "stopPropagation", "onEntityClick", "onEntityHover", "webaudio", "sound", "synth", "procedural geometry"]
     }
   ]
 }

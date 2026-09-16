@@ -233,6 +233,21 @@ declare function attribute<T>(defaultValue: T, options?: AttributeOptions): T;
 /**
  * Context passed to {@link ArrivalScript.onInstall}.
  */
+/**
+ * The event handed to `onEntityClick` handlers and to `onEntityHover`'s `enter`.
+ *
+ * `stopPropagation()` claims the interaction. Without it the click or hover ALSO reaches
+ * whatever is behind your mesh: a plugin mesh has no collider, so the platform's other,
+ * raycast-based interaction system cannot see it at all - an NPC gets clicked through it,
+ * highlights through it, and the player walks to where you clicked. For a click it also
+ * stops the event reaching this entity's ancestors; for hover it does not, because
+ * `enter`/`leave` are a pair and must stay balanced.
+ */
+interface PointerClaimEvent {
+    stopPropagation(): void;
+    [key: string]: any;
+}
+
 interface ArrivalScriptInstallContext {
     /** Always `true` for the first-install trigger (reserved for future triggers). */
     isFirstInstall: boolean;
@@ -353,6 +368,22 @@ declare class ArrivalScript extends pc.Script {
      * @param options Same options as `ArrivalSpace.loadGLB` (parent, name, scale, position, rotation, …).
      */
     createModel(url: string, options?: ArrivalSpace.LoadGLBOptions): Promise<{ entity: pc.Entity; asset: pc.Asset }>;
+
+    /**
+     * Draw (or clear) the platform's silhouette outline - the editor's hover highlight,
+     * switched on when this vibe decides rather than by the pointer. Defaults to this vibe's
+     * own entity; a boolean in the first position is shorthand for it (`this.setOutline(false)`).
+     * Idempotent, so it is safe to call from `update()`.
+     *
+     * Everything outlined this way is cleared when the plugin (or the outlined entity) is
+     * destroyed, which is why this is preferred over `ArrivalSpace.setOutline`: a leaked
+     * outline keeps the outline post pass attached for every visitor. Colour and thickness
+     * are app-wide, not per-entity.
+     */
+    setOutline(entity?: pc.Entity | boolean, on?: boolean): boolean;
+
+    /** Clear every outline this plugin switched on. Called automatically on destroy. */
+    clearOutlines(): number;
 
     /** Create a controllable NPC. Convenience wrapper for `ArrivalSpace.createNPC(options)`; returns the NPC controller. */
     createNPC(options?: Record<string, any>): Promise<any>;
@@ -752,7 +783,10 @@ declare namespace ArrivalSpace {
      * which returns the first collider along the ray (usually the room shell or a splat).
      * @returns Unsubscribe; called automatically when the entity is destroyed.
      */
-    function onEntityClick(entity: pc.Entity, handler: (event: object) => void): () => void;
+    function onEntityClick(
+        entity: pc.Entity,
+        handler: (event: PointerClaimEvent) => void,
+    ): () => void;
 
     /**
      * Highlight a 3D entity on hover, using the same picking as {@link onEntityClick}.
@@ -762,8 +796,19 @@ declare namespace ArrivalSpace {
      */
     function onEntityHover(
         entity: pc.Entity,
-        handlers: { enter?: () => void; leave?: () => void },
+        handlers: { enter?: (event: PointerClaimEvent) => void; leave?: () => void },
     ): () => void;
+
+    /**
+     * Draw (or clear) the platform's silhouette outline on an entity - the editor's hover
+     * highlight, switched on when you decide rather than by the pointer. Covers descendants
+     * with a `render` component. Colour and thickness are app-wide, not per-entity.
+     *
+     * Prefer `this.setOutline(...)` inside a plugin: the outline system refcounts outlined
+     * entities and detaches its post pass at zero, so an outline left on keeps that pass
+     * running for every visitor, and the instance method clears its own on destroy.
+     */
+    function setOutline(entity: pc.Entity, on?: boolean): boolean;
 
     /** Safely dispose an entity and its resources */
     function disposeEntity(entity: pc.Entity, options?: DisposeEntityOptions): void;
