@@ -47,6 +47,16 @@ A script that deliberately produces no model at all is fine too: omit `path` and
 purely to render. You get the output URLs back, and those are permanent CDN URLs you can
 `view_image` or use directly in plugin code.
 
+Blender is also a **measuring tool**. A script that imports a model, prints its bounding
+box, vertex count or open edges and writes nothing is a normal call — `print()` output
+comes back either way, so measure first and then decide what to cut:
+
+```python
+obj = bpy.context.scene.objects['Urn']
+print('verts', len(obj.data.vertices), 'bounds z', min(v.co.z for v in obj.data.vertices),
+      max(v.co.z for v in obj.data.vertices))
+```
+
 ## Editing something you already have
 
 Pass `files` to hand the script existing assets — workspace paths
