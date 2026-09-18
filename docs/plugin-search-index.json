@@ -484,8 +484,8 @@
       "path": "docs/generating-models.md",
       "kind": "doc",
       "title": "Generating 3D Models",
-      "summary": "Build geometry with a Blender Python script via generate_model: the output contract, metric scale reference, materials, and recipes for bevel, subdivision, array, boolean, lathe and 3D text.",
-      "keywords": ["generate_model", "model", "3d model", "mesh", "geometry", "glb", "blender", "bpy", "modelling", "modeling", "procedural geometry", "bevel", "subdivision", "boolean", "lathe", "extrude", "array", "3d text", "createModel", "shape", "curved", "organic", "statue", "furniture", "prop", "sculpture"]
+      "summary": "Build geometry with a Blender Python script via generate_model: the output contract (including why a render path needs a directory and what survives a script that fails after exporting), handing existing space assets to the script with files / $ARRIVAL_INPUTS to edit instead of rebuild, metric scale reference, materials, and the triangle/size budget.",
+      "keywords": ["generate_model", "model", "3d model", "mesh", "geometry", "glb", "blender", "bpy", "modelling", "modeling", "procedural geometry", "bevel", "subdivision", "boolean", "lathe", "extrude", "array", "3d text", "createModel", "shape", "curved", "organic", "statue", "furniture", "prop", "sculpture", "edit model", "edit glb", "modify existing model", "split mesh", "input files", "ARRIVAL_INPUTS", "ARRIVAL_OUT", "render preview", "render path"]
     },
     {
       "path": "examples/piano.mjs",

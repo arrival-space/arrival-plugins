@@ -21,7 +21,51 @@ bpy.ops.export_scene.gltf(filepath='urn.glb', export_format='GLB', export_apply=
   Read it and fix the script rather than guessing.
 - `$ARRIVAL_OUT` holds the same directory as an absolute path, if you want it.
 
-Input assets, when the tool was given any, are under `$ARRIVAL_IN/assets/`.
+### Images are the one exception: give them a directory
+
+`export_scene.gltf`, `save_as_mainfile` and python's `open()` all take a bare
+`'name.ext'`. **Blender's image writer does not.** With no directory component it tries
+to create a directory called `''` and the render fails with
+`Couldn't create directory for file preview.png` — whether or not a `.blend` has been
+saved, and for `Image.save_render()` as well as `bpy.ops.render.render()`.
+
+```python
+out = os.environ['ARRIVAL_OUT']
+scene.render.filepath = os.path.join(out, 'preview.png')   # ✅
+scene.render.filepath = 'renders/preview.png'              # ✅ a subdirectory is enough
+scene.render.filepath = 'preview.png'                      # ❌ fails
+```
+
+### A failure after the export does not lose the model
+
+If the script exports a valid `.glb` and then raises, the model is still saved and you
+still get the error and the traceback — fix what failed afterwards, and only re-run if
+the model itself is wrong. A `.glb` that is incomplete (the script died *during* export)
+is refused, and the tool says so.
+
+A script that deliberately produces no model at all is fine too: omit `path` and use it
+purely to render. You get the output URLs back, and those are permanent CDN URLs you can
+`view_image` or use directly in plugin code.
+
+## Editing something you already have
+
+Pass `files` to hand the script existing assets — workspace paths
+(`space/assets/room.glb`), the token form (`assets/room.glb`), or https URLs. They arrive
+in `$ARRIVAL_IN/assets/`, in the order you listed them, with their names in
+`$ARRIVAL_INPUTS`:
+
+```python
+in_dir = os.environ['ARRIVAL_IN']
+inputs = json.loads(os.environ['ARRIVAL_INPUTS'])
+
+bpy.ops.wm.read_factory_settings(use_empty=True)
+bpy.ops.import_scene.gltf(filepath=os.path.join(in_dir, 'assets', inputs[0]))
+# ... split, decimate, re-material, measure ...
+bpy.ops.export_scene.gltf(filepath='chairs.glb', export_format='GLB')
+```
+
+Use this instead of rebuilding a model from the script that first made it — rebuilding
+costs another generation and the result drifts from what is already in the space.
 
 ## Sandbox limits
 
