@@ -202,9 +202,22 @@ user sees in their avatar list.
   A generated texture (`generate_image`) can be applied in Blender and baked into the GLB.
 - **The preview is not the space.** `save_avatar`'s `Preview:` is rendered by the avatar
   service: headless three.js, a three-light rig plus a neutral studio environment map. A
-  space lights the same model with its own skybox. Reflective surfaces are where the two
-  differ most — the preview is a studio shot, not the room. Load the space in the browser
-  when the exact look matters.
+  space lights the same model with its own skybox, so reflective surfaces are where the two
+  differ most.
+
+  To see the avatar **as an avatar** — worn, rigged, animated, under a space's own lighting —
+  open a space with the browser tools and wear it in that page:
+
+  ```js
+  () => { const app = pc.app || pc.Application.getApplication();
+          return app.userProfileData.loadCustomAvatar('<glb url>'); }
+  ```
+
+  That is a client-side load: nothing is uploaded, nothing is saved, and it ends with the
+  page. **Do not put the GLB in `space/assets/` to look at it** — it takes any https URL,
+  including the one `generate_model` hands back, so there is nothing to clean up afterwards.
+  Note the browser session is its own account, so it does not pick up an avatar you just
+  assigned to the user; pass the URL.
 - **Budget**: every person in a room downloads every other person's avatar. Stay under
   ~30k triangles and ~2 MB. A fully dressed stock avatar is ~5k triangles / 1.2 MB, most of
   it texture — that is the bar to beat, not 30k.
