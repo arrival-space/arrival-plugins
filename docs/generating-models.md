@@ -47,9 +47,14 @@ A script that deliberately produces no model at all is fine too: omit `path` and
 purely to render. You get the output URLs back, and those are permanent CDN URLs you can
 `view_image` or use directly in plugin code.
 
-Blender is also a **measuring tool**. A script that imports a model, prints its bounding
-box, vertex count or open edges and writes nothing is a normal call — `print()` output
-comes back either way, so measure first and then decide what to cut:
+For the basics — triangles, size in metres, materials, skeleton, shape keys — use
+`inspect_model({ path })` instead: it reads the file header, costs nothing and takes no
+generation, on a workspace asset or any https URL.
+
+Blender is still the **measuring tool** for what the header does not hold (open edges, UVs,
+per-object bounds). A script that imports a model, prints what it finds and writes nothing is
+a normal call — `print()` output comes back either way, so measure first and then decide
+what to cut:
 
 ```python
 obj = bpy.context.scene.objects['Urn']

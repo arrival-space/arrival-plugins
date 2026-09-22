@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "updated_at": "2026-09-16",
+  "updated_at": "2026-09-22",
   "source": "curated",
-  "total_entries": 63,
+  "total_entries": 64,
   "entries": [
     {
       "path": "examples/velocity-pad.mjs",
@@ -485,7 +485,14 @@
       "kind": "doc",
       "title": "Generating 3D Models",
       "summary": "Build geometry with a Blender Python script via generate_model: the output contract (including why a render path needs a directory and what survives a script that fails after exporting), handing existing space assets to the script with files / $ARRIVAL_INPUTS to edit instead of rebuild, metric scale reference, materials, and the triangle/size budget.",
-      "keywords": ["generate_model", "model", "3d model", "mesh", "geometry", "glb", "blender", "bpy", "modelling", "modeling", "procedural geometry", "bevel", "subdivision", "boolean", "lathe", "extrude", "array", "3d text", "createModel", "shape", "curved", "organic", "statue", "furniture", "prop", "sculpture", "edit model", "edit glb", "modify existing model", "split mesh", "input files", "ARRIVAL_INPUTS", "ARRIVAL_OUT", "render preview", "render path"]
+      "keywords": ["generate_model", "model", "3d model", "mesh", "geometry", "glb", "blender", "bpy", "modelling", "modeling", "procedural geometry", "bevel", "subdivision", "boolean", "lathe", "extrude", "array", "3d text", "createModel", "shape", "curved", "organic", "statue", "furniture", "prop", "sculpture", "edit model", "edit glb", "modify existing model", "split mesh", "input files", "ARRIVAL_INPUTS", "ARRIVAL_OUT", "render preview", "render path", "inspect_model", "inspect model", "measure model", "triangle count", "how big is this model", "bounding box"]
+    },
+    {
+      "path": "docs/generating-avatars.md",
+      "kind": "doc",
+      "title": "Generating Avatars",
+      "summary": "Build or edit an AVATAR with generate_model and save it with save_avatar: the reference rig URL to hand the script, the 67-bone standard skeleton (bone landmark table, orientation, metric scale, A-pose), the two ways to bind a mesh to it (rigid vertex groups vs ARMATURE_AUTO bone heat), editing the avatar the user already wears from the USER AVATAR url, posed workbench previews for checking weights, the mouth-open shape key that drives lip-sync, and the per-visitor download budget. Anything is allowed — an unrigged shape is simply worn as it is, and nothing is rejected.",
+      "keywords": ["avatar", "save_avatar", "make me an avatar", "custom avatar", "character", "rig", "rigged", "rigging", "skeleton", "armature", "bones", "skinning", "skin weights", "vertex groups", "bone heat", "automatic weights", "ARMATURE_AUTO", "rpm_std", "Wolf3D", "Hips", "mixamo", "humanoid", "npc avatar", "setAvatar", "wear", "assign avatar", "edit my avatar", "hat", "clothing", "robot avatar", "creature", "lip sync", "mouth open", "shape key", "morph target", "blender", "bpy", "generate_model", "inspect_model", "glb"]
     },
     {
       "path": "examples/piano.mjs",
