@@ -200,11 +200,13 @@ user sees in their avatar list.
   voice loudness. Add one that opens a mouth and the avatar lip-syncs; skip it and it doesn't.
 - **Materials**: Principled BSDF — base colour, metallic, roughness and emission all survive.
   A generated texture (`generate_image`) can be applied in Blender and baked into the GLB.
-- **Metal needs something to reflect.** glTF's default `metallicFactor` is **1.0**, so a
-  Principled material you never set metallic on is fully metallic. In the space it reflects
-  the skybox and looks like chrome; in the avatar preview render, which has lights but no
-  environment map, it comes out **black**. Set metalness explicitly — around 0.3–0.6 with a
-  light base colour reads as metal in both.
+- **The preview is not the space.** `save_avatar`'s `Preview:` image is rendered by the avatar
+  service: headless three.js, an ambient + key + fill light rig, **no environment map**. A
+  space has a skybox. So a fully metallic surface — which is pure reflection — has nothing to
+  reflect in the preview and comes out near-black there while looking like chrome in-world.
+  Worth knowing because glTF's default `metallicFactor` is **1.0**: a Principled material you
+  never set metallic on exports as fully metallic. To see the real thing, load the space in
+  the browser.
 - **Budget**: every person in a room downloads every other person's avatar. Stay under
   ~30k triangles and ~2 MB. A fully dressed stock avatar is ~5k triangles / 1.2 MB, most of
   it texture — that is the bar to beat, not 30k.
