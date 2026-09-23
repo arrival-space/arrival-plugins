@@ -110,6 +110,14 @@ rotates about itself. The exporter handles Z-up → Y-up; build Z-up as normal.
 Every visitor downloads this on every space load. Stay under roughly **50k triangles**
 and **2 MB**. Subdivision is exponential — level 2 is nearly always enough.
 
+Hard limits, separate from that budget:
+
+| | |
+|---|---|
+| file in `space/assets/` | **256 MB**. A larger file is not uploaded on save, and nothing that references it is saved either |
+| workspace file passed in `files` | 256 MB |
+| total output of one run | 512 MB |
+
 ## Using the result
 
 Reference it as the literal token and load it with `createModel`, which also makes it
