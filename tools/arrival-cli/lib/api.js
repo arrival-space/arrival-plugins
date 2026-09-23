@@ -133,4 +133,22 @@ async function uploadFile(cfg, filePath) {
     throw new Error((done.json && done.json.message) || `Upload finalize failed (${done.res.status})`);
 }
 
-module.exports = { listSpaces, createSpace, pull, apply, applyChangeset, uploadFile };
+// Register a Gaussian-splat avatar from uploaded resource keys (POST /api/v1/avatars/splat):
+// the rig GLB snapshot the binding was authored against, the splat (.ply/.sog/.spz), the SBA1
+// binding sidecar, optionally the fit JSON and a PNG thumbnail; assign makes it the active avatar.
+async function createSplatAvatar(cfg, { glb, splat, binding, fit, thumbnail, originalName, assign = false, brightness } = {}) {
+    const body = { glb, splat, binding, assign: !!assign };
+    if (fit) body.fit = fit;
+    if (thumbnail) body.thumbnail = thumbnail;
+    if (originalName) body.originalName = originalName;
+    if (brightness != null) body.brightness = brightness;
+    const r = await request(cfg, "POST", "/api/v1/avatars/splat", {
+        body: JSON.stringify(body), headers: { "Content-Type": "application/json" },
+    });
+    if (!r.res.ok || !r.json || r.json.status !== "ok") {
+        throw new Error((r.json && (r.json.message || r.json.msg)) || `Avatar registration failed (${r.res.status})`);
+    }
+    return r.json.data || {};
+}
+
+module.exports = { listSpaces, createSpace, pull, apply, applyChangeset, uploadFile, createSplatAvatar };

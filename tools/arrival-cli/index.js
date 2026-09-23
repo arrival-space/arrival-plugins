@@ -312,6 +312,47 @@ function printValidationErrors(json) {
     for (const e of (json.validationErrors || [])) console.error(`  ${e.file}: ${e.message}`);
 }
 
+// arrival avatar publish — a Gaussian-splat avatar onto the account from a Splat.js package
+// (the files the avatar pipeline exports: splat, SBA1 binding, rig GLB snapshot, fit JSON,
+// thumbnail). Uploads through the presigned flow, registers it, optionally assigns it.
+const avatar = program.command("avatar").description("splat avatars on your account");
+avatar
+    .command("publish")
+    .description("upload a splat avatar package and register it (--assign makes it your active avatar)")
+    .requiredOption("--splat <file>", "the splat (.ply, .sog or .spz)")
+    .requiredOption("--binding <file>", "the SBA1 binding sidecar (.bin)")
+    .requiredOption("--glb <file>", "the rig GLB snapshot the binding was authored against")
+    .option("--fit <file>", "the fit JSON (re-editable in the rigger)")
+    .option("--thumb <file>", "a PNG thumbnail")
+    .option("--name <text>", "display name of the scan")
+    .option("--assign", "set it as the active avatar", false)
+    .option("--brightness <n>", "exposure correction applied to the splat", parseFloat)
+    .action(async (opts) => {
+        try {
+            const cfg = config.load();
+            config.requireToken(cfg);
+            const up = async (label, file) => {
+                if (!file) return null;
+                process.stdout.write(`uploading ${label} (${path.basename(file)}) … `);
+                const r = await api.uploadFile(cfg, file);
+                console.log("ok");
+                return r.resource_key;
+            };
+            const keys = {
+                glb: await up("rig", opts.glb),
+                splat: await up("splat", opts.splat),
+                binding: await up("binding", opts.binding),
+                fit: await up("fit", opts.fit),
+                thumbnail: await up("thumbnail", opts.thumb),
+            };
+            const d = await api.createSplatAvatar(cfg, {
+                ...keys, originalName: opts.name || path.basename(opts.splat).replace(/\.[^.]+$/, ""),
+                assign: !!opts.assign, brightness: opts.brightness,
+            });
+            console.log(`✓ avatar ${d.id || d.avatarId || "?"}${opts.assign ? " is now your active avatar" : " registered"}${d.url ? ` — ${d.url}` : ""}`);
+        } catch (e) { fail(e); }
+    });
+
 program.parseAsync(process.argv).catch((e) => {
     console.error("✗ " + (e && e.message ? e.message : e));
     process.exitCode = 1;
