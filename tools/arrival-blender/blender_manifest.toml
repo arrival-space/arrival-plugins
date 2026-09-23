@@ -1,0 +1,18 @@
+schema_version = "1.0.0"
+
+id = "arrival_space"
+version = "0.1.0"
+name = "Arrival.Space"
+tagline = "Pull, edit and push your Arrival.Space spaces"
+maintainer = "Arrival.Space"
+type = "add-on"
+website = "https://github.com/arrival-space/arrival-plugins"
+tags = ["Import-Export", "3D View"]
+
+blender_version_min = "4.2.0"
+
+license = ["SPDX:MIT"]
+
+[permissions]
+network = "Download space models and images, and run the Arrival CLI"
+files = "Read and write local space workspaces"

@@ -98,10 +98,12 @@ program.command("logout")
 program.command("spaces")
     .description("List your spaces")
     .option("--search <text>", "filter by title/description")
+    .option("--json", "print the list as JSON (for tools)")
     .action(async (opts) => {
         const cfg = config.load();
         try {
             const spaces = await api.listSpaces(cfg, { search: opts.search });
+            if (opts.json) { console.log(JSON.stringify(spaces)); return; }
             if (!spaces.length) { console.log("(no spaces)"); return; }
             const w = Math.max(...spaces.map((s) => (s.id || "").length), 8);
             for (const s of spaces) {
@@ -179,13 +181,15 @@ program.command("pull")
 program.command("upload")
     .description("Upload a file (splat / model / image) straight to the CDN; prints a URL for an entity's glbUrl")
     .argument("<file>", "path to the file to upload")
-    .action(async (file) => {
+    .option("--json", "print { url, resource_key } as JSON (for tools)")
+    .action(async (file, opts) => {
         const cfg = config.load();
         try {
             if (!fs.existsSync(file)) throw new Error(`file not found: ${file}`);
             const mb = (fs.statSync(file).size / 1048576).toFixed(1);
-            console.log(`Uploading ${path.basename(file)} (${mb} MB) directly to S3…`);
+            if (!opts.json) console.log(`Uploading ${path.basename(file)} (${mb} MB) directly to S3…`);
             const { url, resource_key } = await api.uploadFile(cfg, file);
+            if (opts.json) { console.log(JSON.stringify({ url, resource_key })); return; }
             if (url) {
                 console.log(`✓ ${url}`);
                 console.log(`  set an entity's "glbUrl" to this URL, then \`arrival push\``);
