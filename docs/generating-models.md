@@ -88,6 +88,10 @@ costs another generation and the result drifts from what is already in the space
   with `generate_image` instead.
 - **No GPU.** `EEVEE` fails — render previews with `CYCLES` at low samples.
 - Nothing outside the output directory is writable.
+- Besides `bpy`, Blender's Python has Pillow, numpy, SciPy, OpenCV (headless), trimesh,
+  pygltflib and the `ffmpeg` binary — e.g. build or post-process a texture with PIL in the
+  same script. For image/data work that produces no model, use `run_script`
+  ([running-scripts.md](running-scripts.md)).
 
 ## Getting the size right
 
