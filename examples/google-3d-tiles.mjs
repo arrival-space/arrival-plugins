@@ -65,6 +65,13 @@
  *     Brightness" for a stronger bloom). With no CameraFrame the atmosphere
  *     applies its own display tonemap so it doesn't blow out. "Sky Exposure"
  *     scales either path.
+ *   - A centered Welcome popup (shown on load; "Show Welcome Popup" toggles it) asks
+ *     for the Google Maps API key (or a Cesium Ion token), a starting longitude /
+ *     latitude / height, and an HDR toggle. Pressing OK starts streaming, re-centres
+ *     the globe (no re-download), applies HDR, saves the values to the vibe's params
+ *     (owner) and won't pop again — flip "Show Welcome Popup" back on to reconfigure.
+ *     "HDR" (on by default) drives the room's HDR render pipeline so the sky and sun
+ *     disc bloom.
  */
 
 const TILE_API = "https://tile.googleapis.com/";
@@ -98,6 +105,11 @@ const KEY_PROMPT_HTML =
     `${statusLink(CESIUM_ION_TOKENS, "Cesium Ion token")} for EEA accounts`;
 
 const len3 = (x, y, z) => Math.sqrt(x * x + y * y + z * z);
+
+// Tiles whose bounding-box half-extent exceeds this are the whole-earth faces (a handful
+// of tiny meshes). With keepGlobe they stay resident regardless of camera distance or
+// direction, so the planet never vanishes when viewed from far away (e.g. from the Moon).
+const PLANET_TILE_SIZE = 5000000;
 
 // Squared distance from the camera to a tile's bounding-box centre, used to
 // drain the load queue nearest-first. Box is Z-up ECEF [bx,by,bz,...]; the
@@ -568,6 +580,7 @@ class TileTree {
     // collapsed. viewCull = false (no camera, or toggled off) loads everything
     // as before.
     viewCull = false;
+    keepGlobe = true;    // planet-scale tiles (whole-earth faces) never collapse: the globe stays visible from any distance
     camForward = null;   // camera forward in the tile frame (normalized) or null
     halfFov = 0.7;       // half-angle of the view cone (rad), screen-corner-to-centre
 
@@ -637,6 +650,7 @@ class TileTree {
         const dist = len3(bx - cam[0], bz - cam[1], -by - cam[2]);
         const lx = len3(xx, xy, xz), ly = len3(yx, yy, yz), lz = len3(zx, zy, zz);
         const size = Math.max(lx, ly, lz, 100);
+        if (this.keepGlobe && size > PLANET_TILE_SIZE) return true;
         const radius = Math.sqrt(lx * lx + ly * ly + lz * lz);
         const surface = Math.max(0, dist - radius);
         return surface < size * Math.max(this.lodFactor - 1, 1) * slack;
@@ -659,6 +673,7 @@ class TileTree {
         const box = node.boundingVolume?.box;
         if (!box) return true;
         const [bx, by, bz, xx, xy, xz, yx, yy, yz, zx, zy, zz] = box;
+        if (this.keepGlobe && Math.max(len3(xx, xy, xz), len3(yx, yy, yz), len3(zx, zy, zz)) > PLANET_TILE_SIZE) return true;
         const dx = bx - cam[0], dy = bz - cam[1], dz = -by - cam[2];
         const dist = len3(dx, dy, dz);
         if (dist < 1e-3) return true;                 // camera at the centre
@@ -802,6 +817,14 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
     freeCamMaxSpeed = 1000000;
     showStatus = true;
 
+    // Enable the room's HDR render pipeline (a CameraFrame) so the atmosphere's sky
+    // and sun disc render as linear HDR and bloom. The atmosphere shaders follow this
+    // automatically via _hdrActive(). The room's prior HDR state is restored on unload.
+    hdr = true;
+    // Show the centered welcome popup (initial location + HDR) when the vibe loads.
+    // Pressing OK saves the values and turns this off; flip it back on to re-open.
+    showPanel = true;
+
     // Colour grade — brightness, contrast, saturation, and tint. These ride the
     // shader chunk and operate on the final composed pixel, so they apply whether
     // tiles are lit (Direct Light on) or left as Google's unlit baked photo. Each
@@ -855,6 +878,8 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
         cameraFarClip: { title: "Far Clip (m)", min: 1000, max: 20000000, step: 1000 },
         freeCamMaxSpeed: { title: "Free Cam Max Speed (m/s)", min: 50, max: 1000000, step: 50 },
         showStatus: { title: "Show Status" },
+        hdr: { title: "HDR" },
+        showPanel: { title: "Show Welcome Popup" },
         materialBrightness: { title: "Brightness", min: 0, max: 3, step: 0.05 },
         contrast: { title: "Contrast", min: 0, max: 3, step: 0.05 },
         saturation: { title: "Saturation", min: 0, max: 2, step: 0.05 },
@@ -884,6 +909,9 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
     _camTile = null;       // last camera position in the tile frame (for load priority)
     _statusEl = null;
     _lastStatus = "";
+    _panelEl = null;
+    _origHdrEnabled = null;   // room HDR state before we touched it (restored on destroy)
+    _hdrApplied = false;
     _origNearClip = null;
     _origFarClip = null;
     _lastCameraMode = null;
@@ -903,6 +931,8 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
     // Atmosphere
     _skyEntity = null;
     _skyMaterial = null;
+    _placeholderGround = null;      // flat stand-in surface shown while no tiles can stream
+    _placeholderMaterial = null;
     _enu = null;                    // { east, up, north } basis in the tile frame
     _sunDirTile = [0, 1, 0];        // sun direction in the tile frame (normalized)
     _invTileMat = new pc.Mat4();    // scratch: world -> tile frame (real metres)
@@ -937,6 +967,12 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
 
         this._makeAttribution();
 
+        // HDR render pipeline + on-screen control panel. Capture the room's current
+        // HDR state first so destroy() can restore it.
+        this._origHdrEnabled = !!(ArrivalSpace.getPostEffects?.()?.hdrEnabled);
+        this._applyHdr();
+        if (this.showPanel) this._openWelcome();
+
         if (this.atmosphere) this._buildSky();
 
         // Listen for Splat Crop carve regions
@@ -958,6 +994,7 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
 
         if (!this.apiKey && !this.cesiumIonToken) {
             this._status(KEY_PROMPT_TEXT, KEY_PROMPT_HTML);
+            this._showPlaceholderGround(true);
             return;
         }
         this._start();
@@ -1060,6 +1097,13 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
                     this._statusEl.style.display = this.showStatus ? "block" : "none";
                 }
                 break;
+            case "hdr":
+                this._applyHdr();
+                break;
+            case "showPanel":
+                if (this.showPanel) this._openWelcome();
+                else this._closeWelcome();
+                break;
             case "materialBrightness":
             case "contrast":
             case "saturation":
@@ -1109,13 +1153,21 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
         this._clearTiles();
         if (this._skyEntity) { this._skyEntity.destroy(); this._skyEntity = null; }
         this._skyMaterial = null;
+        if (this._placeholderGround) { this._placeholderGround.destroy(); this._placeholderGround = null; }
+        if (this._placeholderMaterial) { try { this._placeholderMaterial.destroy(); } catch (_) { /* gone */ } this._placeholderMaterial = null; }
         const cam = ArrivalSpace.getCamera()?.camera;
         if (cam) {
             if (this._origNearClip !== null) cam.nearClip = this._origNearClip;
             if (this._origFarClip !== null) cam.farClip = this._origFarClip;
         }
+        // Restore the room's HDR pipeline to whatever it was before we enabled it.
+        if (this._hdrApplied && this._origHdrEnabled !== null &&
+            typeof ArrivalSpace.setPostEffects === "function") {
+            ArrivalSpace.setPostEffects({ hdrEnabled: this._origHdrEnabled });
+        }
         this.removeUI();
         this._statusEl = null;
+        this._panelEl = null;
     }
 
     // ────────────────────────────────────────────
@@ -1177,6 +1229,55 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
             const r = 2 * (this._targetRadius + ATMO_THICKNESS);
             this._skyEntity.setLocalScale(r, r, r);
         }
+        this._resizePlaceholderGround();
+    }
+
+    // ────────────────────────────────────────────
+    // Placeholder ground (no key / stream failed)
+    // ────────────────────────────────────────────
+
+    static PLACEHOLDER_GROUND_RADIUS = 50000; // metres — past the ground-level horizon
+
+    /**
+     * A flat green disc at the anchor so the space is never an empty void while
+     * no tiles can stream (no key yet, bad key, Ion handshake failed). Lives in
+     * the entity's ENU frame (parented to this.entity, not the tile root), follows
+     * tileScale, and is hidden as soon as the root tileset loads.
+     */
+    _showPlaceholderGround(show) {
+        if (!show) {
+            if (this._placeholderGround) this._placeholderGround.enabled = false;
+            return;
+        }
+        if (!this._placeholderGround) {
+            let mat = null;
+            try {
+                mat = ArrivalSpace.createMaterial({
+                    diffuse: { r: 0.22, g: 0.42, b: 0.18 },
+                    gloss: 0.05,
+                    metalness: 0,
+                });
+            } catch (_) { /* engine default material */ }
+            this._placeholderMaterial = mat;
+            const ground = new pc.Entity("google-tiles-placeholder-ground");
+            const render = { type: "cylinder", castShadows: false, receiveShadows: true };
+            if (mat) render.material = mat;
+            ground.addComponent("render", render);
+            this.entity.addChild(ground);
+            this._placeholderGround = ground;
+        }
+        this._placeholderGround.enabled = true;
+        this._resizePlaceholderGround();
+    }
+
+    _resizePlaceholderGround() {
+        const g = this._placeholderGround;
+        if (!g) return;
+        const s = this.tileScale;
+        const d = 2 * GoogleTilesAtmosphere.PLACEHOLDER_GROUND_RADIUS * s;
+        const h = Math.max(0.01, s);
+        g.setLocalScale(d, h, d);
+        g.setLocalPosition(0, -h / 2, 0); // top face exactly at the anchor ground
     }
 
     /**
@@ -1305,6 +1406,7 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
         } catch (err) {
             if (session !== this._sessionId) return;
             this._tree = null;
+            this._showPlaceholderGround(true);
             this._status(
                 `Cesium Ion handshake failed: ${err.message}\nCheck the Cesium Ion token.`,
                 `Cesium Ion handshake failed: ${escapeHTML(err.message)}<br>` +
@@ -1315,6 +1417,7 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
         if (session !== this._sessionId) return;   // re-entered while awaiting Ion
         if (!apiKey) {
             this._status(KEY_PROMPT_TEXT, KEY_PROMPT_HTML);
+            this._showPlaceholderGround(true);
             return;
         }
 
@@ -1329,9 +1432,12 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
 
         try {
             await tree.start();
+            if (session !== this._sessionId) return;
+            this._showPlaceholderGround(false);
         } catch (err) {
             if (session !== this._sessionId) return;
             this._tree = null;
+            this._showPlaceholderGround(true);
             // Google blocks satellite + 3D tiles for keys on an EEA-billing
             // project (effective 8 Jul 2025), with this exact 403 message.
             const eeaBlocked = err.status === 403 &&
@@ -1872,6 +1978,135 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
     // ────────────────────────────────────────────
     // UI
     // ────────────────────────────────────────────
+
+    // ── Welcome popup: credentials + initial location + HDR, then press OK ──
+    _openWelcome() {
+        if (this._panelEl) return;
+        try {
+            const num = (v) => (Number.isFinite(v) ? v : 0);
+            const inputStyle =
+                "width:100%;box-sizing:border-box;background:#0a1019;color:#eaf2ff;border:1px solid #2a3850;" +
+                "border-radius:6px;padding:7px 9px;font-size:13px;outline:none;";
+            const labelStyle = "display:block;font-size:11px;opacity:.7;margin:10px 0 4px;";
+
+            const overlay = this.createUI("div", {
+                style: {
+                    position: "fixed", inset: "0", zIndex: "1000",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    background: "rgba(0,0,0,0.55)", fontFamily: "sans-serif",
+                },
+                innerHTML:
+                    `<div style="width:320px;max-width:90vw;max-height:88vh;overflow:auto;background:#0f1722;` +
+                    `color:#eaf2ff;border-radius:14px;padding:22px 22px 18px;box-shadow:0 20px 60px rgba(0,0,0,.5);">` +
+                    `<div style="font-weight:700;font-size:17px;">🌍 Welcome to Google 3D Tiles</div>` +
+                    `<div style="font-size:12px;opacity:.65;margin-top:4px;">` +
+                    `Streams the Google Earth globe. A map key is required, then pick where to start.</div>` +
+
+                    `<label style="${labelStyle}">Google Maps API Key</label>` +
+                    `<input class="gt-key" type="text" placeholder="AIza…" value="${escapeHTML(this.apiKey)}" style="${inputStyle}">` +
+                    `<label style="${labelStyle}">…or Cesium Ion Token (EEA accounts)</label>` +
+                    `<input class="gt-ion" type="text" placeholder="eyJ…" value="${escapeHTML(this.cesiumIonToken)}" style="${inputStyle}">` +
+                    `<div style="font-size:11px;opacity:.65;margin-top:6px;">Need one? ` +
+                    `${statusLink(GOOGLE_KEY_DOCS, "Google key")} · ${statusLink(CESIUM_ION_TOKENS, "Cesium token")}</div>` +
+
+                    `<label style="${labelStyle}">Latitude</label>` +
+                    `<input class="gt-lat" type="number" step="0.00001" value="${num(this.latitude)}" style="${inputStyle}">` +
+                    `<label style="${labelStyle}">Longitude</label>` +
+                    `<input class="gt-lon" type="number" step="0.00001" value="${num(this.longitude)}" style="${inputStyle}">` +
+                    `<label style="${labelStyle}">Height (m)</label>` +
+                    `<input class="gt-alt" type="number" step="1" value="${num(this.groundAltitude)}" style="${inputStyle}">` +
+                    `<label style="display:flex;align-items:center;gap:8px;margin-top:14px;font-size:13px;cursor:pointer;">` +
+                    `<input class="gt-hdr" type="checkbox" ${this.hdr ? "checked" : ""} style="width:16px;height:16px;cursor:pointer;"> HDR lighting</label>` +
+
+                    `<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;">` +
+                    `<button class="gt-skip" style="padding:9px 16px;border-radius:8px;border:1px solid #2a3850;` +
+                    `background:transparent;color:#9fb3cc;font-size:14px;cursor:pointer;">Skip</button>` +
+                    `<button class="gt-ok" style="padding:9px 20px;border-radius:8px;border:none;` +
+                    `background:#5ad1ff;color:#06121a;font-weight:700;font-size:14px;cursor:pointer;">OK</button>` +
+                    `</div></div>`,
+            });
+            this._panelEl = overlay;
+
+            const q = (sel) => overlay.querySelector(sel);
+            const keyI = q(".gt-key"), ionI = q(".gt-ion");
+            const latI = q(".gt-lat"), lonI = q(".gt-lon"), altI = q(".gt-alt"), hdrI = q(".gt-hdr");
+            const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+            const ok = () => {
+                const prevKey = this.apiKey, prevIon = this.cesiumIonToken;
+                this.apiKey = keyI.value.trim();
+                this.cesiumIonToken = ionI.value.trim();
+                const lat = parseFloat(latI.value);
+                const lon = parseFloat(lonI.value);
+                const alt = parseFloat(altI.value);
+                if (Number.isFinite(lat)) this.latitude = clamp(lat, -90, 90);
+                if (Number.isFinite(lon)) this.longitude = clamp(lon, -180, 180);
+                if (Number.isFinite(alt)) this.groundAltitude = alt;
+                this.hdr = hdrI.checked;
+                this._applyOrigin();   // re-anchor the streamed globe (no re-download)
+                this._applyHdr();
+                // Don't pop the welcome again once set up; the owner can re-open it from
+                // the "Show Welcome Popup" editor toggle.
+                this.showPanel = false;
+                this._persistParams({
+                    apiKey: this.apiKey,
+                    cesiumIonToken: this.cesiumIonToken,
+                    latitude: this.latitude,
+                    longitude: this.longitude,
+                    groundAltitude: this.groundAltitude,
+                    hdr: this.hdr,
+                    showPanel: false,
+                });
+                this._closeWelcome();
+                // Start streaming once we have a credential: (re)connect if the key
+                // changed or nothing is streaming yet; otherwise leave the live stream.
+                if (this.apiKey || this.cesiumIonToken) {
+                    if (this.apiKey !== prevKey || this.cesiumIonToken !== prevIon || !this._tree) {
+                        this._start();
+                    }
+                } else {
+                    this._status(KEY_PROMPT_TEXT, KEY_PROMPT_HTML);
+                }
+            };
+
+            q(".gt-ok").addEventListener("click", ok);
+            q(".gt-skip").addEventListener("click", () => this._closeWelcome());
+            for (const inp of [keyI, ionI, latI, lonI, altI]) {
+                inp.addEventListener("keydown", (e) => { if (e.key === "Enter") ok(); });
+            }
+        } catch (_) { /* UI not available */ }
+    }
+
+    _closeWelcome() {
+        if (this._panelEl) {
+            this._panelEl.remove();
+            this._panelEl = null;
+        }
+        // The full-screen overlay locks input on mouseenter; removing the element never
+        // fires mouseleave, so release the locks explicitly or scene navigation (mouse
+        // look + WASD) stays frozen after the popup closes.
+        this.unlockInput?.();
+        this.unlockKeyboard?.();
+    }
+
+    /**
+     * Enable/disable the room's HDR render pipeline (a CameraFrame) to match this.hdr.
+     * The atmosphere shaders read _hdrActive() each frame and switch between linear-HDR
+     * radiance (sky + sun bloom) and a self-contained tonemap automatically.
+     */
+    _applyHdr() {
+        if (typeof ArrivalSpace.setPostEffects !== "function") return;
+        ArrivalSpace.setPostEffects({ hdrEnabled: !!this.hdr });
+        this._hdrApplied = true;
+    }
+
+    /** Persist panel edits to the real editor params — owner only (visitors stay local). */
+    _persistParams(values) {
+        if (!ArrivalSpace.isOwner?.()) return;
+        if (typeof this.setParams === "function") {
+            Promise.resolve(this.setParams(values)).catch(() => {});
+        }
+    }
 
     _status(msg, html = null) {
         // Dedupe on whatever actually gets rendered (the html when present).
