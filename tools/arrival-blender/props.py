@@ -1,7 +1,8 @@
 import os
 
 import bpy
-from bpy.props import (BoolProperty, CollectionProperty, EnumProperty, IntProperty, PointerProperty, StringProperty)
+from bpy.props import (BoolProperty, CollectionProperty, EnumProperty, FloatVectorProperty, IntProperty, PointerProperty,
+                       StringProperty)
 
 from . import thumbs
 
@@ -93,11 +94,81 @@ class WindowProps(bpy.types.PropertyGroup):
     )
 
 
+TEXTURE_SIZES = [
+    ("0", "Original", "Keep the textures' own size"),
+    ("4096", "4096", "Scale textures down to at most 4096 px"),
+    ("2048", "2048", "Scale textures down to at most 2048 px"),
+    ("1024", "1024", "Scale textures down to at most 1024 px"),
+    ("512", "512", "Scale textures down to at most 512 px"),
+    ("256", "256", "Scale textures down to at most 256 px"),
+]
+
+
+class ExportSettings(bpy.types.PropertyGroup):
+    """How Push exports models (space.export_options). What the app can load decides the options:
+    it has a Draco decoder but no meshopt one, and loads WebP."""
+    max_texture_size: EnumProperty(
+        name="Max Size", items=TEXTURE_SIZES, default="0",
+        description="Scale larger textures down for the upload. Your images in Blender stay as they are",
+    )
+    image_format: EnumProperty(
+        name="Format", default="AUTO",
+        items=[("AUTO", "Automatic", "PNG, or JPEG for JPEG images"),
+               ("JPEG", "JPEG", "Smaller, no transparency: textures with alpha stay PNG"),
+               ("WEBP", "WebP", "Smallest, with transparency"),
+               ("NONE", "None", "Leave textures out")],
+    )
+    image_quality: IntProperty(name="Quality", min=0, max=100, default=75, subtype="PERCENTAGE",
+                               description="JPEG and WebP quality")
+    draco: BoolProperty(name="Draco Compression",
+                        description="Compress meshes with Draco, which the app decodes. Much smaller, slightly lossy")
+    draco_level: IntProperty(name="Level", min=0, max=10, default=6,
+                             description="Higher compresses more and takes longer to decode")
+    draco_position: IntProperty(name="Position", min=0, max=30, default=14,
+                                description="Bits for positions. Fewer is smaller but less exact")
+    draco_normal: IntProperty(name="Normal", min=0, max=30, default=10, description="Bits for normals")
+    draco_texcoord: IntProperty(name="UV", min=0, max=30, default=12, description="Bits for UVs")
+    draco_color: IntProperty(name="Color", min=0, max=30, default=10, description="Bits for vertex colors")
+    draco_generic: IntProperty(name="Other", min=0, max=30, default=12, description="Bits for other attributes")
+    normals: BoolProperty(name="Normals", default=True,
+                          description="Without them the app computes flat normals")
+    tangents: BoolProperty(name="Tangents", description="Only needed for exact normal maps")
+    texcoords: BoolProperty(name="UVs", default=True, description="Without them textures can't be mapped")
+    vertex_colors: EnumProperty(
+        name="Vertex Colors", default="MATERIAL",
+        items=[("MATERIAL", "Used by Materials", "Only the ones a material reads"),
+               ("ACTIVE", "Active", "The active color attribute"),
+               ("NONE", "None", "Leave them out")],
+    )
+    materials: EnumProperty(
+        name="Materials", default="EXPORT",
+        items=[("EXPORT", "Export", "Materials and their textures"),
+               ("PLACEHOLDER", "Placeholder", "Material slots only, no textures"),
+               ("NONE", "None", "Leave materials out")],
+    )
+    animations: BoolProperty(name="Animation", default=True)
+    shape_keys: BoolProperty(name="Shape Keys", default=True)
+    skins: BoolProperty(name="Skinning", default=True, description="Armature deformation")
+    attributes: BoolProperty(name="Custom Attributes", description="Mesh attributes beyond the standard ones")
+
+
+def _hub_selectable_changed(self, context):
+    from . import hub
+    hub.set_selectable(context.scene, self.hub_selectable)
+
+
 class SceneProps(bpy.types.PropertyGroup):
     """The space open in this scene."""
     space_id: StringProperty()
     title: StringProperty()
     workspace: StringProperty(subtype="DIR_PATH")
+    hub_selectable: BoolProperty(
+        name="Hub Selectable",
+        description="Let the hub be clicked and picked, e.g. with a modifier's eyedropper. It still can't be "
+                    "moved, and it's never pushed",
+        update=_hub_selectable_changed,
+    )
+    export: PointerProperty(type=ExportSettings)
 
 
 class ObjectProps(bpy.types.PropertyGroup):
@@ -110,13 +181,23 @@ class ObjectProps(bpy.types.PropertyGroup):
     raw_axes: BoolProperty()  # data kept in Arrival's axes (Splatlight splats), see space.py
     read_only: BoolProperty()  # placed by the room's settings (CenterAsset), so never pushed
     signature: StringProperty()
+    # The model/splat file this object's content matches: imported from, or uploaded by a Push.
+    # Reload keeps the object (modifiers and all) while the entity's live file is still this one.
+    source_url: StringProperty()
+    export_size: IntProperty()  # bytes of this model's last export, shown in the Entity panel
+    # The stretch (non-uniform scale) a Push baked into the model: object matrix = entity matrix
+    # times this. See space.unstretch.
+    model_offset: FloatVectorProperty(size=(4, 4), subtype="MATRIX",
+                                      default=((1, 0, 0, 0), (0, 1, 0, 0), (0, 0, 1, 0), (0, 0, 0, 1)))
+    spawn_third_person: BoolProperty()  # a SpawnPoint's isDefaultThirdPerson, shown in the Entity panel
+    spawn_free_cam: BoolProperty()  # and its isDefaultFreeCam
     model_edited: BoolProperty(
         name="Model edited",
         description="Re-export and upload this model on the next Push. Set automatically when you edit it",
     )
 
 
-classes = (ArrivalPreferences, SpaceItem, WindowProps, SceneProps, ObjectProps)
+classes = (ArrivalPreferences, SpaceItem, WindowProps, ExportSettings, SceneProps, ObjectProps)
 
 
 def register():

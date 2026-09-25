@@ -195,7 +195,7 @@ def _collect(assets, scene, room, gates):
         r = e.get("components", {}).get("render")
         if r and r.get("enabled", True):
             mats = [material(x) if x else None for x in (r.get("materialAssets") or [])]
-            part = {"name": name, "matrix": [list(row) for row in m], "materials": mats}
+            part = {"id": eid, "name": name, "matrix": [list(row) for row in m], "materials": mats}
             ra = assets.get(str(r.get("asset"))) if r.get("type") == "asset" else None
             if ra and ra.get("type") == "render":
                 container = assets.get(str(ra["data"]["containerAsset"])) or {}
@@ -387,12 +387,26 @@ def remove(space_coll):
             block.remove(item)
 
 
-def build(space_coll, hub):
-    """Replace the space's Hub collection. Objects can't be selected, so clicks reach the entities."""
-    remove(space_coll)
-    coll = bpy.data.collections.new("Hub")
-    coll["arrival_hub"] = True
-    space_coll.children.link(coll)
+def is_hub_object(ob):
+    return "arrival_hub_part" in ob
+
+
+def set_selectable(scene, selectable):
+    for ob in scene.objects:
+        if is_hub_object(ob):
+            ob.hide_select = not selectable
+
+
+def build(space_coll, hub, selectable=False):
+    """Build or update the space's Hub collection. A part keeps its object across rebuilds (keyed by
+    its entity in the app's scene), so modifiers of other objects that target it keep their target.
+    Unselectable by default, so clicks reach the entities; its transforms are always locked."""
+    coll = hub_collection(space_coll)
+    if coll is None:
+        coll = bpy.data.collections.new("Hub")
+        coll["arrival_hub"] = True
+        space_coll.children.link(coll)
+    existing = {ob.get("arrival_hub_part"): ob for ob in coll.objects}
 
     mats = {mid: _material(info) for mid, info in hub["materials"].items()}
     meshes = {}
@@ -409,8 +423,21 @@ def build(space_coll, hub):
             for mid in part["materials"]:
                 me.materials.append(mats.get(mid))
             meshes[key] = me
-        ob = bpy.data.objects.new(part["name"], me)
+        ob = existing.pop(part["id"], None)
+        if ob is None:
+            ob = bpy.data.objects.new(part["name"], me)
+            ob["arrival_hub_part"] = part["id"]
+            coll.objects.link(ob)
+        else:
+            ob.data = me
+            ob.name = part["name"]
         ob.matrix_world = space.C @ Matrix(part["matrix"]) @ space.C_INV
-        ob.hide_select = True
-        coll.objects.link(ob)
+        ob.lock_location = ob.lock_rotation = ob.lock_scale = (True,) * 3
+        ob.hide_select = not selectable
+    # Parts the space's settings turned off, and objects of older builds (without a part id).
+    for ob in existing.values():
+        bpy.data.objects.remove(ob, do_unlink=True)
+    for block in (bpy.data.meshes, bpy.data.materials):
+        for item in [x for x in block if x.get("arrival_hub") and x.users == 0]:
+            block.remove(item)
     return coll

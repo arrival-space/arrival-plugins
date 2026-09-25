@@ -8,11 +8,22 @@
 # Every entity with a data.position becomes one "root" object carrying ObjectProps (props.py):
 #   GLB    the imported model: the mesh itself when the file holds a single mesh, else an Empty
 #          with the model's nodes parented under it. Its geometry is editable and re-uploaded.
-#   IMAGE  a textured plane shaped like the client's image plane.
+#   IMAGE  a textured plane shaped like the client's image plane. Editing it (mesh, material, parts,
+#          a stretch) turns the entity into a model: Push uploads the plane as a GLB.
 #   SPLAT  a Gaussian splat imported by the Splatlight add-on, when it's installed. Splatlight keeps
 #          the file's own axes and turns the object instead, so for these (raw_axes) the object
 #          matrix is the entity matrix times C. Points can be deleted and re-uploaded as .ply.
+#   SPAWN  a SpawnPoint: a marker mesh (spawn.py). Only its position and facing sync.
 #   other  an Empty placeholder (plugins, video, splats without Splatlight, ...): transform only.
+#
+# A model's object may be stretched (non-uniform scale), which an entity can't hold. Push bakes the
+# stretch into the uploaded GLB and keeps it on the object as model_offset: the object's matrix is
+# the entity matrix times model_offset (for raw_axes splats that offset is C).
+#
+# Editable content (models, images, Splatlight splats) remembers the file it matches (source_url): the one it
+# was imported from, or the one a Push uploaded it as. On Reload, an entity whose live file is still
+# that one keeps its Blender object, modifiers and all, and only takes the live placement, name,
+# folder and visibility. Re-importing it would bring back the flattened export instead.
 
 import hashlib
 import html
@@ -34,12 +45,13 @@ import bpy
 import numpy as np
 from mathutils import Euler, Matrix, Vector
 
-from . import hub, sky
+from . import hub, sky, spawn
 
 C = Matrix.Rotation(math.radians(90.0), 4, "X")
 C_INV = C.inverted()
 
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp"}
+MODEL_KINDS = {"GLB", "IMAGE"}  # what Push can export as a GLB
 SPLAT_EXTS = {".ply", ".sog", ".spz", ".splat", ".splatv", ".lcc", ".lcc2", ".asat", ".ksplat"}
 EMPTY_DISPLAY = {"PLUGIN": "PLAIN_AXES", "SPLAT": "CUBE", "OTHER": "ARROWS"}
 
@@ -125,8 +137,17 @@ def center_placement(ent, room):
     return {"glbUrl": url, "position": position, "rotation": rotation, "scale": scale}
 
 
+# spawn-point-entity.js loadData: a spawn point without a rotation faces +Z (yaw 180).
+SPAWN_DEFAULT_ROTATION = {"x": 0, "y": 180, "z": 0}
+
+
 def effective_data(ent, room):
-    return center_placement(ent, room) if ent.get("type") == "CenterAsset" else ent["data"]
+    data = ent["data"]
+    if ent.get("type") == "CenterAsset":
+        return center_placement(ent, room)
+    if ent.get("type") == "SpawnPoint" and not isinstance(data.get("rotation"), dict):
+        return {**data, "rotation": dict(SPAWN_DEFAULT_ROTATION)}
+    return data
 
 
 def read_room(ws):
@@ -147,7 +168,9 @@ def _glb_url(data):
     return url if isinstance(url, str) else ""
 
 
-def classify(data):
+def classify(data, entity_type=""):
+    if entity_type == "SpawnPoint":
+        return "SPAWN"
     url = _glb_url(data)
     ext = url_ext(url)
     if url.startswith("plugins/") or ext == ".mjs":
@@ -294,11 +317,33 @@ def _source(data, kind):
     return ""
 
 
-def download_urls(entities, room=None):
+def is_editable(root):
+    a = root.arrival
+    return a.kind in MODEL_KINDS or (a.kind == "SPLAT" and a.raw_axes)
+
+
+def kept_roots(scene, space_id, entities, room):
+    """{entity id: root} for the entities Reload keeps: editable ones whose live file is still the
+    one their object matches. A duplicate (same entity id) never counts, like in prepare_push."""
+    live = {}
+    for _rel, ent in entities:
+        data = effective_data(ent, room)
+        live[ent["id"]] = _source(data, classify(data, ent.get("type")))
+    by_id = {}
+    for root in sorted(entity_roots(scene, space_id), key=lambda o: o.name):
+        by_id.setdefault(root.arrival.entity_id, root)
+    return {eid: root for eid, root in by_id.items()
+            if is_editable(root) and root.arrival.source_url and root.arrival.source_url == live.get(eid)}
+
+
+def download_urls(entities, room=None, skip=()):
+    """What build() needs downloaded. `skip`: entity ids it keeps (kept_roots), so no download."""
     urls = set()
     for _rel, ent in entities:
+        if ent["id"] in skip:
+            continue
         data = effective_data(ent, room or {})
-        urls.add(_source(data, classify(data)))
+        urls.add(_source(data, classify(data, ent.get("type"))))
     urls.add(_str((room or {}).get("skyboxImage")))
     return sorted(u for u in urls if u.startswith(("http://", "https://")))
 
@@ -418,13 +463,28 @@ def data_matrix(data):
     return C @ m_pc @ C_INV
 
 
-def write_transform(data, mw, name):
+def _spawn_rotation(rot, old):
+    """spawn-point-entity.js moveFinished: pitch and yaw from the forward vector (-Z), no roll.
+    Yaw stays within 180° of the old value, so the numbers stay readable."""
+    f = rot @ Vector((0.0, 0.0, -1.0))
+    pitch = math.degrees(math.asin(max(-1.0, min(1.0, f.y))))
+    yaw = math.degrees(old.y)
+    if f.x * f.x + f.z * f.z > 1e-6:
+        yaw = math.degrees(math.atan2(-f.x, -f.z))
+        yaw += 360.0 * round((math.degrees(old.y) - yaw) / 360.0)
+    return pitch, yaw
+
+
+def write_transform(data, mw, name, spawn=False):
     """Write a Blender world matrix into data.position/rotation/scale. Only the parts that moved are
-    rewritten, so float round-trips never touch untouched values. Returns True if anything changed."""
+    rewritten, so float round-trips never touch untouched values. Returns True if anything changed.
+    A spawn point (spawn=True) has no scale and stores only pitch and yaw."""
     m_pc = C_INV @ mw @ C
     if m_pc.to_3x3().determinant() <= 0:
         raise EntityError(f"{name}: mirrored (negative) scale isn't supported on entities, apply it to the model instead")
     loc, rot, sca = m_pc.decompose()
+    if spawn and max(abs(v - 1.0) for v in sca) > 1e-4:
+        raise EntityError(f"{name}: spawn points can't be scaled, set its scale back to 1")
     if max(sca) - min(sca) > 1e-4 * max(sca):
         raise EntityError(f"{name}: entities only support uniform scale, scale evenly (or scale the model inside it)")
 
@@ -434,14 +494,21 @@ def write_transform(data, mw, name):
         data["position"] = {**p, "x": _num(loc.x), "y": _num(loc.y), "z": _num(loc.z)}
         changed = True
 
-    old = _euler(data)
+    r = data.get("rotation") if isinstance(data.get("rotation"), dict) else None
+    old = _euler({"rotation": r if r is not None or not spawn else SPAWN_DEFAULT_ROTATION})
     angle = rot.rotation_difference(old.to_quaternion()).angle
     if min(angle, 2 * math.pi - angle) > EPS_ROT:
-        e = rot.to_euler("XYZ", old)  # nearest to the old angles, so values stay readable
-        r = data.get("rotation") if isinstance(data.get("rotation"), dict) else {}
-        data["rotation"] = {**r, "x": _num(math.degrees(e.x)), "y": _num(math.degrees(e.y)), "z": _num(math.degrees(e.z))}
+        if spawn:
+            pitch, yaw = _spawn_rotation(rot, old)
+            data["rotation"] = {**(r or {}), "x": _num(pitch), "y": _num(yaw), "z": 0}
+        else:
+            e = rot.to_euler("XYZ", old)  # nearest to the old angles, so values stay readable
+            data["rotation"] = {**(r or {}), "x": _num(math.degrees(e.x)), "y": _num(math.degrees(e.y)),
+                                "z": _num(math.degrees(e.z))}
         changed = True
 
+    if spawn:
+        return changed
     s = sum(sca) / 3.0
     old_s = _scale(data)
     if abs(s - old_s) > EPS_SCALE * max(1.0, old_s):
@@ -454,13 +521,40 @@ def matrices_close(a, b, eps=1e-5):
     return all(abs(x - y) <= eps for ra, rb in zip(a, b) for x, y in zip(ra, rb))
 
 
+def model_offset(root):
+    """The object's matrix relative to its entity's: C for raw_axes splats, else the stretch the
+    last Push baked into the model (identity for an unstretched one)."""
+    return C.copy() if root.arrival.raw_axes else Matrix(root.arrival.model_offset)
+
+
 def entity_matrix(root):
     """The entity's placement as a Blender matrix (C · M_pc · C⁻¹)."""
-    return root.matrix_world @ C_INV if root.arrival.raw_axes else root.matrix_world.copy()
+    return root.matrix_world @ model_offset(root).inverted()
 
 
 def set_entity_matrix(root, matrix):
-    root.matrix_world = matrix @ C if root.arrival.raw_axes else matrix
+    root.matrix_world = matrix @ model_offset(root)
+
+
+def _uniform(m):
+    s = m.to_scale()
+    return max(s) - min(s) <= 1e-4 * max(s)
+
+
+def stretched(root):
+    """A model or image scaled unevenly since its last Push: the next Push bakes the stretch."""
+    a = root.arrival
+    return a.kind in MODEL_KINDS and not a.read_only and not _uniform(entity_matrix(root))
+
+
+def unstretch(root):
+    """(entity matrix, model offset) splitting a stretched object into an evenly scaled entity and
+    the stretch baked into its model. The entity keeps the volume: its scale is the stretch's
+    geometric mean."""
+    loc, rot, sca = entity_matrix(root).decompose()
+    s = abs(sca.x * sca.y * sca.z) ** (1.0 / 3.0)
+    matrix = Matrix.LocRotScale(loc, rot, Vector((s, s, s)))
+    return matrix, matrix.inverted() @ root.matrix_world
 
 
 # Last pushed/pulled {matrix, name, folder} per (space, entity). Kept out of the .blend on purpose:
@@ -475,7 +569,9 @@ def _state(entity, matrix=None):
     # An entity whose folder was deleted sits at the top, like in the Content panel.
     if folder and not any(c.get("arrival_folder_id") == folder for c in bpy.data.collections):
         folder = ""
-    return {"matrix": matrix if matrix is not None else data_matrix(data), "name": panel_name(entity), "folder": folder}
+    if matrix is None:
+        matrix = data_matrix(effective_data(entity, {}))
+    return {"matrix": matrix, "name": panel_name(entity), "folder": folder}
 
 
 def synced_state(root, ws):
@@ -571,7 +667,7 @@ def on_depsgraph_update(scene, depsgraph):
         idb = u.id.original if u.id else None
         if isinstance(idb, bpy.types.Object) and u.is_updated_geometry:
             root = find_root(idb)
-            if root and root.arrival.kind == "GLB" and not root.arrival.model_edited:
+            if root and root.arrival.kind in MODEL_KINDS and not root.arrival.model_edited:
                 root.arrival.model_edited = True
         elif isinstance(idb, bpy.types.Material):
             materials.add(idb)
@@ -579,7 +675,7 @@ def on_depsgraph_update(scene, depsgraph):
         return
     for ob in scene.objects:
         a = ob.arrival
-        if a.entity_id and a.kind == "GLB" and not a.model_edited:
+        if a.entity_id and a.kind in MODEL_KINDS and not a.model_edited:
             parts = [ob, *ob.children_recursive]
             if any(s.material in materials for p in parts for s in p.material_slots):
                 a.model_edited = True
@@ -597,9 +693,11 @@ def space_collection(scene, space_id, title):
     return coll
 
 
-def remove_entities(scene, space_id):
+def remove_entities(scene, space_id, keep=()):
     doomed = set()
     for root in entity_roots(scene, space_id):
+        if root in keep:
+            continue
         doomed.add(root)
         doomed.update(root.children_recursive)
     meshes = {ob.data for ob in doomed if ob.type == "MESH"}
@@ -763,21 +861,55 @@ def _import_glb(coll, path, name):
     return root
 
 
-def _image_material(img):
+IMAGE_ALPHA_CUTOFF = 0.1  # updateImageMaterial's alphaTest
+
+
+def _image_material(img, data):
+    """The client's image material (updateImageMaterial): unlit and alpha-tested, or lit with
+    imageLighting. The unlit one is the node layout Blender's glTF importer builds for
+    KHR_materials_unlit with alpha MASK, so a converted image exports as the same material."""
     mat = bpy.data.materials.new(img.name)
     if mat.node_tree is None:  # Blender < 5
         mat.use_nodes = True
+    mat.use_backface_culling = data.get("doubleSided") is False
     nt = mat.node_tree
     bsdf = next(n for n in nt.nodes if n.type == "BSDF_PRINCIPLED")
     tex = nt.nodes.new("ShaderNodeTexImage")
     tex.image = img
     tex.location = (bsdf.location.x - 320, bsdf.location.y)
-    nt.links.new(tex.outputs["Color"], bsdf.inputs["Base Color"])
-    nt.links.new(tex.outputs["Alpha"], bsdf.inputs["Alpha"])
+    if data.get("imageLighting") is True:
+        nt.links.new(tex.outputs["Color"], bsdf.inputs["Base Color"])
+        nt.links.new(tex.outputs["Alpha"], bsdf.inputs["Alpha"])
+        return mat
+    out = next(n for n in nt.nodes if n.type == "OUTPUT_MATERIAL")
+    nt.nodes.remove(bsdf)
+    emission = nt.nodes.new("ShaderNodeEmission")
+    camera = nt.nodes.new("ShaderNodeLightPath")
+    clear = nt.nodes.new("ShaderNodeBsdfTransparent")
+    unlit = nt.nodes.new("ShaderNodeMixShader")
+    cut = nt.nodes.new("ShaderNodeMath")
+    cut.operation = "LESS_THAN"
+    cut.inputs[1].default_value = IMAGE_ALPHA_CUTOFF
+    keep = nt.nodes.new("ShaderNodeMath")
+    keep.operation = "SUBTRACT"
+    keep.inputs[0].default_value = 1.0
+    masked = nt.nodes.new("ShaderNodeMixShader")
+    nt.links.new(tex.outputs["Color"], emission.inputs["Color"])
+    nt.links.new(camera.outputs["Is Camera Ray"], unlit.inputs[0])
+    nt.links.new(clear.outputs[0], unlit.inputs[1])
+    nt.links.new(emission.outputs[0], unlit.inputs[2])
+    nt.links.new(tex.outputs["Alpha"], cut.inputs[0])
+    nt.links.new(cut.outputs[0], keep.inputs[1])
+    nt.links.new(keep.outputs[0], masked.inputs[0])
+    nt.links.new(clear.outputs[0], masked.inputs[1])
+    nt.links.new(unlit.outputs[0], masked.inputs[2])
+    nt.links.new(masked.outputs[0], out.inputs["Surface"])
+    for i, node in enumerate((tex, cut, keep, emission, camera, clear, unlit, masked)):
+        node.location = (out.location.x - 200 * (8 - i), out.location.y - 60 * (i % 2))
     return mat
 
 
-def _image_plane(coll, path, name):
+def _image_plane(coll, path, name, data):
     img = bpy.data.images.load(path, check_existing=True)
     w, h = img.size
     hw = (w / h if w and h else 1.0) / 2.0
@@ -788,7 +920,7 @@ def _image_plane(coll, path, name):
     uv = mesh.uv_layers.new(name="UVMap")
     for loop, co in zip(uv.data, [(0, 0), (1, 0), (1, 1), (0, 1)]):
         loop.uv = co
-    mesh.materials.append(_image_material(img))
+    mesh.materials.append(_image_material(img, data))
     ob = bpy.data.objects.new(name, mesh)
     coll.objects.link(ob)
     return ob
@@ -820,14 +952,16 @@ def _placeholder(coll, name, kind):
     return ob
 
 
-def build(context, space_id, title, ws, entities, files):
-    """Replace this space's objects with fresh ones from the workspace. Returns warnings."""
+def build(context, space_id, title, ws, entities, files, default_sky=None):
+    """Replace this space's objects with fresh ones from the workspace, except the ones Reload keeps
+    (kept_roots): those only take the live placement. Returns warnings."""
     scene = context.scene
     view_layer = context.view_layer
     warnings = []
     room = read_room(ws)
+    kept = kept_roots(scene, space_id, entities, room)
     with suspended():
-        remove_entities(scene, space_id)
+        remove_entities(scene, space_id, keep=set(kept.values()))
         coll = space_collection(scene, space_id, title)
         _remove_folders(coll)
         folders, folder_colls = _build_folders(coll, room)
@@ -842,18 +976,25 @@ def build(context, space_id, title, ws, entities, files):
             for rel, ent in entities:
                 data = effective_data(ent, room)
                 read_only = ent.get("type") == "CenterAsset"
-                kind = classify(data)
+                kind = classify(data, ent.get("type"))
                 name = panel_name(ent)
                 folder = _str(data.get("folderId")) if _str(data.get("folderId")) in folder_colls else ""
                 target = folder_colls.get(folder, coll)
                 # Operator imports (glTF, Splatlight) land in the active collection.
                 view_layer.active_layer_collection = layers.get(target, prev_active)
                 raw_axes = False
+                keep = kept.get(ent["id"])
                 try:
-                    if kind == "GLB":
+                    if keep is not None:
+                        root, kind, raw_axes = keep, keep.arrival.kind, keep.arrival.raw_axes
+                        for ob in (root, *root.children_recursive):
+                            _move_to(ob, target)
+                    elif kind == "SPAWN":
+                        root = spawn.build(target, name, data)
+                    elif kind == "GLB":
                         root = _import_glb(target, _local_file(ws, model_source(data), files), name)
                     elif kind == "IMAGE":
-                        root = _image_plane(target, _local_file(ws, _glb_url(data), files), name)
+                        root = _image_plane(target, _local_file(ws, _glb_url(data), files), name, data)
                     elif kind == "SPLAT" and splatlight_available():
                         root = _import_splat(_local_file(ws, splat_source(data), files), name)
                         raw_axes = True
@@ -873,21 +1014,34 @@ def build(context, space_id, title, ws, entities, files):
                 a.kind = kind
                 a.raw_axes = raw_axes
                 a.read_only = read_only
-                a.model_edited = False
+                if keep is None:
+                    a.model_offset = Matrix.Identity(4)
+                    a.model_edited = False
+                    a.source_url = _source(data, kind) if is_editable(root) else ""
+                a.spawn_third_person = bool(data.get("isDefaultThirdPerson"))
+                a.spawn_free_cam = bool(data.get("isDefaultFreeCam"))
                 # The room's settings place a centre asset, and this add-on doesn't write those.
                 root.lock_location = root.lock_rotation = root.lock_scale = (read_only,) * 3
+                if kind == "SPAWN":
+                    # Blender's XYZ Euler of a spawn point is (pitch, roll, yaw): keep roll at 0
+                    # and scale at 1, which is all the entity can store.
+                    root.lock_rotation = (False, True, False)
+                    root.lock_scale = (True,) * 3
                 set_entity_matrix(root, data_matrix(data))
                 built.append((root, ent, folder))
         finally:
             view_layer.active_layer_collection = prev_active
         view_layer.update()
         for root, ent, folder in built:
-            root.arrival.signature = content_signature(root)
+            if root not in kept.values():
+                # A kept model keeps its signature: edits made since the push still count.
+                root.arrival.signature = content_signature(root)
             set_synced(root, {"matrix": entity_matrix(root), "name": panel_name(ent), "folder": folder})
-            if effective_data(ent, room).get("hidden"):
+            hidden = bool(effective_data(ent, room).get("hidden"))
+            if hidden or root in kept.values():
                 for ob in (root, *root.children_recursive):
-                    ob.hide_set(True)
-    sky_warning = sky.apply(context, space_id, title, room, files)
+                    ob.hide_set(hidden)
+    sky_warning = sky.apply(context, space_id, title, room, files, default_sky)
     if sky_warning:
         warnings.append(sky_warning)
     if splat_placeholders:
@@ -920,13 +1074,14 @@ def make_entity(root, space_id):
     a.file = f"space/entities/{a.entity_id}.json"
     a.kind = "GLB"
     a.raw_axes = a.read_only = False
-    a.signature = ""
+    a.signature = a.source_url = ""
+    a.model_offset = Matrix.Identity(4)
     a.model_edited = True
 
 
 def loose_objects(objects):
-    """The ones that aren't part of an entity, i.e. that can go into one."""
-    return [ob for ob in objects if find_root(ob) is None]
+    """The ones that aren't part of an entity or the hub, i.e. that can go into one."""
+    return [ob for ob in objects if find_root(ob) is None and not hub.is_hub_object(ob)]
 
 
 def _move_to(ob, coll):
@@ -987,38 +1142,207 @@ def _slug(name):
     return re.sub(r"[^A-Za-z0-9._-]+", "-", name).strip("-.") or "model"
 
 
-def export_glb(context, root, path):
-    """Export a model root's parts to GLB in entity-local space, with modifiers applied."""
+def _objects_in(value):
+    if isinstance(value, bpy.types.Object):
+        return {value}
+    if isinstance(value, bpy.types.Collection):
+        return set(value.all_objects)
+    return set()
+
+
+def _references(ob):
+    """Objects ob's modifiers and constraints use: a Boolean cutter, a Mirror or Array offset
+    object, a Shrinkwrap target, a Geometry Nodes object input, ..."""
+    out = set()
+    for owner in (*ob.modifiers, *ob.constraints):
+        for prop in owner.bl_rna.properties:
+            if prop.type == "POINTER":
+                out |= _objects_in(getattr(owner, prop.identifier, None))
+        if isinstance(owner, bpy.types.Modifier) and owner.type == "NODES":
+            for key in owner.keys():
+                out |= _objects_in(owner[key])
+    return out
+
+
+def _outside_references(objects):
+    """The objects outside `objects` that their modifiers use, directly or through each other,
+    leaving out ones whose parent is among them (they move with it)."""
+    found, todo = set(), list(objects)
+    while todo:
+        for ref in _references(todo.pop()):
+            if ref not in objects and ref not in found:
+                found.add(ref)
+                todo.append(ref)
+
+    def carried(ob):
+        p = ob.parent
+        while p is not None:
+            if p in found:
+                return True
+            p = p.parent
+        return False
+    return [ob for ob in found if not carried(ob)]
+
+
+def _tools(parts):
+    """Parts that shape the others instead of being content: Boolean cutters, and objects kept out
+    of renders (a hidden helper). They aren't exported."""
+    cutters = set()
+    for ob in parts:
+        for m in ob.modifiers:
+            if m.type == "BOOLEAN":
+                cutters |= _objects_in(m.collection if getattr(m, "operand_type", "") == "COLLECTION" else m.object)
+    return {ob for ob in parts if ob in cutters or ob.hide_render}
+
+
+@contextmanager
+def _render_modifiers(objects):
+    """Evaluate the objects' modifiers with their render settings, the finished model, rather than
+    the viewport's (a lower Subdivision level, a modifier kept off while modelling). Only settings
+    that differ are touched: every change, the restore included, re-evaluates the mesh."""
+    saved = []
+
+    def use(m, attr, value):
+        if getattr(m, attr) != value:
+            saved.append((m, attr, getattr(m, attr)))
+            setattr(m, attr, value)
+    for ob in objects:
+        for m in ob.modifiers:
+            use(m, "show_viewport", m.show_render)
+            if m.type in ("SUBSURF", "MULTIRES"):
+                use(m, "levels", m.render_levels)
+    try:
+        yield
+    finally:
+        for m, attr, value in reversed(saved):
+            setattr(m, attr, value)
+
+
+def export_options(settings):
+    """glTF exporter arguments for the scene's Export Settings (None: the exporter's defaults).
+    Options this Blender's exporter doesn't have are left out."""
+    if settings is None:
+        return {}
+    opts = {
+        "export_image_format": settings.image_format,
+        "export_image_quality": settings.image_quality,
+        "export_jpeg_quality": settings.image_quality,  # its name before Blender 4.3
+        "export_draco_mesh_compression_enable": settings.draco,
+        "export_draco_mesh_compression_level": settings.draco_level,
+        "export_draco_position_quantization": settings.draco_position,
+        "export_draco_normal_quantization": settings.draco_normal,
+        "export_draco_texcoord_quantization": settings.draco_texcoord,
+        "export_draco_color_quantization": settings.draco_color,
+        "export_draco_generic_quantization": settings.draco_generic,
+        "export_normals": settings.normals,
+        "export_tangents": settings.tangents,
+        "export_texcoords": settings.texcoords,
+        "export_vertex_color": settings.vertex_colors,
+        "export_materials": settings.materials,
+        "export_animations": settings.animations,
+        "export_morph": settings.shape_keys,
+        "export_skins": settings.skins,
+        "export_attributes": settings.attributes,
+    }
+    supported = {p.identifier for p in bpy.ops.export_scene.gltf.get_rna_type().properties}
+    return {k: v for k, v in opts.items() if k in supported}
+
+
+def _material_images(objects):
+    """(node, image) for every image texture the objects' materials use, node groups included."""
+    trees, seen = [], set()
+    for ob in objects:
+        for slot in ob.material_slots:
+            if slot.material and slot.material.node_tree:
+                trees.append(slot.material.node_tree)
+    out = []
+    while trees:
+        tree = trees.pop()
+        if tree in seen:
+            continue
+        seen.add(tree)
+        for node in tree.nodes:
+            if node.type == "TEX_IMAGE" and node.image:
+                out.append((node, node.image))
+            elif node.type == "GROUP" and node.node_tree:
+                trees.append(node.node_tree)
+    return out
+
+
+@contextmanager
+def _smaller_textures(objects, max_size):
+    """Point the objects' materials at copies of their textures scaled to at most max_size px, and
+    back afterwards. The copies are edited pixels, so the exporter encodes them anew."""
+    swapped, copies = [], {}
+    try:
+        for node, image in _material_images(objects) if max_size else []:
+            w, h = image.size
+            if max(w, h) <= max_size:
+                continue
+            if image not in copies:
+                f = max_size / max(w, h)
+                small = image.copy()
+                small.scale(max(1, round(w * f)), max(1, round(h * f)))
+                copies[image] = small
+            swapped.append((node, image))
+            node.image = copies[image]
+        yield
+    finally:
+        for node, image in swapped:
+            node.image = image
+        for small in copies.values():
+            bpy.data.images.remove(small)
+
+
+def export_glb(context, root, path, offset=None, settings=None):
+    """Export a model root's parts to GLB in entity-local space, with modifiers applied (their render
+    settings) and the object's model offset (its stretch, see unstretch) baked in. `settings`: the
+    scene's Export Settings (props.ExportSettings)."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
     view_layer = context.view_layer
-    parts = list(root.children_recursive)
-    if root.type != "EMPTY":
-        parts.append(root)
+    entity = {root, *root.children_recursive}
+    parts = [ob for ob in entity if ob is not root or root.type != "EMPTY"]
+    parts = [ob for ob in parts if ob not in _tools(parts)]
+    # The entity carries the placement, so the file must hold the model at the origin, stretched by
+    # the offset. Moving the root there moves its parts along; the objects outside it that its
+    # modifiers use (a cutter, a mirror object) are moved with it, or the result would change.
+    target = offset if offset is not None else model_offset(root)
+    delta = target @ root.matrix_world.inverted()
+    outside = _outside_references(entity)
+    movers = [root, *outside]
+    saved = {ob: ob.matrix_basis.copy() for ob in movers}
     prev_selected = [ob for ob in view_layer.objects if ob.select_get()]
     prev_active = view_layer.objects.active
-    saved = root.matrix_basis.copy()
+    # The restores below re-evaluate the model. They're flushed with view_layer.update() while
+    # still suspended, or the edit tracking would see them afterwards and mark the model edited.
     with suspended():
-        try:
-            # The entity carries the placement, so the file must hold the model at the origin. An
-            # unselected Empty root isn't exported; its children are written relative to it.
-            root.matrix_world = Matrix.Identity(4)
-            view_layer.update()
-            for ob in prev_selected:
-                ob.select_set(False)
-            for ob in parts:
-                ob.select_set(True)
-            result = bpy.ops.export_scene.gltf(
-                filepath=path, export_format="GLB", use_selection=True, use_visible=False,
-                use_renderable=False, use_active_collection=False, export_apply=True, export_yup=True,
-            )
-        finally:
-            root.matrix_basis = saved
-            for ob in parts:
-                ob.select_set(False)
-            for ob in prev_selected:
-                ob.select_set(True)
-            view_layer.objects.active = prev_active
-            view_layer.update()
+        max_size = int(settings.max_texture_size) if settings is not None else 0
+        with _render_modifiers([*entity, *outside]), _smaller_textures(parts, max_size):
+            try:
+                for ob in movers:
+                    ob.matrix_world = delta @ ob.matrix_world
+                view_layer.update()
+                for ob in prev_selected:
+                    ob.select_set(False)
+                for ob in parts:
+                    ob.select_set(True)
+                # An unselected Empty root isn't exported; its children are written with their world
+                # matrices.
+                result = bpy.ops.export_scene.gltf(
+                    filepath=path, export_format="GLB", use_selection=True, use_visible=False,
+                    use_renderable=False, use_active_collection=False, export_apply=True, export_yup=True,
+                    **export_options(settings),
+                )
+            finally:
+                for ob, basis in saved.items():
+                    ob.matrix_basis = basis
+                for ob in parts:
+                    ob.select_set(False)
+                for ob in prev_selected:
+                    ob.select_set(True)
+                view_layer.objects.active = prev_active
+                view_layer.update()
+        view_layer.update()
     if "FINISHED" not in result or not os.path.isfile(path):
         raise EntityError(f"{root.name}: glTF export failed")
 
@@ -1033,20 +1357,22 @@ def export_splat(context, root, path):
 
 
 class PushItem:
-    def __init__(self, root, path, entity, export_path, signature):
+    def __init__(self, root, path, entity, export_path, signature, matrix, offset):
         self.root = root
         self.path = path
         self.entity = entity
         self.export_path = export_path
         self.signature = signature
-        self.matrix = entity_matrix(root)
+        self.matrix = matrix  # the entity's pushed placement
+        self.offset = offset  # the model offset the export bakes in
+        self.url = None  # where the export was uploaded
 
 
 def pending_roots(scene, space_id, ws):
-    """Entities moved, renamed or moved to another folder since the last pull/push. New entities
-    aren't listed: they're created by a full Push."""
+    """Entities moved, renamed or moved to another folder since the last pull/push. New and
+    stretched entities aren't listed: they need a full Push, which uploads their model."""
     return [r for r in entity_roots(scene, space_id)
-            if not r.arrival.read_only and not is_new(r, ws) and any(root_changes(r, ws))]
+            if not r.arrival.read_only and not is_new(r, ws) and not stretched(r) and any(root_changes(r, ws))]
 
 
 def prepare_push(context, space_id, ws, export_dir, include_models):
@@ -1067,7 +1393,7 @@ def prepare_push(context, space_id, ws, export_dir, include_models):
             else:
                 dups.append(r.name)
     if dups:
-        raise EntityError("Copies of images, plugins, splats and placeholders can't be pushed. "
+        raise EntityError("Copies of images, plugins, splats, spawn points and placeholders can't be pushed. "
                           "Delete: " + ", ".join(sorted(dups)))
 
     if include_models:
@@ -1082,21 +1408,24 @@ def prepare_push(context, space_id, ws, export_dir, include_models):
             continue
         path = os.path.join(ws, a.file)
         new = not os.path.isfile(path)
-        if new and not include_models:
-            continue  # a Live push; the next Push creates it
+        stretch = stretched(root)
+        if (new or stretch) and not include_models:
+            continue  # a Live push; the next Push creates or re-uploads it
         if new and not any(o.type in MODEL_TYPES for o in (root, *root.children_recursive)):
             errors.append(f"{root.name}: a new entity needs a mesh. Add a part to it, or delete it")
             continue
-        editable = a.kind == "GLB" or (a.kind == "SPLAT" and a.raw_axes)
+        editable = is_editable(root)
         signature = content_signature(root) if include_models and editable else a.signature
-        model_changed = new or (include_models and editable and (a.model_edited or signature != a.signature))
+        model_changed = new or stretch or (include_models and editable and (a.model_edited or signature != a.signature))
+        matrix, offset = unstretch(root) if stretch else (entity_matrix(root), model_offset(root))
         moved, renamed, refiled = root_changes(root, ws)
+        moved = moved or stretch
         if not (moved or renamed or refiled or model_changed):
             continue
         try:
             entity = _new_entity_json(a.entity_id) if new else read_json(path)
             data = entity["data"]
-            write_transform(data, entity_matrix(root), root.name)
+            write_transform(data, matrix, root.name, spawn=a.kind == "SPAWN")
         except EntityError as e:
             errors.append(str(e))
             continue
@@ -1113,7 +1442,7 @@ def prepare_push(context, space_id, ws, export_dir, include_models):
                 data.pop("folderId", None)
         ext = ".ply" if a.kind == "SPLAT" else ".glb"
         export_path = os.path.join(export_dir, _slug(a.entity_id), _slug(root.name) + ext) if model_changed else None
-        items.append(PushItem(root, path, entity, export_path, signature))
+        items.append(PushItem(root, path, entity, export_path, signature, matrix, offset))
     if errors:
         raise EntityError("\n".join(errors))
 
@@ -1125,7 +1454,8 @@ def prepare_push(context, space_id, ws, export_dir, include_models):
                 if item.root.arrival.kind == "SPLAT":
                     export_splat(context, item.root, item.export_path)
                 else:
-                    export_glb(context, item.root, item.export_path)
+                    export_glb(context, item.root, item.export_path, item.offset, context.scene.arrival.export)
+                item.root.arrival.export_size = os.path.getsize(item.export_path)
             except Exception:
                 item.root.arrival.model_edited = True
                 raise
@@ -1156,7 +1486,13 @@ def mark_pushed(items):
             # The pushed matrix, not the file's: write_transform leaves sub-epsilon moves unwritten.
             set_synced(item.root, _state(item.entity, item.matrix))
             if item.export_path:
-                item.root.arrival.signature = item.signature
+                a = item.root.arrival
+                a.signature = item.signature
+                a.source_url = item.url or ""
+                if not a.raw_axes:
+                    a.model_offset = item.offset
+                if a.kind == "IMAGE":
+                    a.kind = "GLB"  # its entity now holds the uploaded model
         except ReferenceError:  # deleted while the push ran
             pass
 

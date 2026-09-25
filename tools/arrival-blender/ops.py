@@ -6,7 +6,7 @@ import bpy
 from bpy.app.handlers import persistent
 from bpy.props import BoolProperty, EnumProperty, StringProperty
 
-from . import cli, hub, space, thumbs
+from . import cli, hub, sky, space, thumbs
 from .props import prefs, workspaces_dir
 
 
@@ -41,7 +41,7 @@ def unpushed_count(scene):
     if not sp.space_id:
         return 0
     pending = space.pending_roots(scene, sp.space_id, sp.workspace)
-    edited = [r for r in space.entity_roots(scene, sp.space_id) if r.arrival.model_edited]
+    edited = [r for r in space.entity_roots(scene, sp.space_id) if r.arrival.model_edited or space.stretched(r)]
     return len(set(pending) | set(edited))
 
 
@@ -198,7 +198,8 @@ class ARRIVAL_OT_open_space(_AsyncOp, bpy.types.Operator):
             same = sp.space_id == self.space_id
             return context.window_manager.invoke_confirm(
                 self, event, title="Discard unpushed changes?",
-                message="Reloading replaces this space's objects with the live version." if same
+                message="Reloading takes the live version of the space. Models that are still the file "
+                        "you loaded or pushed keep their Blender edits." if same
                 else f"Loading {self.title} removes {sp.title} from this scene.",
                 confirm_text="Reload" if same else "Load", icon="WARNING",
             )
@@ -222,11 +223,22 @@ class ARRIVAL_OT_open_space(_AsyncOp, bpy.types.Operator):
 
         entities = space.load_entities(ws)
         room = space.read_room(ws)
-        urls = space.download_urls(entities, room)
+        # Models Reload keeps aren't downloaded. build() checks again, since the scene can change
+        # while the downloads run.
+        kept = space.kept_roots(bpy.context.scene, sid, entities, room)
+        urls = space.download_urls(entities, room, skip=kept)
         files = {}
         if urls:
             state.status = f"Downloading models 0/{len(urls)}"
             files = yield cli.Task(space.download_all, urls, cache_dir())
+
+        default_sky, sky_error = None, None
+        if not space._str(room.get("skyboxImage")):
+            state.status = "Loading the default sky…"
+            try:
+                default_sky = yield cli.Task(sky.fetch_default, cache_dir())
+            except Exception as e:
+                sky_error = f"Default sky: {e}"
 
         hub_data, hub_error = None, None
         if not room.get("hideArchitecture"):
@@ -241,10 +253,12 @@ class ARRIVAL_OT_open_space(_AsyncOp, bpy.types.Operator):
         for old in space.space_ids(context.scene) - {sid}:
             space.remove_space(context.scene, old)
         title = self.title or room.get("title") or sid
-        warnings = space.build(context, sid, title, ws, entities, files)
+        warnings = space.build(context, sid, title, ws, entities, files, default_sky)
+        if sky_error:
+            warnings.append(sky_error)
         coll = space.space_collection(context.scene, sid, title)
         if hub_data:
-            hub.build(coll, hub_data)
+            hub.build(coll, hub_data, context.scene.arrival.hub_selectable)
         else:
             hub.remove(coll)
         if hub_error:
@@ -290,6 +304,7 @@ class ARRIVAL_OT_push(_AsyncOp, bpy.types.Operator):
                     if not url:
                         raise cli.CliError("The upload returned no URL")
                     space.set_model_url(item.entity, url)
+                    item.url = url
             space.write(items)
             state.status = "Pushing…"
             out = yield cli.run(cli_path, ["push", "--dir", ws])
@@ -345,11 +360,76 @@ class ARRIVAL_OT_select_entity(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class ARRIVAL_OT_revert_model(bpy.types.Operator):
+    bl_idname = "arrival.revert_model"
+    bl_label = "Revert to Live Model"
+    bl_description = ("Throw away this entity's Blender model (modifiers too) and load its live file. "
+                      "Reloads the space")
+    bl_options = {"REGISTER"}
+
+    @classmethod
+    def poll(cls, context):
+        ob = context.active_object
+        root = space.find_root(ob) if ob else None
+        return not state.busy and root is not None and bool(root.arrival.source_url)
+
+    def invoke(self, context, event):
+        root = space.find_root(context.active_object)
+        return context.window_manager.invoke_confirm(
+            self, event, title=f"Revert {root.name}?",
+            message="Its Blender edits and modifiers are lost. Unpushed moves in the space are too.",
+            confirm_text="Revert", icon="WARNING",
+        )
+
+    def execute(self, context):
+        root = space.find_root(context.active_object)
+        # Without a source file, Reload re-imports it instead of keeping it.
+        root.arrival.source_url = ""
+        root.arrival.model_edited = False
+        sp = context.scene.arrival
+        result = bpy.ops.arrival.open_space("EXEC_DEFAULT", space_id=sp.space_id, title=sp.title)
+        return {"CANCELLED"} if "CANCELLED" in result else {"FINISHED"}  # the reload runs on its own
+
+
+EXPORT_DEFAULTS = {
+    "max_texture_size": "0", "image_format": "AUTO", "image_quality": 75, "draco": False,
+    "draco_level": 6, "draco_position": 14, "draco_normal": 10, "draco_texcoord": 12, "draco_color": 10,
+    "draco_generic": 12, "normals": True, "tangents": False, "texcoords": True, "vertex_colors": "MATERIAL",
+    "materials": "EXPORT", "animations": True, "shape_keys": True, "skins": True, "attributes": False,
+}
+EXPORT_PRESETS = {
+    "ORIGINAL": {},
+    "BALANCED": {"max_texture_size": "2048", "image_format": "WEBP", "image_quality": 85, "draco": True},
+    "SMALL": {"max_texture_size": "1024", "image_format": "WEBP", "image_quality": 70, "draco": True,
+              "draco_level": 10, "draco_position": 12, "draco_normal": 8, "draco_texcoord": 10, "draco_color": 8},
+}
+
+
+class ARRIVAL_OT_export_preset(bpy.types.Operator):
+    bl_idname = "arrival.export_preset"
+    bl_label = "Export Preset"
+    bl_description = "Set all export settings at once"
+    bl_options = {"REGISTER", "UNDO"}
+
+    preset: EnumProperty(name="Preset", items=[
+        ("ORIGINAL", "Original", "Full-size textures as they are, uncompressed meshes"),
+        ("BALANCED", "Balanced", "Textures up to 2048 px as WebP, Draco meshes"),
+        ("SMALL", "Small", "Textures up to 1024 px as WebP, strongly compressed Draco meshes"),
+    ])
+
+    def execute(self, context):
+        settings = context.scene.arrival.export
+        for key, value in {**EXPORT_DEFAULTS, **EXPORT_PRESETS[self.preset]}.items():
+            setattr(settings, key, value)
+        return {"FINISHED"}
+
+
 def _model_root(context):
-    """The model entity the active object belongs to, if it can take new parts."""
+    """The model (or image, which becomes one) entity the active object belongs to, if it can take
+    new parts."""
     ob = context.active_object
     root = space.find_root(ob) if ob else None
-    if root is None or root.arrival.kind != "GLB" or root.arrival.read_only:
+    if root is None or root.arrival.kind not in space.MODEL_KINDS or root.arrival.read_only:
         return None
     return root
 
@@ -505,7 +585,8 @@ def _on_depsgraph_update(scene, depsgraph):
 classes = (
     ARRIVAL_OT_login, ARRIVAL_OT_logout, ARRIVAL_OT_refresh_spaces, ARRIVAL_OT_open_space,
     ARRIVAL_OT_push, ARRIVAL_OT_cancel, ARRIVAL_OT_select_entity, ARRIVAL_OT_new_entity,
-    ARRIVAL_OT_add_part, ARRIVAL_OT_add_to_entity, ARRIVAL_OT_open_folder,
+    ARRIVAL_OT_add_part, ARRIVAL_OT_add_to_entity, ARRIVAL_OT_open_folder, ARRIVAL_OT_revert_model,
+    ARRIVAL_OT_export_preset,
 )
 
 

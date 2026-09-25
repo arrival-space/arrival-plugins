@@ -3,7 +3,7 @@ import urllib.parse
 
 import bpy
 
-from . import cli, space
+from . import cli, hub, space
 from .ops import state, unpushed_count
 from .props import space_matches
 
@@ -27,6 +27,7 @@ KIND_LABELS = {
     "IMAGE": "Image",
     "PLUGIN": "Plugin",
     "SPLAT": "Gaussian splat",
+    "SPAWN": "Spawn point",
     "OTHER": "Placeholder",
 }
 
@@ -134,9 +135,23 @@ class ARRIVAL_PT_space(bpy.types.Panel):
         op.space_id, op.title = sp.space_id, sp.title
 
         layout.prop(wm, "live", toggle=True, icon="REC" if wm.live else "PLAY")
+        if any(c.get("arrival_hub") for c in context.scene.collection.children_recursive):
+            layout.prop(sp, "hub_selectable", toggle=True,
+                        icon="RESTRICT_SELECT_OFF" if sp.hub_selectable else "RESTRICT_SELECT_ON")
         loose = space.loose_objects(context.selected_objects)
         layout.operator("arrival.new_entity", text="New Entity from Selection" if loose else "New Entity", icon="ADD")
         layout.operator("arrival.open_folder", icon="FILE_FOLDER")
+
+
+def _draw_source(layout, a):
+    """Whether Reload keeps this object, and the way back to the live file."""
+    if not a.source_url:
+        return
+    box = layout.box()
+    col = box.column(align=True)
+    col.label(text="Reload keeps this model while", icon="LINKED")
+    col.label(text="its live file is the one you have.", icon="BLANK1")
+    box.operator("arrival.revert_model", icon="LOOP_BACK")
 
 
 class ARRIVAL_PT_entity(bpy.types.Panel):
@@ -173,21 +188,50 @@ class ARRIVAL_PT_entity(bpy.types.Panel):
             col = layout.column(align=True)
             col.label(text="Read-only: the room settings place this", icon="LOCKED")
             col.label(text="old centre asset, not the entity.", icon="BLANK1")
-        elif a.kind == "GLB":
+        elif a.kind in space.MODEL_KINDS:
             if space.is_new(root, context.scene.arrival.workspace):
                 col = layout.column(align=True)
                 col.label(text="New: Push creates it in the space.", icon="INFO")
                 col.label(text="Its parts are uploaded as one model.", icon="BLANK1")
             else:
                 layout.prop(a, "model_edited")
+            if a.export_size:
+                row = layout.row()
+                row.enabled = False
+                row.label(text=f"Last export: {_size_text(a.export_size)}", icon="EXPORT")
+            stretched = space.stretched(root)
+            if a.kind == "IMAGE" and (a.model_edited or stretched):
+                col = layout.column(align=True)
+                col.label(text="Push turns this image into a model", icon="INFO")
+                col.label(text="(the plane as GLB) and replaces it.", icon="BLANK1")
+            elif a.kind == "IMAGE":
+                col = layout.column(align=True)
+                col.label(text="Edit it to make it a model.", icon="INFO")
+                col.label(text="Moving it keeps it an image.", icon="BLANK1")
+            if stretched:
+                col = layout.column(align=True)
+                col.label(text="Scaled unevenly: Push bakes", icon="FULLSCREEN_ENTER")
+                col.label(text="the stretch into the model.", icon="BLANK1")
             row = layout.row(align=True)
             row.operator_menu_enum("arrival.add_part", "primitive", text="Add", icon="ADD")
             row.operator("arrival.add_to_entity", icon="LINKED")
+            _draw_source(layout, a)
+        elif a.kind == "SPAWN":
+            col = layout.column(align=True)
+            roles = [role for on, role in ((a.spawn_third_person, "avatar"), (a.spawn_free_cam, "free camera")) if on]
+            if roles:
+                col.label(text="Default spawn for " + " and ".join(roles), icon="CHECKMARK")
+            else:
+                col.label(text="Not a default spawn", icon="BLANK1")
+            col = layout.column(align=True)
+            col.label(text="Only position and facing sync.", icon="INFO")
+            col.label(text="The arrow shows where visitors look.", icon="BLANK1")
         elif a.kind == "SPLAT" and a.raw_axes:
             layout.prop(a, "model_edited", text="Splat edited")
             col = layout.column(align=True)
             col.label(text="Delete points in Edit Mode.", icon="INFO")
             col.label(text="Push uploads the splat as .ply.", icon="BLANK1")
+            _draw_source(layout, a)
         else:
             col = layout.column(align=True)
             col.label(text="Only position, rotation and scale sync.", icon="INFO")
@@ -195,7 +239,65 @@ class ARRIVAL_PT_entity(bpy.types.Panel):
                 col.label(text="Install Splatlight LITE to see splats.", icon="BLANK1")
 
 
-classes = (ARRIVAL_PT_main, ARRIVAL_PT_space, ARRIVAL_PT_entity)
+def _size_text(n):
+    for div, unit in ((1 << 20, "MB"), (1 << 10, "KB")):
+        if n >= div:
+            return f"{n / div:.1f} {unit}"
+    return f"{n} B"
+
+
+class ARRIVAL_PT_export(bpy.types.Panel):
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "Arrival"
+    bl_label = "Export Settings"
+    bl_options = {"DEFAULT_CLOSED"}
+
+    @classmethod
+    def poll(cls, context):
+        return bool(context.scene.arrival.space_id)
+
+    def draw(self, context):
+        layout = self.layout
+        settings = context.scene.arrival.export
+        layout.operator_menu_enum("arrival.export_preset", "preset", text="Presets", icon="PRESET")
+
+        col = layout.column(heading="Textures")
+        col.use_property_split = True
+        col.use_property_decorate = False
+        col.prop(settings, "max_texture_size")
+        col.prop(settings, "image_format")
+        sub = col.row()
+        sub.enabled = settings.image_format in ("JPEG", "WEBP")
+        sub.prop(settings, "image_quality")
+
+        col = layout.column(heading="Meshes")
+        col.use_property_split = True
+        col.use_property_decorate = False
+        col.prop(settings, "draco", text="Draco")
+        sub = col.column(align=True)
+        sub.enabled = settings.draco
+        sub.prop(settings, "draco_level")
+        sub.prop(settings, "draco_position")
+        sub.prop(settings, "draco_normal")
+        sub.prop(settings, "draco_texcoord")
+        sub.prop(settings, "draco_color")
+        sub.prop(settings, "draco_generic")
+
+        col = layout.column(heading="Include")
+        col.use_property_split = True
+        col.use_property_decorate = False
+        col.prop(settings, "materials")
+        col.prop(settings, "vertex_colors")
+        for key in ("normals", "tangents", "texcoords", "animations", "shape_keys", "skins", "attributes"):
+            col.prop(settings, key)
+
+        col = layout.column(align=True)
+        col.label(text="Used when Push uploads a model.", icon="INFO")
+        col.label(text="Unedited models aren't re-uploaded.", icon="BLANK1")
+
+
+classes = (ARRIVAL_PT_main, ARRIVAL_PT_space, ARRIVAL_PT_entity, ARRIVAL_PT_export)
 
 
 def register():

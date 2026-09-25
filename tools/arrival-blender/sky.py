@@ -10,12 +10,32 @@
 #
 # PNGs can carry HDR values in one of PlayCanvas's packed encodings; those are decoded in the
 # node tree so the world is as bright as it is in the app.
+#
+# What the client does with the settings (updateSkybox, updateWelcomeEffects):
+#   no skyboxImage   the app scene's own sky: an RGBM env atlas (the "Helipad" cubemap asset) drawn
+#                    at its skyboxMip level, i.e. blurred. Read from the published app, like the hub.
+#   skyboxRotation   yaw in degrees; 0 or unset is 180 (the scene's default rotation).
+#   intensity        envLightFinal, else 3. updateWelcomeEffects runs after updateSkybox and
+#                    overwrites skyboxIntensity (the editor saves the two together).
+#   skyboxHidden     the sky isn't drawn but still lights the scene, with or without an image.
+#   skyboxType       dome / box project the image onto a mesh of skyboxScale (default 100) around
+#                    a tripod at skyboxTripodY (default 0.1) times the scale, instead of infinitely
+#                    far away. Built here as a mesh with the same lookup from that tripod.
+#   skyboxShadow     a shadow catcher for the stage light, which Blender doesn't have: ignored.
 
+import json
 import math
 
+import bmesh
 import bpy
+from mathutils import Matrix
 
-from . import space
+from . import hub, space
+
+DEFAULT_INTENSITY = 3.0  # custom-travel-center.js DEFAULT_SKYBOX_INTENSITY
+DEFAULT_ROTATION = 180.0  # updateSkybox: new pc.Quat(0, 1, 0, 0) when skyboxRotation is falsy
+ATLAS_SIZE = 512.0  # envAtlasPS atlasSize
+ENCODINGS = ("rgbm", "rgbe", "rgbp")
 
 DECODE_LABEL = "Arrival decode"
 
@@ -32,12 +52,36 @@ def find_world(space_id):
 
 
 def remove(scene, space_id):
+    _remove_sky_mesh(space_id)
     world = find_world(space_id)
     if not world:
         return
     if scene.world == world:
         scene.world = None
     bpy.data.worlds.remove(world)
+
+
+def fetch_default(task, cache_dir):
+    """Task body: the app scene's own sky, {path, encoding, level}, for spaces without a skybox."""
+    ctx = space._ssl_context()
+    task.progress = "Loading the default sky…"
+    cfg = json.loads(hub._get(hub.APP_URL + "config.json", cache_dir, ctx))
+    scene_url = next(s["url"] for s in cfg["scenes"] if s["name"] == hub.SCENE_NAME)
+    render = json.loads(hub._get(hub.APP_URL + scene_url, cache_dir, ctx)).get("settings", {}).get("render", {})
+    asset = cfg["assets"].get(str(render.get("skybox"))) or {}
+    url = (asset.get("file") or {}).get("url")
+    if not url:
+        raise space.EntityError("the app's scene has no default sky")
+    url = hub.APP_URL + url
+    path = space.download_all(task, [url], cache_dir, label="Loading the default sky")[url]
+    if isinstance(path, Exception):
+        raise path
+    if url.lower().split("?")[0].endswith(".dds"):
+        raise space.EntityError("the app's default sky is a .dds file, which isn't supported")
+    # The asset's file is its prefiltered env atlas. The engine loads a non-.dds one as RGBP,
+    # whatever the asset's rgbm flag says (CubemapHandler.loadAssets), and with no cube faces draws
+    # the sky from the atlas at skyboxMip (Scene._getSkyboxTex), 0 being the sharp one.
+    return {"path": path, "encoding": "rgbp", "level": int(render.get("skyboxMip") or 0)}
 
 
 def _equirect_uv(nt, vector):
@@ -73,6 +117,24 @@ def _equirect_uv(nt, vector):
     nt.links.new(u, uv.inputs["X"])
     nt.links.new(v, uv.inputs["Y"])
     return uv.outputs["Vector"]
+
+
+def _atlas_uv(nt, uv, level):
+    """The equirect coordinates mapped into the env atlas's rectangle for a blur level
+    (envAtlasPS mapRoughnessUv), in Blender's bottom-up image coordinates."""
+    t = 1.0 / 2.0 ** level
+    seam = 1.0 / ATLAS_SIZE
+    split = nt.nodes.new("ShaderNodeSeparateXYZ")
+    nt.links.new(uv, split.inputs["Vector"])
+    out = nt.nodes.new("ShaderNodeCombineXYZ")
+    for axis, size, start in (("X", t, 0.0), ("Y", t * 0.5, t * 0.5)):
+        node = nt.nodes.new("ShaderNodeMath")
+        node.operation = "MULTIPLY_ADD"
+        node.inputs[1].default_value = size - 2 * seam
+        node.inputs[2].default_value = start + seam
+        nt.links.new(split.outputs[axis], node.inputs[0])
+        nt.links.new(node.outputs["Value"], out.inputs[axis])
+    return out.outputs["Vector"]
 
 
 def _decode(nt, tex, encoding):
@@ -131,16 +193,137 @@ def _show_world(context):
                 shading.use_scene_world = True
 
 
-def apply(context, space_id, title, room, files):
-    """Set up the scene's world from the space's skybox settings. Returns a warning, or ""."""
+def _sky_color(nt, vector, image, encoding, level, yaw):
+    """The sky's color for a lookup direction, as the engine samples it."""
+    mapping = nt.nodes.new("ShaderNodeMapping")
+    # Turning the lookup vector by +yaw turns the sky the way the app does (checked against the
+    # app's screenshot of a space with a 35 degree rotation).
+    mapping.inputs["Rotation"].default_value[2] = math.radians(yaw)
+    nt.links.new(vector, mapping.inputs["Vector"])
+    uv = _equirect_uv(nt, mapping.outputs["Vector"])
+    if level is not None:
+        uv = _atlas_uv(nt, uv, level)
+    tex = nt.nodes.new("ShaderNodeTexImage")
+    tex.extension = "EXTEND"  # the poles; the seam wraps through the lookup itself
+    tex.image = image
+    nt.links.new(uv, tex.inputs["Vector"])
+    if encoding in ENCODINGS:
+        return _decode(nt, tex, encoding)
+    return tex.outputs["Color"]
+
+
+def _load_image(path, encoding):
+    image = bpy.data.images.load(path, check_existing=True)
+    if encoding in ENCODINGS:
+        image.colorspace_settings.name = "Non-Color"  # the packed values are data, not colour
+        image.alpha_mode = "CHANNEL_PACKED"  # and the alpha is part of them, not coverage
+    return image
+
+
+def _remove_sky_mesh(space_id):
+    for ob in [o for o in bpy.data.objects if o.get("arrival_sky") == space_id]:
+        me = ob.data
+        bpy.data.objects.remove(ob, do_unlink=True)
+        if me and me.users == 0:
+            bpy.data.meshes.remove(me)
+
+
+def _pc_to_blender(bm):
+    bmesh.ops.transform(bm, matrix=space.C, verts=bm.verts)
+
+
+def _dome(bm):
+    """DomeGeometry(latitudeBands 50, longitudeBands 50): a sphere of radius 0.5 whose lower half
+    is squashed into a floor at y = 0."""
+    bands, r = 50, 0.5
+    rows = []
+    for lat in range(bands + 1):
+        theta = lat * math.pi / bands
+        row = []
+        for lon in range(bands):
+            phi = lon * 2 * math.pi / bands - math.pi / 2
+            x, y, z = math.cos(phi) * math.sin(theta), math.cos(theta), math.sin(phi) * math.sin(theta)
+            if y < 0:
+                y *= 0.3
+                if x * x + z * z < 0.95 * 0.95:
+                    y = -0.1
+            row.append(bm.verts.new((x * r, (y + 0.1) * r, z * r)))
+        rows.append(row)
+    for lat in range(bands):
+        for lon in range(bands):
+            nxt = (lon + 1) % bands
+            quad = (rows[lat][lon], rows[lat + 1][lon], rows[lat + 1][nxt], rows[lat][nxt])
+            if len(set(quad)) == 4:
+                bm.faces.new(quad)
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-6)
+
+
+def _box(bm):
+    """BoxGeometry({yOffset: 0.5}): a unit cube standing on y = 0."""
+    bmesh.ops.create_cube(bm, size=1.0, matrix=Matrix.Translation((0, 0.5, 0)))
+
+
+def _sky_mesh(context, space_id, title, room, image, encoding, yaw, strength):
+    """skyboxType dome / box: the sky drawn on a mesh around the tripod, as SkyMesh does."""
+    kind = room.get("skyboxType")
+    scale = room.get("skyboxScale")
+    scale = float(scale) if isinstance(scale, (int, float)) and not isinstance(scale, bool) else 100.0
+    tripod = room.get("skyboxTripodY")
+    tripod = float(tripod) if isinstance(tripod, (int, float)) and not isinstance(tripod, bool) else 0.1
+
+    bm = bmesh.new()
+    (_dome if kind == "dome" else _box)(bm)
+    _pc_to_blender(bm)
+    me = bpy.data.meshes.new(f"Sky {kind}")
+    bm.to_mesh(me)
+    bm.free()
+
+    mat = bpy.data.materials.new(f"Sky {kind}")
+    if mat.node_tree is None:  # Blender < 5
+        mat.use_nodes = True
+    nt = mat.node_tree
+    for node in list(nt.nodes):
+        if node.type != "OUTPUT_MATERIAL":
+            nt.nodes.remove(node)
+    out = next(n for n in nt.nodes if n.type == "OUTPUT_MATERIAL")
+    geometry = nt.nodes.new("ShaderNodeNewGeometry")
+    direction = nt.nodes.new("ShaderNodeVectorMath")
+    direction.operation = "SUBTRACT"
+    direction.inputs[1].default_value = (0.0, 0.0, tripod * scale)  # the tripod, in Blender axes
+    nt.links.new(geometry.outputs["Position"], direction.inputs[0])
+    emission = nt.nodes.new("ShaderNodeEmission")
+    emission.inputs["Strength"].default_value = strength
+    nt.links.new(_sky_color(nt, direction.outputs["Vector"], image, encoding, None, yaw), emission.inputs["Color"])
+    nt.links.new(emission.outputs["Emission"], out.inputs["Surface"])
+    me.materials.append(mat)
+
+    ob = bpy.data.objects.new(f"Sky {kind}", me)
+    ob["arrival_sky"] = space_id
+    ob.scale = (scale, scale, scale)
+    ob.hide_select = True
+    # Only drawn, like the app's sky mesh: the scene is still lit by the world.
+    for ray in ("visible_diffuse", "visible_glossy", "visible_transmission", "visible_volume_scatter",
+                "visible_shadow"):
+        setattr(ob, ray, False)
+    space.space_collection(context.scene, space_id, title).objects.link(ob)
+
+
+def apply(context, space_id, title, room, files, default=None):
+    """Set up the scene's world from the space's skybox settings, or the app's default sky
+    (fetch_default) when it has none. Returns a warning, or ""."""
+    _remove_sky_mesh(space_id)
     url = space._str(room.get("skyboxImage"))
-    if not url:
+    if url:
+        try:
+            path = space._local_file("", url, files)
+        except space.EntityError as e:
+            return f"Skybox: {e}"
+        encoding, level = space._str(room.get("skyboxEncoding")).lower(), None
+    elif default:
+        path, encoding, level = default["path"], default["encoding"], default["level"]
+    else:
         remove(context.scene, space_id)
         return ""
-    try:
-        path = space._local_file("", url, files)
-    except space.EntityError as e:
-        return f"Skybox: {e}"
 
     world = find_world(space_id) or bpy.data.worlds.new(world_name(title, space_id))
     world["arrival_space_id"] = space_id
@@ -155,36 +338,22 @@ def apply(context, space_id, title, room, files):
             nt.nodes.remove(node)
     out = next(n for n in nt.nodes if n.type == "OUTPUT_WORLD")
 
+    yaw = space._f(room, "skyboxRotation") or DEFAULT_ROTATION
+    final = room.get("envLightFinal")
+    strength = float(final) if isinstance(final, (int, float)) and not isinstance(final, bool) else DEFAULT_INTENSITY
+    image = _load_image(path, encoding)
+
     coords = nt.nodes.new("ShaderNodeTexCoord")
-    mapping = nt.nodes.new("ShaderNodeMapping")
-    # Turning the lookup vector by +skyboxRotation turns the sky the way the app does (checked
-    # against the app's screenshot of a space with a 35 degree rotation).
-    mapping.inputs["Rotation"].default_value[2] = math.radians(space._f(room, "skyboxRotation"))
-    tex = nt.nodes.new("ShaderNodeTexImage")
-    tex.extension = "EXTEND"  # the poles; the seam wraps through the lookup itself
     bg = nt.nodes.new("ShaderNodeBackground")
-    for node, x in ((coords, -1400), (mapping, -1200), (tex, -500), (bg, -200), (out, 0)):
-        node.location = (x, 0)
-
-    image = bpy.data.images.load(path, check_existing=True)
-    tex.image = image
-    encoding = space._str(room.get("skyboxEncoding")).lower()
-    if encoding in ("rgbm", "rgbe", "rgbp"):
-        image.colorspace_settings.name = "Non-Color"  # the packed values are data, not colour
-
-    nt.links.new(coords.outputs["Generated"], mapping.inputs["Vector"])
-    nt.links.new(_equirect_uv(nt, mapping.outputs["Vector"]), tex.inputs["Vector"])
-    if encoding in ("rgbm", "rgbe", "rgbp"):
-        nt.links.new(_decode(nt, tex, encoding), bg.inputs["Color"])
-    else:
-        nt.links.new(tex.outputs["Color"], bg.inputs["Color"])
+    bg.inputs["Strength"].default_value = strength
+    nt.links.new(_sky_color(nt, coords.outputs["Generated"], image, encoding, level, yaw), bg.inputs["Color"])
+    for i, node in enumerate(sorted(nt.nodes, key=lambda n: n.type == "OUTPUT_WORLD")):
+        node.location = (200 * i - 200 * len(nt.nodes), 0)
 
     _show_world(context)
 
-    intensity = room.get("skyboxIntensity")
-    bg.inputs["Strength"].default_value = float(intensity) if isinstance(intensity, (int, float)) else 1.0
-
-    if room.get("skyboxHidden") is True:
+    hidden = room.get("skyboxHidden") is True
+    if hidden:
         # The app keeps the lighting but draws no sky: show the background to rays, not the camera.
         light_path = nt.nodes.new("ShaderNodeLightPath")
         mix = nt.nodes.new("ShaderNodeMixShader")
@@ -196,4 +365,6 @@ def apply(context, space_id, title, room, files):
         nt.links.new(mix.outputs["Shader"], out.inputs["Surface"])
     else:
         nt.links.new(bg.outputs["Background"], out.inputs["Surface"])
+    if url and not hidden and room.get("skyboxType") in ("dome", "box"):
+        _sky_mesh(context, space_id, title, room, image, encoding, yaw, strength)
     return ""
