@@ -133,11 +133,36 @@ class ARRIVAL_PT_space(bpy.types.Panel):
         row.operator("arrival.push", text=f"Push ({pending})" if pending else "Push", icon="EXPORT")
         op = row.operator("arrival.open_space", text="", icon="FILE_REFRESH")
         op.space_id, op.title = sp.space_id, sp.title
+        row.operator("arrival.check_live", text="", icon="URL")
 
+        notes = []
+        live = state.live_changes.get(sp.space_id, 0)
+        if live:
+            notes.append(f"The live space has {live} change{'s' if live != 1 else ''}.")
+        outdated = sum(1 for r in space.entity_roots(context.scene, sp.space_id) if r.arrival.outdated)
+        if outdated:
+            notes.append(f"{outdated} changed since this file was saved.")
+        unseen = space.unseen_count(context.scene)
+        if unseen:
+            notes.append(f"{unseen} in the space aren't in this file.")
+        if notes:
+            box = layout.box()
+            col = box.column(align=True)
+            for i, note in enumerate(notes):
+                col.label(text=note, icon="ERROR" if i == 0 else "BLANK1")
+            col.label(text="Reload to get them.", icon="BLANK1")
+
+        deletions = space.pending_deletes(context.scene, sp.space_id, sp.workspace)
+        if deletions:
+            box = layout.box()
+            col = box.column(align=True)
+            col.label(text=f"Push deletes {len(deletions)}:", icon="TRASH")
+            for d in deletions[:6]:
+                col.label(text=d.name + (" (hide)" if d.hide else ""), icon="BLANK1")
+            if len(deletions) > 6:
+                col.label(text=f"and {len(deletions) - 6} more", icon="BLANK1")
+            col.label(text="Undo or Reload to keep them.", icon="INFO")
         layout.prop(wm, "live", toggle=True, icon="REC" if wm.live else "PLAY")
-        if any(c.get("arrival_hub") for c in context.scene.collection.children_recursive):
-            layout.prop(sp, "hub_selectable", toggle=True,
-                        icon="RESTRICT_SELECT_OFF" if sp.hub_selectable else "RESTRICT_SELECT_ON")
         loose = space.loose_objects(context.selected_objects)
         layout.operator("arrival.new_entity", text="New Entity from Selection" if loose else "New Entity", icon="ADD")
         layout.operator("arrival.open_folder", icon="FILE_FOLDER")
@@ -184,6 +209,14 @@ class ARRIVAL_PT_entity(bpy.types.Panel):
             box.label(text="Moving it counts as a model edit.")
             box.operator("arrival.select_entity", icon="RESTRICT_SELECT_OFF")
 
+        if a.outdated:
+            col = layout.column(align=True)
+            col.label(text="Changed since this file was saved.", icon="ERROR")
+            col.label(text="Not pushed; Reload updates it.", icon="BLANK1")
+        if space.is_restored(root, context.scene.arrival.workspace):
+            col = layout.column(align=True)
+            col.label(text="Deleted from the space; Push", icon="LOOP_BACK")
+            col.label(text="brings it back as it was.", icon="BLANK1")
         if a.read_only:
             col = layout.column(align=True)
             col.label(text="Read-only: the room settings place this", icon="LOCKED")

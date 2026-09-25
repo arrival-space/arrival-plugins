@@ -64,7 +64,7 @@ def _space_enum_items(self, context):
     # while a search hides it, so the picker keeps showing it.
     _space_items[:] = [
         (s.space_id, s.title, f"{s.space_id} · {s.privacy or 'Open'} · {s.visits} visits",
-         thumbs.icon_id(s.space_id) or _NO_IMAGE_ICON, i)
+         thumbs.icon_id(s.space_id, s.change_date) or _NO_IMAGE_ICON, i)
         for i, s in enumerate(self.spaces) if i == self.space_index or space_matches(self, s)
     ]
     return _space_items
@@ -152,22 +152,15 @@ class ExportSettings(bpy.types.PropertyGroup):
     attributes: BoolProperty(name="Custom Attributes", description="Mesh attributes beyond the standard ones")
 
 
-def _hub_selectable_changed(self, context):
-    from . import hub
-    hub.set_selectable(context.scene, self.hub_selectable)
-
-
 class SceneProps(bpy.types.PropertyGroup):
     """The space open in this scene."""
     space_id: StringProperty()
     title: StringProperty()
     workspace: StringProperty(subtype="DIR_PATH")
-    hub_selectable: BoolProperty(
-        name="Hub Selectable",
-        description="Let the hub be clicked and picked, e.g. with a modifier's eyedropper. It still can't be "
-                    "moved, and it's never pushed",
-        update=_hub_selectable_changed,
-    )
+    # The entity ids this scene has objects for (built, created or restored here), one per line.
+    # Only these can be deleted by a Push: an entity the workspace has but this file never saw
+    # (added live and pulled after it was saved) isn't a delete.
+    known_ids: StringProperty()
     export: PointerProperty(type=ExportSettings)
 
 
@@ -185,6 +178,12 @@ class ObjectProps(bpy.types.PropertyGroup):
     # Reload keeps the object (modifiers and all) while the entity's live file is still this one.
     source_url: StringProperty()
     export_size: IntProperty()  # bytes of this model's last export, shown in the Entity panel
+    # Which version of its entity file the object matches (space.entity_sha), so a session .blend
+    # saved before a later push or Reload can tell its objects from newer workspace files.
+    synced_sha: StringProperty()
+    # Behind the workspace in a way opening the file can't catch up on (its model was replaced, or
+    # the entity deleted, since the file was saved): left out of pushes until a Reload.
+    outdated: BoolProperty()
     # The stretch (non-uniform scale) a Push baked into the model: object matrix = entity matrix
     # times this. See space.unstretch.
     model_offset: FloatVectorProperty(size=(4, 4), subtype="MATRIX",

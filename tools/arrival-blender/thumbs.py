@@ -1,6 +1,7 @@
 # Space tile images: the same square thumbnails as the client's space grid, i.e. the space's
 # <room>_SEO.jpeg resized by the UGC transform service.
 
+import os
 import urllib.parse
 
 import bpy
@@ -37,8 +38,25 @@ def load(paths):
         _paths[sid] = path
 
 
-def icon_id(space_id):
+def cache_dir():
+    from .props import workspaces_dir
+    return os.path.join(workspaces_dir(bpy.context), ".cache", "thumbs")
+
+
+def icon_id(space_id, version):
+    """The tile's icon. A space the list shows without its image having been loaded this session
+    (after Reload Scripts or re-enabling the add-on, or with a list kept in a reopened file) gets
+    the copy downloaded before, if there is one."""
     path = _paths.get(space_id)
+    if path is None:
+        cached = space._cache_path(cache_dir(), url(space_id, version))
+        _paths[space_id] = path = ""  # checked once; a refresh (load) sets it anew
+        if os.path.isfile(cached) and os.path.getsize(cached) > 0:
+            try:
+                load({space_id: cached})
+                path = cached
+            except (RuntimeError, KeyError) as e:
+                print(f"[arrival] space image {space_id}: {e}")
     return _previews[path].icon_id if path in _previews else 0
 
 

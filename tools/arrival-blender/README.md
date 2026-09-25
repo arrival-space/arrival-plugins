@@ -41,6 +41,22 @@ Open the **Arrival** tab in the 3D viewport sidebar (`N`).
    collection moves to the scene's collection.
 3. Edit, then **Push**. Turn on **Live** to push moves, renames and folder changes automatically.
 
+### Sessions
+
+Each space has its own `.blend`, saved in its workspace (`~/ArrivalSpaces/<spaceId>/<spaceId>.blend`):
+
+- **Load** opens the space's file. The first time, it starts an empty file (your startup file's
+  layout, none of its objects), builds the space in it and saves it there. If the file open now has unsaved changes, Load asks first.
+- Opening a space's file (by Load or *File > Open*) picks up where you left it: modifiers, your own
+  objects, unpushed edits. The add-on then checks the live space in the background, and *Open Space*
+  says when it changed; **Reload** brings the changes in (the globe button checks again).
+- A full **Push** and **Reload** save the file, so it matches the live space. Live pushes don't.
+- A file saved before a later push or Reload (a Live push you didn't save, say) is caught up when
+  it opens: moved entities take their pushed placement and entities deleted since are removed, so an
+  old file never pushes its older state back. What it can't catch up on (a model replaced since, an
+  entity it never had) is listed in *Open Space* and left out of pushes until a Reload.
+- Splats are stored in the file as meshes, so spaces with big splats make big files.
+
 | Entity content      | In Blender                           | What syncs                          |
 | ------------------- | ------------------------------------ | ----------------------------------- |
 | `.glb` model        | The imported model                   | Transform, and the model itself     |
@@ -95,6 +111,14 @@ Open the **Arrival** tab in the 3D viewport sidebar (`N`).
   free camera, shown in the *Entity* panel) are bright, the others dimmed. Moving and turning one
   syncs its position, yaw and pitch, as the app's gizmo saves them: roll and scale are locked, since
   the entity can't store them. The default roles are read, not edited.
+- **Deleting**: delete an entity's object (for a multi-part model, its Empty; deleting parts is a
+  model edit) and Push deletes it from the space. *Open Space* lists what the next Push deletes,
+  and Push asks first, warning when a spawn point holds a default role. Live never deletes. As in
+  the app, deleting a portal hides it (`hideBackPortal` / `hideHomePortal` / `hideFeaturedPortal`)
+  instead, and the old centre asset can't be deleted from Blender. Undo (Ctrl+Z) brings a deleted
+  object back: before the Push that keeps the entity, after it the next Push re-creates it as it
+  was. The app also keeps a snapshot of the space before every push. Nothing is deleted while the
+  space's collection isn't in the scene.
 - **Reload** (the refresh button) pulls again and rebuilds the space's objects, except edited
   models and splats whose live file is still the one you have (see below).
 - **Reload keeps your model**: each model and splat remembers the file it matches, the one it was
@@ -159,9 +183,8 @@ data, it ships with the app, so the add-on reads it from the published app at
 - each static gate's content: a gate with a link gets its ramp and opening, an empty gate its cap
 
 The hub is reference geometry: it can't be moved and is never pushed. To restyle it, change those
-settings in the space. It isn't selectable, so clicks reach the entities; turn on **Hub Selectable**
-(in *Open Space*) to click it or pick it with an eyedropper. Its parts can be targets of your
-models' modifiers (a Shrinkwrap onto the floor, a Boolean against a wall): pick one in the
+settings in the space. It isn't selectable, so clicks reach the entities. Its parts can be targets
+of your models' modifiers (a Shrinkwrap onto the floor, a Boolean against a wall): pick one in the
 modifier's object field, whose list always includes them. Reload keeps each part's object, so
 those targets survive; a part the space's settings turn off is removed, and its targets are
 cleared. Hub parts can't be made part of an entity.
@@ -169,8 +192,10 @@ cleared. Hub parts can't be made part of an entity.
 ## Limits
 
 - Spawn points can't be created from Blender yet; add them in the app.
-- No deleting entities from Blender yet: a deleted object comes back on Reload. Copies of images,
-  plugins, splats and placeholders block the push (copies of models become new entities).
+- Copies of images, plugins, splats and placeholders block the push (copies of models become new
+  entities).
+- Deleting a plugin from Blender leaves its vibe-install record on the server (the app removes it;
+  the CLI's push doesn't yet).
 - Last writer wins: a push overwrites changes other people made to the same entities since your
   pull. Reload before big edits.
 - Pushes go through the CLI's server-side pipeline, so they take a few seconds, and the CLI is

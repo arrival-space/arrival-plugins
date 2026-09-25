@@ -391,16 +391,10 @@ def is_hub_object(ob):
     return "arrival_hub_part" in ob
 
 
-def set_selectable(scene, selectable):
-    for ob in scene.objects:
-        if is_hub_object(ob):
-            ob.hide_select = not selectable
-
-
-def build(space_coll, hub, selectable=False):
+def build(space_coll, hub):
     """Build or update the space's Hub collection. A part keeps its object across rebuilds (keyed by
     its entity in the app's scene), so modifiers of other objects that target it keep their target.
-    Unselectable by default, so clicks reach the entities; its transforms are always locked."""
+    It can't be selected, so clicks reach the entities, and its transforms are locked."""
     coll = hub_collection(space_coll)
     if coll is None:
         coll = bpy.data.collections.new("Hub")
@@ -433,7 +427,7 @@ def build(space_coll, hub, selectable=False):
             ob.name = part["name"]
         ob.matrix_world = space.C @ Matrix(part["matrix"]) @ space.C_INV
         ob.lock_location = ob.lock_rotation = ob.lock_scale = (True,) * 3
-        ob.hide_select = not selectable
+        ob.hide_select = True
     # Parts the space's settings turned off, and objects of older builds (without a part id).
     for ob in existing.values():
         bpy.data.objects.remove(ob, do_unlink=True)

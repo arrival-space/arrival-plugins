@@ -16,6 +16,8 @@ class _State:
     status = ""       # progress line shown in the panel
     last = ""         # result of the last operation
     live_last = None  # changed-entity snapshot from the previous live tick
+    pending = None    # {sid, title, new}: a space to finish loading once its file has opened
+    live_changes = {}  # space id -> files the live space has changed since the workspace (check_live)
 
 
 state = _State()
@@ -41,8 +43,89 @@ def unpushed_count(scene):
     if not sp.space_id:
         return 0
     pending = space.pending_roots(scene, sp.space_id, sp.workspace)
-    edited = [r for r in space.entity_roots(scene, sp.space_id) if r.arrival.model_edited or space.stretched(r)]
-    return len(set(pending) | set(edited))
+    edited = [r for r in space.entity_roots(scene, sp.space_id) if not r.arrival.outdated and (
+        r.arrival.model_edited or space.stretched(r) or space.is_restored(r, sp.workspace))]
+    return len(set(pending) | set(edited)) + len(space.pending_deletes(scene, sp.space_id, sp.workspace))
+
+
+def _pull_workspace(sid, ws, keep_trash=False):
+    """Pull the space into a fresh folder and swap it in: `arrival pull --force` would keep files of
+    entities deleted since the last pull, and they'd come back on the next push. keep_trash carries
+    over the deleted entities' files (space.carry_trash), for a re-pull that keeps the scene."""
+    tmp = ws + ".pull"
+    shutil.rmtree(tmp, ignore_errors=True)
+    try:
+        yield cli.run(prefs(bpy.context).cli_path, ["pull", sid, "--dir", tmp])
+    except BaseException:
+        shutil.rmtree(tmp, ignore_errors=True)
+        raise
+    if keep_trash:
+        space.carry_trash(ws, tmp)
+    space.carry_sessions(ws, tmp)
+    shutil.rmtree(ws, ignore_errors=True)
+    os.replace(tmp, ws)
+
+
+def _window_override():
+    wm = bpy.context.window_manager
+    return bpy.context.temp_override(window=wm.windows[0]) if wm.windows else bpy.context.temp_override()
+
+
+def _later(fn, delay=0.05):
+    """Run fn from a timer, with a window: after a file load, or where an operator can't open one."""
+    def run():
+        try:
+            with _window_override():
+                fn()
+        except Exception as e:  # an uncaught error would only reach the console
+            print(f"[arrival] {e}")
+            state.last = str(e).splitlines()[0]
+            redraw()
+        return None
+    bpy.app.timers.register(run, first_interval=delay)
+
+
+def _save_session(path=None):
+    """Save the scene as its space's session file: to `path` (a new session), or when the file
+    open now is that session anyway (a Push or Reload keeps it in step with the workspace)."""
+    sp = bpy.context.scene.arrival
+    session = space.session_path(sp.workspace, sp.space_id)
+    if path is None and os.path.normcase(os.path.abspath(bpy.data.filepath or "")) != os.path.normcase(session):
+        return
+    try:
+        with _window_override():
+            if path is None:
+                bpy.ops.wm.save_mainfile()
+            else:
+                bpy.ops.wm.save_as_mainfile(filepath=path)
+    except RuntimeError as e:
+        print(f"[arrival] saving the session: {e}")
+
+
+def _begin_session(sid, title):
+    """Open the space's session file, or start one from an empty file (the startup file's layout,
+    none of its objects). The load ends this operator; _on_load_post picks the space up from
+    state.pending."""
+    path = space.session_path(workspace_path(sid), sid)
+    state.pending = {"sid": sid, "title": title, "new": not os.path.isfile(path)}
+
+    def switch():
+        if state.pending["new"]:
+            bpy.ops.wm.read_homefile(use_empty=True)
+        else:
+            bpy.ops.wm.open_mainfile(filepath=path)
+    _later(switch)
+
+
+def _push_summary(result):
+    """One line for the panel from cli.parse_push."""
+    applied = result["applied"]
+    if result["status"] in ("nothing", "noChanges"):
+        return "Nothing to push"
+    deleted = sum(1 for op, _target in applied if op == "delete entity")
+    changed = len(applied) - deleted
+    parts = ([f"pushed {changed} change{'s' if changed != 1 else ''}"] if changed else []) + ([f"deleted {deleted}"] if deleted else [])
+    return (", ".join(parts) or "nothing pushed").capitalize()
 
 
 class _AsyncOp:
@@ -135,7 +218,7 @@ def _refresh_spaces():
     spaces = [(s.space_id, s.change_date) for s in wm.spaces]
     state.status = "Loading space images…"
     try:
-        paths = yield cli.Task(thumbs.fetch, spaces, os.path.join(cache_dir(), "thumbs"))
+        paths = yield cli.Task(thumbs.fetch, spaces, thumbs.cache_dir())
     except Exception as e:  # the list is still usable without images
         print(f"[arrival] space images: {e}")
         return
@@ -184,6 +267,8 @@ class ARRIVAL_OT_open_space(_AsyncOp, bpy.types.Operator):
 
     space_id: StringProperty(options={"SKIP_SAVE", "HIDDEN"})
     title: StringProperty(options={"SKIP_SAVE", "HIDDEN"})
+    in_place: BoolProperty(options={"SKIP_SAVE", "HIDDEN"})  # build into this file (a new session)
+    save_session: BoolProperty(options={"SKIP_SAVE", "HIDDEN"})  # then save it as the session file
 
     def invoke(self, context, event):
         if not self.space_id:
@@ -194,32 +279,34 @@ class ARRIVAL_OT_open_space(_AsyncOp, bpy.types.Operator):
             item = wm.spaces[wm.space_index]
             self.space_id, self.title = item.space_id, item.title
         sp = context.scene.arrival
-        if unpushed_count(context.scene):
-            same = sp.space_id == self.space_id
+        if sp.space_id == self.space_id:
+            if unpushed_count(context.scene):
+                return context.window_manager.invoke_confirm(
+                    self, event, title="Discard unpushed changes?",
+                    message="Reloading takes the live version of the space: deleted entities come back. Models "
+                            "that are still the file you loaded or pushed keep their Blender edits.",
+                    confirm_text="Reload", icon="WARNING",
+                )
+        elif bpy.data.is_dirty:
             return context.window_manager.invoke_confirm(
-                self, event, title="Discard unpushed changes?",
-                message="Reloading takes the live version of the space. Models that are still the file "
-                        "you loaded or pushed keep their Blender edits." if same
-                else f"Loading {self.title} removes {sp.title} from this scene.",
-                confirm_text="Reload" if same else "Load", icon="WARNING",
+                self, event, title="Leave this file?",
+                message=f"{self.title} opens in its own file. Unsaved changes in this one are lost.",
+                confirm_text="Load", icon="WARNING",
             )
         return self.execute(context)
+
+    def execute(self, context):
+        # Each space has its own session file: loading another one switches files.
+        if not self.in_place and context.scene.arrival.space_id != self.space_id.strip():
+            _begin_session(self.space_id.strip(), self.title)
+            return {"FINISHED"}
+        return super().execute(context)
 
     def steps(self):
         sid = self.space_id.strip()
         ws = workspace_path(sid)
-        tmp = ws + ".pull"
-        shutil.rmtree(tmp, ignore_errors=True)
-        # Pull into a fresh folder and swap: `arrival pull --force` would keep files of entities
-        # deleted since the last pull, and they'd come back on the next push.
         state.status = f"Pulling {sid}…"
-        try:
-            yield cli.run(prefs(bpy.context).cli_path, ["pull", sid, "--dir", tmp])
-        except BaseException:
-            shutil.rmtree(tmp, ignore_errors=True)
-            raise
-        shutil.rmtree(ws, ignore_errors=True)
-        os.replace(tmp, ws)
+        yield from _pull_workspace(sid, ws)
 
         entities = space.load_entities(ws)
         room = space.read_room(ws)
@@ -258,7 +345,7 @@ class ARRIVAL_OT_open_space(_AsyncOp, bpy.types.Operator):
             warnings.append(sky_error)
         coll = space.space_collection(context.scene, sid, title)
         if hub_data:
-            hub.build(coll, hub_data, context.scene.arrival.hub_selectable)
+            hub.build(coll, hub_data)
         else:
             hub.remove(coll)
         if hub_error:
@@ -266,6 +353,8 @@ class ARRIVAL_OT_open_space(_AsyncOp, bpy.types.Operator):
         sp = context.scene.arrival
         sp.space_id, sp.title, sp.workspace = sid, title, ws
         bpy.ops.ed.undo_push(message="Open Arrival space")
+        state.live_changes[sid] = 0
+        _save_session(space.session_path(ws, sid) if self.save_session else None)
         state.last = f"Loaded {len(entities)} entities"
         if warnings:
             for w in warnings:
@@ -286,6 +375,16 @@ class ARRIVAL_OT_push(_AsyncOp, bpy.types.Operator):
     def poll(cls, context):
         return super().poll(context) and bool(context.scene.arrival.space_id)
 
+    def invoke(self, context, event):
+        sp = context.scene.arrival
+        deletions = [] if self.transforms_only else space.pending_deletes(context.scene, sp.space_id, sp.workspace)
+        if deletions:
+            return context.window_manager.invoke_confirm(
+                self, event, title="Delete from the live space?", message=space.describe_deletes(deletions),
+                confirm_text="Push", icon="WARNING",
+            )
+        return self.execute(context)
+
     def steps(self):
         context = bpy.context
         cli_path = prefs(context).cli_path
@@ -295,6 +394,9 @@ class ARRIVAL_OT_push(_AsyncOp, bpy.types.Operator):
             raise space.EntityError("The space's workspace folder is missing. Reload the space.")
         export_dir = os.path.join(cache_dir(), "exports", re.sub(r"[^A-Za-z0-9_-]", "_", sid))
         items = space.prepare_push(context, sid, ws, export_dir, include_models=not self.transforms_only)
+        # Deletes only go with a full Push, which the invoke confirmed (Live never deletes).
+        deletions = [] if self.transforms_only else space.pending_deletes(context.scene, sid, ws)
+        done = space.apply_deletes(ws, deletions)
         try:
             for item in items:
                 if item.export_path:
@@ -307,13 +409,40 @@ class ARRIVAL_OT_push(_AsyncOp, bpy.types.Operator):
                     item.url = url
             space.write(items)
             state.status = "Pushing…"
-            out = yield cli.run(cli_path, ["push", "--dir", ws])
+            args = ["push", "--dir", ws] + (["--force"] if done["files"] else [])
+            result = cli.parse_push(*(yield cli.run(cli_path, args, check=False)))
         except BaseException:
+            space.rollback_deletes(ws, done)
             space.mark_failed(items)
             raise
-        space.mark_pushed(items)
-        state.last = (out.strip().splitlines() or ["Pushed"])[0].replace("✓ ", "")
+        failed_ids = {target for _op, target, _error in result["failed"]}
+        failed_items = [i for i in items if i.entity.get("id") in failed_ids]
+        space.mark_failed(failed_items)
+        space.mark_pushed([i for i in items if i not in failed_items], ws)
+        # The entities this scene knows: the ones it created or restored, not the ones it deleted.
+        known = set(sp.known_ids.split("\n")) | {i.entity["id"] for i in items if i not in failed_items}
+        known -= {d.entity["id"] for d in deletions if not d.hide and d.entity["id"] not in failed_ids}
+        sp.known_ids = "\n".join(sorted(known - {""}))
+        state.last = _push_summary(result)
+        # The CLI's baseline can now disagree with the live space: after a partial push it counts the
+        # failed writes as done, and after "nothing to do" (e.g. an entity already deleted live) it
+        # keeps the deletes, so every later push would send them again. Re-pull the workspace:
+        # whatever didn't reach the space is pending again, and the scene stays as it is.
+        if result["status"] == "partial" or (result["status"] == "noChanges" and done["files"]):
+            state.status = "Syncing the workspace…"
+            try:
+                yield from _pull_workspace(sid, ws, keep_trash=True)
+            except Exception as e:
+                self.report({"WARNING"}, f"Couldn't re-sync the workspace ({e}). Reload the space before pushing again.")
         if not self.transforms_only:
+            if not result["failed"]:
+                state.live_changes[sid] = 0  # the live space is what was just pushed
+            _save_session()
+        if result["failed"]:
+            state.last += f", {len(result['failed'])} failed"
+            lines = [f"{op} {target}: {error}" for op, target, error in result["failed"]]
+            self.report({"WARNING"}, "Some changes weren't saved and are still pending:\n" + "\n".join(lines[:8]))
+        elif not self.transforms_only:
             self.report({"INFO"}, state.last)
 
     def failed(self):
@@ -321,6 +450,31 @@ class ARRIVAL_OT_push(_AsyncOp, bpy.types.Operator):
             # Don't retry a failing push every second.
             bpy.context.window_manager.arrival.live = False
             state.last = "Live stopped: " + state.last
+
+
+class ARRIVAL_OT_check_live(_AsyncOp, bpy.types.Operator):
+    bl_idname = "arrival.check_live"
+    bl_label = "Check Live Space"
+    bl_description = "See whether the live space changed since your last pull or push"
+
+    @classmethod
+    def poll(cls, context):
+        sp = context.scene.arrival
+        return super().poll(context) and bool(sp.space_id) and os.path.isdir(os.path.join(sp.workspace, ".arrival"))
+
+    def steps(self):
+        sp = bpy.context.scene.arrival
+        sid, ws = sp.space_id, sp.workspace
+        tmp = ws + ".check"
+        shutil.rmtree(tmp, ignore_errors=True)
+        state.status = "Checking the live space…"
+        try:
+            yield cli.run(prefs(bpy.context).cli_path, ["pull", sid, "--dir", tmp])
+            changes = space.live_changes(ws, tmp)
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+        state.live_changes[sid] = changes
+        state.last = f"The live space has {changes} change{'s' if changes != 1 else ''}" if changes else "Up to date with the live space"
 
 
 class ARRIVAL_OT_cancel(bpy.types.Operator):
@@ -575,6 +729,26 @@ def _on_load_post(*_args):
     wm = bpy.context.window_manager
     if wm.arrival.live:
         wm.arrival.live = False
+    pending, state.pending = state.pending, None
+    if pending and pending["new"]:
+        # A new session: the startup file is open; build the space in it and save it.
+        _later(lambda: bpy.ops.arrival.open_space(
+            "EXEC_DEFAULT", space_id=pending["sid"], title=pending["title"], in_place=True, save_session=True))
+        return
+    sp = bpy.context.scene.arrival
+    if not sp.space_id:
+        return
+    # A session file (by Load or File > Open): catch it up with the workspace, then see whether
+    # the live space moved on.
+    updated, outdated, unseen = space.reconcile(bpy.context.scene)
+    notes = [f"{len(updated)} caught up"] * bool(updated) + [f"{len(outdated)} outdated"] * bool(outdated) \
+        + [f"{unseen} new in the workspace"] * bool(unseen)
+    state.last = f"Opened {sp.title}" + (f" ({', '.join(notes)})" if notes else "")
+    for i, item in enumerate(wm.arrival.spaces):
+        if item.space_id == sp.space_id:
+            wm.arrival.space_index = i
+    if os.path.isdir(os.path.join(sp.workspace, ".arrival")):
+        _later(lambda: bpy.ops.arrival.check_live("EXEC_DEFAULT"), delay=0.5)
 
 
 @persistent
@@ -586,7 +760,7 @@ classes = (
     ARRIVAL_OT_login, ARRIVAL_OT_logout, ARRIVAL_OT_refresh_spaces, ARRIVAL_OT_open_space,
     ARRIVAL_OT_push, ARRIVAL_OT_cancel, ARRIVAL_OT_select_entity, ARRIVAL_OT_new_entity,
     ARRIVAL_OT_add_part, ARRIVAL_OT_add_to_entity, ARRIVAL_OT_open_folder, ARRIVAL_OT_revert_model,
-    ARRIVAL_OT_export_preset,
+    ARRIVAL_OT_export_preset, ARRIVAL_OT_check_live,
 )
 
 

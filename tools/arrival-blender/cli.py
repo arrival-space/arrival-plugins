@@ -6,6 +6,7 @@
 import glob
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -108,7 +109,7 @@ class Task:
             self.proc.terminate()
 
 
-def _run_cli(task, argv):
+def _run_cli(task, argv, check=True):
     kwargs = {}
     if sys.platform == "win32":
         kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
@@ -119,15 +120,49 @@ def _run_cli(task, argv):
     out, err = task.proc.communicate()
     if task.cancelled:
         raise CliError("Cancelled")
+    if not check:
+        return task.proc.returncode, out, err
     if task.proc.returncode != 0:
         msg = (err.strip() or out.strip() or f"arrival exited with code {task.proc.returncode}")
         raise CliError(msg.replace("✗ ", ""))
     return out
 
 
-def run(cli_path, args, label=""):
-    """Start `arrival <args>` in the background; the Task's result is its stdout."""
-    return Task(_run_cli, resolve_command(cli_path) + list(args), label=label)
+def run(cli_path, args, label="", check=True):
+    """Start `arrival <args>` in the background; the Task's result is its stdout. With check=False
+    it's (exit code, stdout, stderr), and a failing exit code isn't an error."""
+    return Task(_run_cli, resolve_command(cli_path) + list(args), check, label=label)
+
+
+_APPLIED = re.compile(r"^  (\S+ \S+) (.+)$")
+_FAILED = re.compile(r"^  ! (\S+ \S+) (.+?): (.*)$")
+
+
+def parse_push(code, out, err):
+    """What `arrival push` did, read from its output: {status, applied: [(op, target)],
+    failed: [(op, target, error)]}. status is "nothing" (the workspace matches the last pull),
+    "noChanges" (the server had nothing to do; the CLI keeps its baseline then), "ok" or "partial"
+    (some writes failed; the CLI marks them done anyway). Anything else raises CliError."""
+    lines = out.splitlines()
+    head = next((l for l in lines if l.startswith("✓")), "")
+    if head.startswith("✓ Pushed"):
+        applied, failed = [], []
+        for line in lines:
+            m = _FAILED.match(line)
+            if m:
+                failed.append((m.group(1), m.group(2), m.group(3)))
+                continue
+            m = _APPLIED.match(line)
+            if m:
+                applied.append((m.group(1), m.group(2)))
+        partial = "(some writes failed)" in head or bool(failed)
+        return {"status": "partial" if partial else "ok", "applied": applied, "failed": failed}
+    if code == 0 and head.startswith("✓ Nothing to push —"):
+        return {"status": "nothing", "applied": [], "failed": []}
+    if code == 0 and head.startswith("✓ Nothing to push"):
+        return {"status": "noChanges", "applied": [], "failed": []}
+    msg = err.strip() or out.strip() or f"arrival exited with code {code}"
+    raise CliError(msg.replace("✗ ", ""))
 
 
 def parse_json_output(out):

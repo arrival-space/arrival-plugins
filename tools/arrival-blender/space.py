@@ -20,6 +20,17 @@
 # stretch into the uploaded GLB and keeps it on the object as model_offset: the object's matrix is
 # the entity matrix times model_offset (for raw_axes splats that offset is C).
 #
+# Deleting: an entity whose pulled file is there but whose object is gone from the scene is deleted
+# by the next full Push (with a confirmation), the way the app's Content panel does it: its file is
+# removed and `arrival push --force` deletes it live. A portal isn't deleted but hidden, as in the
+# app. The removed file is kept in the workspace's trash, so undoing the delete in Blender brings
+# the entity back on the next Push, with its original data.
+#
+# Sessions: a space's scene is saved as <workspace>/<id>.blend. Each object records the version of
+# its entity file it matches (synced_sha) and the scene which entities it has seen (known_ids), so
+# a session saved before a later push or Reload can be reconciled on open (reconcile) instead of
+# its older state being pushed back over the live space.
+#
 # Editable content (models, images, Splatlight splats) remembers the file it matches (source_url): the one it
 # was imported from, or the one a Push uploaded it as. On Reload, an entity whose live file is still
 # that one keeps its Blender object, modifiers and all, and only takes the live placement, name,
@@ -1018,6 +1029,8 @@ def build(context, space_id, title, ws, entities, files, default_sky=None):
                     a.model_offset = Matrix.Identity(4)
                     a.model_edited = False
                     a.source_url = _source(data, kind) if is_editable(root) else ""
+                a.synced_sha = entity_sha(ent)
+                a.outdated = False
                 a.spawn_third_person = bool(data.get("isDefaultThirdPerson"))
                 a.spawn_free_cam = bool(data.get("isDefaultFreeCam"))
                 # The room's settings place a centre asset, and this add-on doesn't write those.
@@ -1032,12 +1045,13 @@ def build(context, space_id, title, ws, entities, files, default_sky=None):
         finally:
             view_layer.active_layer_collection = prev_active
         view_layer.update()
+        scene.arrival.known_ids = "\n".join(ent["id"] for _rel, ent in entities)
         for root, ent, folder in built:
             if root not in kept.values():
                 # A kept model keeps its signature: edits made since the push still count.
                 root.arrival.signature = content_signature(root)
             set_synced(root, {"matrix": entity_matrix(root), "name": panel_name(ent), "folder": folder})
-            hidden = bool(effective_data(ent, room).get("hidden"))
+            hidden = bool(effective_data(ent, room).get("hidden")) or portal_hidden(ent, room)
             if hidden or root in kept.values():
                 for ob in (root, *root.children_recursive):
                     ob.hide_set(hidden)
@@ -1048,6 +1062,246 @@ def build(context, space_id, title, ws, entities, files, default_sky=None):
         warnings.append(f"{splat_placeholders} splats show as placeholder cubes. "
                         "Install the Splatlight LITE add-on to see and edit them")
     return warnings
+
+
+# ---- deleting ----
+
+TRASH_DIR = os.path.join(".arrival-blender", "deleted")  # outside space/, so the CLI never sends it
+# navigation-portal-entity.js: deleting a portal in the app hides it with these room flags.
+PORTAL_FLAGS = {"back": "hideBackPortal", "home": "hideHomePortal", "featured": "hideFeaturedPortal"}
+
+
+def portal_hidden(ent, room):
+    flag = PORTAL_FLAGS.get(ent["data"].get("kind")) if ent.get("type") == "NavigationPortal" else None
+    return bool(flag) and room.get(flag) is True
+
+
+def trash_path(ws, rel):
+    return os.path.join(ws, TRASH_DIR, os.path.basename(rel))
+
+
+_pulled = {}  # workspace -> (entities dir mtime, load_entities): the panels ask on every redraw
+
+
+def pulled_entities(ws):
+    """load_entities, re-read only when a file is added to or removed from the entities folder
+    (this add-on rewrites files in place, which never changes an entity's id or type)."""
+    try:
+        key = os.stat(os.path.join(ws, "space", "entities")).st_mtime_ns
+    except OSError:
+        return []
+    if _pulled.get(ws, (None,))[0] != key:
+        _pulled[ws] = (key, load_entities(ws))
+    return _pulled[ws][1]
+
+
+class Deletion:
+    def __init__(self, rel, entity, hide):
+        self.rel = rel
+        self.entity = entity
+        self.hide = hide  # a portal: hidden with its room flag, not deleted
+        self.name = panel_name(entity)
+
+
+def pending_deletes(scene, space_id, ws):
+    """Pulled entities whose object is gone from the scene. Nothing while the space's collection
+    isn't in the scene, so unlinking it can't delete the whole space. The old centre asset is
+    read-only (its placement is the room's) and is never deleted from here."""
+    if not ws or not any(c.get("arrival_space_id") == space_id for c in scene.collection.children_recursive):
+        return []
+    present = {r.arrival.entity_id for r in entity_roots(scene, space_id)}
+    # A file from before known_ids was recorded knows every pulled entity.
+    known = set(scene.arrival.known_ids.split("\n")) if scene.arrival.known_ids else None
+    room, out = None, []
+    for rel, ent in pulled_entities(ws):
+        if ent["id"] in present or (known is not None and ent["id"] not in known) or ent.get("type") == "CenterAsset":
+            continue
+        if ent.get("type") == "NavigationPortal":
+            room = read_room(ws) if room is None else room
+            if ent["data"].get("kind") not in PORTAL_FLAGS or portal_hidden(ent, room):
+                continue
+            out.append(Deletion(rel, ent, hide=True))
+        else:
+            out.append(Deletion(rel, ent, hide=False))
+    return out
+
+
+def describe_deletes(deletions, limit=8):
+    """The confirmation's text: what goes, and what that changes in the space."""
+    lines = []
+    gone = [d for d in deletions if not d.hide]
+    hidden = [d for d in deletions if d.hide]
+    if gone:
+        names = ", ".join(d.name for d in gone[:limit]) + (f" and {len(gone) - limit} more" if len(gone) > limit else "")
+        lines.append(f"Delete {len(gone)} from the live space: {names}.")
+    if hidden:
+        lines.append("Hide " + ", ".join(d.name for d in hidden) + " (portals are hidden, not deleted).")
+    for d in gone:
+        data = d.entity["data"]
+        roles = [r for key, r in (("isDefaultThirdPerson", "avatar"), ("isDefaultFreeCam", "free camera")) if data.get(key)]
+        if d.entity.get("type") == "SpawnPoint" and roles:
+            lines.append(f"{d.name} is the default {' and '.join(roles)} spawn: visitors will start at the "
+                         "space's default position until another spawn point takes that role.")
+    lines.append("The app keeps a snapshot of the space before every push, and Undo here brings them back.")
+    return "\n".join(lines)
+
+
+def apply_deletes(ws, deletions):
+    """Remove the deleted entities' files (kept in the trash, for an undo) and set the hidden
+    portals' room flags. Returns what rollback_deletes needs to undo it."""
+    done = {"files": [], "room": None}
+    hides = [d for d in deletions if d.hide]
+    if hides:
+        room_path = os.path.join(ws, "space", "room.json")
+        with open(room_path, "rb") as f:
+            done["room"] = f.read()
+        room = read_json(room_path)
+        for d in hides:
+            room.setdefault("data", {})[PORTAL_FLAGS[d.entity["data"]["kind"]]] = True
+        write_json(room_path, room)
+    os.makedirs(os.path.join(ws, TRASH_DIR), exist_ok=True)
+    for d in deletions:
+        if d.hide:
+            continue
+        shutil.copy2(os.path.join(ws, d.rel), trash_path(ws, d.rel))
+        os.remove(os.path.join(ws, d.rel))
+        done["files"].append(d.rel)
+    return done
+
+
+def rollback_deletes(ws, done):
+    """Put back what apply_deletes changed, so those deletes are pending again."""
+    for rel in done["files"]:
+        shutil.copy2(trash_path(ws, rel), os.path.join(ws, rel))
+        os.remove(trash_path(ws, rel))
+    if done["room"] is not None:
+        with open(os.path.join(ws, "space", "room.json"), "wb") as f:
+            f.write(done["room"])
+
+
+def carry_trash(ws, new_ws):
+    """Copy the deleted entities' files from a workspace into its re-pulled replacement, leaving out
+    the ones the space still has (their delete didn't go through)."""
+    src = os.path.join(ws, TRASH_DIR)
+    if not os.path.isdir(src):
+        return
+    os.makedirs(os.path.join(new_ws, TRASH_DIR), exist_ok=True)
+    for name in os.listdir(src):
+        if not os.path.isfile(os.path.join(new_ws, "space", "entities", name)):
+            shutil.copy2(os.path.join(src, name), os.path.join(new_ws, TRASH_DIR, name))
+
+
+def entity_sha(entity):
+    """A version stamp of an entity file's content, blind to formatting and key order."""
+    return hashlib.sha1(json.dumps(entity, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+
+
+def session_path(ws, space_id):
+    return os.path.join(ws, re.sub(r"[^A-Za-z0-9_-]", "_", space_id) + ".blend")
+
+
+def carry_sessions(ws, new_ws):
+    """Move the session .blend (and Blender's .blend1 backups) into a re-pulled workspace."""
+    for name in os.listdir(ws) if os.path.isdir(ws) else []:
+        if re.search(r"\.blend\d*$", name):
+            shutil.move(os.path.join(ws, name), os.path.join(new_ws, name))
+
+
+def reconcile(scene):
+    """Bring a session saved before a later push or Reload in line with the workspace: objects
+    whose entity file moved on take its placement, name and folder; ones that can't catch up (a
+    replaced model, a deleted entity) are marked outdated. Unpushed edits saved in the file stay.
+    Returns (updated names, outdated names, number of workspace entities this file never saw)."""
+    sp = scene.arrival
+    ws = sp.workspace
+    if not sp.space_id or not os.path.isdir(os.path.join(ws, "space", "entities")):
+        return [], [], 0
+    room = read_room(ws)
+    folders = {c.get("arrival_folder_id"): c for c in bpy.data.collections if c.get("arrival_folder_id")}
+    coll = space_collection(scene, sp.space_id, sp.title)
+    updated, outdated, deleted = [], [], []
+    with suspended():
+        for root in entity_roots(scene, sp.space_id):
+            a = root.arrival
+            if not a.synced_sha or a.read_only:
+                continue  # made here and never pushed, or placed by the room
+            path = os.path.join(ws, a.file)
+            if not os.path.isfile(path):
+                if os.path.isfile(trash_path(ws, a.file)):
+                    deleted.append(root)  # deleted by a push after this file was saved
+                else:
+                    a.outdated = True  # gone from the space since this file was saved
+                    outdated.append(root.name)
+                continue
+            try:
+                ent = read_json(path)
+            except (OSError, ValueError):
+                continue
+            sha = entity_sha(ent)
+            if sha == a.synced_sha:
+                continue  # the object matches this file: any difference is an unpushed edit
+            data = effective_data(ent, room)
+            if is_editable(root) and a.source_url and _source(data, a.kind) != a.source_url:
+                a.outdated = True  # its model was replaced; only a Reload can load it
+                outdated.append(root.name)
+                continue
+            set_entity_matrix(root, data_matrix(data))
+            root.name = _blender_name(panel_name(ent))
+            for ob in (root, *root.children_recursive):
+                _move_to(ob, folders.get(_str(data.get("folderId")), coll))
+            a.synced_sha = sha
+            set_synced(root, _state(ent))
+            updated.append(root.name)
+        # An undo can't reach back past opening the file, so these stay deleted, as in the space.
+        for root in deleted:
+            updated.append(root.name)
+            for ob in (*root.children_recursive, root):
+                bpy.data.objects.remove(ob, do_unlink=True)
+    known = set(sp.known_ids.split("\n"))
+    unseen = sum(1 for _rel, ent in pulled_entities(ws) if ent["id"] not in known and ent.get("type") != "CenterAsset")
+    return updated, outdated, unseen
+
+
+def unseen_count(scene):
+    """Entities the workspace has that this file has never had objects for (pulled after it was
+    saved): a Reload brings them in."""
+    sp = scene.arrival
+    if not sp.space_id or not sp.known_ids:
+        return 0
+    known = set(sp.known_ids.split("\n"))
+    return sum(1 for _rel, ent in pulled_entities(sp.workspace)
+               if ent["id"] not in known and ent.get("type") != "CenterAsset")
+
+
+def live_changes(ws, live_ws):
+    """How many space files a fresh pull (live_ws) has that differ from the workspace's last
+    pulled or pushed state (the CLI's .arrival/base). JSON is compared as data, not text."""
+    base = os.path.join(ws, ".arrival", "base", "space")
+    base = base if os.path.isdir(base) else os.path.join(ws, "space")
+    live = os.path.join(live_ws, "space")
+
+    def files(root):
+        out = set()
+        for d, _dirs, names in os.walk(root):
+            out |= {os.path.relpath(os.path.join(d, n), root) for n in names}
+        return out - {"README.md", "logs.md"}  # generated by the server from the rest
+
+    def same(rel):
+        a, b = os.path.join(base, rel), os.path.join(live, rel)
+        if rel.endswith(".json"):
+            try:
+                return read_json(a) == read_json(b)
+            except (OSError, ValueError):
+                return False
+        with open(a, "rb") as fa, open(b, "rb") as fb:
+            return fa.read().replace(b"\r\n", b"\n") == fb.read().replace(b"\r\n", b"\n")
+    ours, theirs = files(base), files(live)
+    return len(ours ^ theirs) + sum(1 for rel in ours & theirs if not same(rel))
+
+
+def is_restored(root, ws):
+    """Deleted from the space by a Push, then brought back by an undo: the next Push re-creates it."""
+    return not os.path.isfile(os.path.join(ws, root.arrival.file)) and os.path.isfile(trash_path(ws, root.arrival.file))
 
 
 # ---- new entities ----
@@ -1061,8 +1315,8 @@ def new_entity_id():
 
 
 def is_new(root, ws):
-    """Made in Blender and not pushed yet: there's no entity file for it."""
-    return not os.path.isfile(os.path.join(ws, root.arrival.file))
+    """Made in Blender and not pushed yet: there's no entity file for it (nor a deleted one)."""
+    return not os.path.isfile(os.path.join(ws, root.arrival.file)) and not is_restored(root, ws)
 
 
 def make_entity(root, space_id):
@@ -1357,7 +1611,7 @@ def export_splat(context, root, path):
 
 
 class PushItem:
-    def __init__(self, root, path, entity, export_path, signature, matrix, offset):
+    def __init__(self, root, path, entity, export_path, signature, matrix, offset, restored=False):
         self.root = root
         self.path = path
         self.entity = entity
@@ -1366,13 +1620,15 @@ class PushItem:
         self.matrix = matrix  # the entity's pushed placement
         self.offset = offset  # the model offset the export bakes in
         self.url = None  # where the export was uploaded
+        self.restored = restored  # re-created from the trash (see is_restored)
 
 
 def pending_roots(scene, space_id, ws):
     """Entities moved, renamed or moved to another folder since the last pull/push. New and
     stretched entities aren't listed: they need a full Push, which uploads their model."""
     return [r for r in entity_roots(scene, space_id)
-            if not r.arrival.read_only and not is_new(r, ws) and not stretched(r) and any(root_changes(r, ws))]
+            if not r.arrival.read_only and not r.arrival.outdated and not is_new(r, ws) and not stretched(r)
+            and any(root_changes(r, ws))]
 
 
 def prepare_push(context, space_id, ws, export_dir, include_models):
@@ -1404,13 +1660,14 @@ def prepare_push(context, space_id, ws, export_dir, include_models):
     items, errors = [], []
     for root in roots:
         a = root.arrival
-        if a.read_only:
+        if a.read_only or a.outdated:
             continue
         path = os.path.join(ws, a.file)
-        new = not os.path.isfile(path)
+        restored = is_restored(root, ws)
+        new = not os.path.isfile(path) and not restored
         stretch = stretched(root)
-        if (new or stretch) and not include_models:
-            continue  # a Live push; the next Push creates or re-uploads it
+        if (new or restored or stretch) and not include_models:
+            continue  # a Live push; the next Push creates, restores or re-uploads it
         if new and not any(o.type in MODEL_TYPES for o in (root, *root.children_recursive)):
             errors.append(f"{root.name}: a new entity needs a mesh. Add a part to it, or delete it")
             continue
@@ -1418,12 +1675,22 @@ def prepare_push(context, space_id, ws, export_dir, include_models):
         signature = content_signature(root) if include_models and editable else a.signature
         model_changed = new or stretch or (include_models and editable and (a.model_edited or signature != a.signature))
         matrix, offset = unstretch(root) if stretch else (entity_matrix(root), model_offset(root))
+        if model_changed and a.kind in MODEL_KINDS and not new and not any(
+                o.type in MODEL_TYPES for o in (root, *root.children_recursive)):
+            errors.append(f"{root.name}: its model has no mesh left. Add a part to it, or delete the entity")
+            continue
         moved, renamed, refiled = root_changes(root, ws)
         moved = moved or stretch
-        if not (moved or renamed or refiled or model_changed):
+        if not (moved or renamed or refiled or model_changed or restored):
             continue
         try:
-            entity = _new_entity_json(a.entity_id) if new else read_json(path)
+            if restored:
+                entity = read_json(trash_path(ws, a.file))
+                renamed = _base_name(root.name) != _blender_name(panel_name(entity))
+                folder = entity_folder(root)
+                refiled = folder is not None and folder != _str(entity["data"].get("folderId"))
+            else:
+                entity = _new_entity_json(a.entity_id) if new else read_json(path)
             data = entity["data"]
             write_transform(data, matrix, root.name, spawn=a.kind == "SPAWN")
         except EntityError as e:
@@ -1442,7 +1709,7 @@ def prepare_push(context, space_id, ws, export_dir, include_models):
                 data.pop("folderId", None)
         ext = ".ply" if a.kind == "SPLAT" else ".glb"
         export_path = os.path.join(export_dir, _slug(a.entity_id), _slug(root.name) + ext) if model_changed else None
-        items.append(PushItem(root, path, entity, export_path, signature, matrix, offset))
+        items.append(PushItem(root, path, entity, export_path, signature, matrix, offset, restored))
     if errors:
         raise EntityError("\n".join(errors))
 
@@ -1480,11 +1747,17 @@ def write(items):
         write_json(item.path, item.entity)
 
 
-def mark_pushed(items):
+def mark_pushed(items, ws):
     for item in items:
+        if item.restored:
+            try:
+                os.remove(trash_path(ws, item.path))
+            except OSError:
+                pass
         try:
             # The pushed matrix, not the file's: write_transform leaves sub-epsilon moves unwritten.
             set_synced(item.root, _state(item.entity, item.matrix))
+            item.root.arrival.synced_sha = entity_sha(item.entity)
             if item.export_path:
                 a = item.root.arrival
                 a.signature = item.signature
@@ -1499,6 +1772,11 @@ def mark_pushed(items):
 
 def mark_failed(items):
     for item in items:
+        if item.restored:
+            try:  # back to "restored": the file comes from the trash again next time
+                os.remove(item.path)
+            except OSError:
+                pass
         try:
             if item.export_path:
                 item.root.arrival.model_edited = True
