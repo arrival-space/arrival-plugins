@@ -167,6 +167,7 @@ All of these are **sub-fields of the single `framePosteffectParams` object**, e.
 | `farClip` | number | — | | Camera far-clip distance *(advanced; no UI control)* |
 | `moveSpeed` | number | `0.8` | 0.01–3 | Avatar movement speed |
 | `jumpHeight` | number | `1.0` | 0.0–1.5 | Avatar jump-height multiplier (max real jump ≈ 1.25 m at 1.0) |
+| `worldScale` | number | `0.7` | >0 | Scale the (real-size) avatar is shown at; a real 1 m is this many units, and everything in the space is sized to it — the hub architecture scales with it *(no UI control)*. Set when the space is created: new spaces get `1`, spaces from before the setting have none (= 0.7). **Never change it on an existing space** — placed content keeps its position and size, so it no longer fits |
 
 ---
 

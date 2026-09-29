@@ -37,8 +37,10 @@ hierarchy, plays none of them however well it is built.
 - The avatar **faces -Y** in Blender (the toes point toward -Y).
 - **Left is +X, right is -X**, mirrored exactly.
 - Feet at **z = 0**, hips **z = 1.0192**, eyes **z ≈ 1.73**, top of head **z ≈ 1.86**.
-  Overall height ~1.7 m, which is what the rest of the world is sized for: doorways ~2.1 m,
-  maximum jump ~1.25 m.
+  That is full human size, and the avatar GLB is built at it — do not pre-shrink it. The
+  platform shows every avatar at the space's world scale (`worldScale` in room.json, **0.7**
+  when unset), so at the default it stands ~1.3 units tall with eyes at ~1.2, and the rest
+  of the world is sized to that (doorways ~1.5, maximum jump ~1.25).
 - The rest pose is a relaxed **A-pose** — arms angled down and out, not a T-pose.
 
 Bone heads in the rest pose (left side; negate x for the right):

@@ -95,16 +95,22 @@ costs another generation and the result drifts from what is already in the space
 
 ## Getting the size right
 
-**1 Blender unit = 1 metre**, and the space is metric. This is the most common way a
+**1 Blender unit = 1 world unit**, and a world unit is not a metre. The avatar is a
+real-size human shown at the space's **world scale** — the `WORLD SCALE` line of the turn,
+`worldScale` in room.json, **0.7** when unset — so a real 1 m is **WORLD SCALE units**.
+Build a prop at its real dimensions × WORLD SCALE. Wrong scale is the most common way a
 generated prop lands unusable:
 
-| | |
-|---|---|
-| avatar height | ~1.7 m |
-| max jump height | **~1.25 m** — anything a visitor must hop onto stays under this |
-| doorway | ~2.1 m |
-| table | ~0.75 m |
-| chair seat | ~0.45 m |
+| | real life | at 0.7 (the default) |
+|---|---|---|
+| avatar height | ~1.86 m | **~1.3** |
+| max jump height | ~1.8 m | **~1.25** — anything a visitor must hop onto stays under this |
+| doorway | ~2.1 m | ~1.5 |
+| table | ~0.75 m | ~0.53 |
+| chair seat | ~0.45 m | ~0.32 |
+
+Avatars are the exception: they are built at full human size and the platform applies the
+world scale ([generating-avatars.md](generating-avatars.md)).
 
 Put the model's base at **z = 0** and centre it on x/y, so it sits on the floor and
 rotates about itself. The exporter handles Z-up → Y-up; build Z-up as normal.
