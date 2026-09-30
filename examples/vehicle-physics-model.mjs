@@ -177,12 +177,21 @@ export class VehiclePhysicsModel extends ArrivalScript {
     _remotePrevPos = null;
     _remotePrevRot = null;
 
+    // World scale: the lengths, speeds and forces above are tuned for the legacy 0.7 world (a real
+    // 1 m = 0.7 units). k maps them to this space's world scale; a space without one is 0.7 (k = 1).
+    // Scaled where they are used, so the values saved in a space keep their meaning.
+    get _k() {
+        const s = Number(this.app.worldScale);
+        return (s > 0 ? s : 0.7) / 0.7;
+    }
+
     _getWheels() {
+        const k = this._k;
         return [
-            { x:  this.wheelFrontX, y: this.wheelY, z:  this.wheelFrontZ, front: true  },  // FL
-            { x: -this.wheelFrontX, y: this.wheelY, z:  this.wheelFrontZ, front: true  },  // FR
-            { x:  this.wheelRearX,  y: this.wheelY, z:  this.wheelRearZ,  front: false },  // RL
-            { x: -this.wheelRearX,  y: this.wheelY, z:  this.wheelRearZ,  front: false },  // RR
+            { x:  this.wheelFrontX * k, y: this.wheelY * k, z:  this.wheelFrontZ * k, front: true  },  // FL
+            { x: -this.wheelFrontX * k, y: this.wheelY * k, z:  this.wheelFrontZ * k, front: true  },  // FR
+            { x:  this.wheelRearX * k,  y: this.wheelY * k, z:  this.wheelRearZ * k,  front: false },  // RL
+            { x: -this.wheelRearX * k,  y: this.wheelY * k, z:  this.wheelRearZ * k,  front: false },  // RR
         ];
     }
 
@@ -193,7 +202,7 @@ export class VehiclePhysicsModel extends ArrivalScript {
             const def = wheels[i];
             const we = this._wheelEntities[i];
             if (!we) continue;
-            const restY = def.y - this.suspensionRestLength + 0.02;
+            const restY = def.y - (this.suspensionRestLength - 0.02) * this._k;
             const worldPos = wt.transformPoint(new pc.Vec3(def.x, restY, def.z));
             we.setPosition(worldPos.x, worldPos.y, worldPos.z);
             we.setLocalEulerAngles(0, 180, 0);
@@ -272,12 +281,13 @@ export class VehiclePhysicsModel extends ArrivalScript {
 
         this.entity.addComponent("collision", { type: "compound" });
 
+        const k = this._k;
         const chassis = new pc.Entity("ChassisShape");
         chassis.addComponent("collision", {
             type: "box",
-            halfExtents: new pc.Vec3(this.collisionWidth, this.collisionHeight, this.collisionLength),
+            halfExtents: new pc.Vec3(this.collisionWidth * k, this.collisionHeight * k, this.collisionLength * k),
         });
-        chassis.setLocalPosition(0, this.collisionY, 0);
+        chassis.setLocalPosition(0, this.collisionY * k, 0);
         this.entity.addChild(chassis);
         this._shapeEntities.push(chassis);
 
@@ -315,7 +325,7 @@ export class VehiclePhysicsModel extends ArrivalScript {
             const { entity } = await this.createModel(this.chassisModelUrl, {
                 parent: this.entity,
                 name: "ChassisModel",
-                scale: this.chassisScale,
+                scale: this.chassisScale * this._k,
             });
             this._chassisModelEntity = entity;
         } catch (err) {
@@ -337,7 +347,7 @@ export class VehiclePhysicsModel extends ArrivalScript {
                 const { entity } = await this.createModel(this.wheelModelUrl, {
                     parent: container,
                     name: "WheelModel",
-                    scale: this.wheelScale,
+                    scale: this.wheelScale * this._k,
                 });
                 if (i === 0 || i === 2) {
                     entity.setLocalEulerAngles(0, 180, 0);
@@ -378,10 +388,10 @@ export class VehiclePhysicsModel extends ArrivalScript {
                 intensity: this.headlightIntensity,
                 innerConeAngle: this.headlightAngle * 0.5,
                 outerConeAngle: this.headlightAngle,
-                range: this.headlightRange,
+                range: this.headlightRange * this._k,
                 castShadows: false,
             });
-            light.setLocalPosition(this.headlightX * side, this.headlightY, this.headlightZ);
+            light.setLocalPosition(this.headlightX * side * this._k, this.headlightY * this._k, this.headlightZ * this._k);
             light.setLocalEulerAngles(-90 + this.headlightTilt, 0, 0);
             this.entity.addChild(light);
             this._headlightEntities.push(light);
@@ -394,13 +404,13 @@ export class VehiclePhysicsModel extends ArrivalScript {
             const light = this._headlightEntities[i];
             if (!light || light._destroyed) continue;
             const side = i === 0 ? -1 : 1;
-            light.setLocalPosition(this.headlightX * side, this.headlightY, this.headlightZ);
+            light.setLocalPosition(this.headlightX * side * this._k, this.headlightY * this._k, this.headlightZ * this._k);
             light.setLocalEulerAngles(-90 + this.headlightTilt, 0, 0);
             light.light.color = color;
             light.light.intensity = this.headlightIntensity;
             light.light.innerConeAngle = this.headlightAngle * 0.5;
             light.light.outerConeAngle = this.headlightAngle;
-            light.light.range = this.headlightRange;
+            light.light.range = this.headlightRange * this._k;
         }
     }
 
@@ -440,20 +450,20 @@ export class VehiclePhysicsModel extends ArrivalScript {
         const dir  = new Ammo.btVector3(0, -1, 0);
         const axle = new Ammo.btVector3(-1, 0, 0);
 
+        const k = this._k;
         for (const def of this._getWheels()) {
             const cp = new Ammo.btVector3(def.x, def.y, def.z);
             const info = this._vehicle.addWheel(
                 cp, dir, axle,
-                this.suspensionRestLength,
-                this.wheelRadius,
+                this.suspensionRestLength * k,
+                this.wheelRadius * k,
                 this._tuning,
                 def.front,
             );
             info.set_m_suspensionStiffness(this.suspensionStiffness);
             info.set_m_wheelsDampingRelaxation(this.suspensionDamping);
             info.set_m_wheelsDampingCompression(this.suspensionCompression);
-            info.set_m_frictionSlip(def.front ? this.frictionSlipFront : this.frictionSlipRear);
-            info.set_m_rollInfluence(this.rollInfluence);
+            this._setWheelGrip(info, def.front);
             Ammo.destroy(cp);
         }
 
@@ -461,6 +471,13 @@ export class VehiclePhysicsModel extends ArrivalScript {
         Ammo.destroy(axle);
 
         body.setActivationState(4); // DISABLE_DEACTIVATION
+    }
+
+    // Speeds grow by k while gravity (and with it the tyre load) stays, so grip grows by k to corner
+    // the same; side force and its lever arm both grow by k against a k-sized track, so roll ÷ k.
+    _setWheelGrip(info, front) {
+        info.set_m_frictionSlip((front ? this.frictionSlipFront : this.frictionSlipRear) * this._k);
+        info.set_m_rollInfluence(this.rollInfluence / this._k);
     }
 
     _updateWheelPositions() {
@@ -546,7 +563,7 @@ export class VehiclePhysicsModel extends ArrivalScript {
             const we = this._wheelEntities[i];
             if (!we) continue;
 
-            const localPos = new pc.Vec3(def.x, def.y - this.suspensionRestLength*0.75, def.z);
+            const localPos = new pc.Vec3(def.x, def.y - this.suspensionRestLength*0.75*this._k, def.z);
             const worldPos = wt.transformPoint(localPos);
             we.setPosition(worldPos);
 
@@ -749,13 +766,14 @@ export class VehiclePhysicsModel extends ArrivalScript {
             animations.Forward = this.rideIdleUrl;
         }
             
+        const k = this._k;
         this._attachHandle = ArrivalSpace.attachPlayerToEntity(this.entity, {
-            offset: { x: this.seatOffsetX, y: this.seatOffsetY, z: this.seatOffsetZ },
+            offset: { x: this.seatOffsetX * k, y: this.seatOffsetY * k, z: this.seatOffsetZ * k },
             animations,
             disableCollision: true,
             camera: {
-                heightOffset: this.cameraTargetHeightOffset,
-                distance: this.cameraTargetDistance,
+                heightOffset: this.cameraTargetHeightOffset * k,
+                distance: this.cameraTargetDistance * k,
             },
             rate: VehiclePhysicsModel.EXTRA_SYNC_RATE,
             extra: () => ({
@@ -804,9 +822,9 @@ export class VehiclePhysicsModel extends ArrivalScript {
         if (!player) return;
 
         const pos = this.entity.getPosition();
-        const right = this.entity.right.clone().mulScalar(this.enterDistance + 0.5);
+        const right = this.entity.right.clone().mulScalar((this.enterDistance + 0.5) * this._k);
         const exitPos = pos.clone().add(right);
-        exitPos.y += 0.3;
+        exitPos.y += 0.3 * this._k;
 
         if (player.rigidbody) {
             player.rigidbody.teleport(exitPos);
@@ -831,7 +849,7 @@ export class VehiclePhysicsModel extends ArrivalScript {
         if (!player || (attachedEntity && attachedEntity !== this.entity)) return;
 
         const dist = player.getPosition().distance(this.entity.getPosition());
-        if (dist < this.enterDistance) {
+        if (dist < this.enterDistance * this._k) {
             this._mount();
         }
     }
@@ -853,13 +871,15 @@ export class VehiclePhysicsModel extends ArrivalScript {
             const pos = this.entity.getPosition();
             const fwd = this.entity.forward;
             const yaw = Math.atan2(-fwd.x, -fwd.z) * (180 / Math.PI);
-            this.entity.rigidbody.teleport(pos.x, pos.y + 0.5, pos.z, 0, yaw, 0);
+            this.entity.rigidbody.teleport(pos.x, pos.y + 0.5 * this._k, pos.z, 0, yaw, 0);
             this.entity.rigidbody.linearVelocity = pc.Vec3.ZERO;
             this.entity.rigidbody.angularVelocity = pc.Vec3.ZERO;
             return;
         }
 
-        const speed = this.entity.rigidbody.linearVelocity.length();
+        // Speeds and forces below are in 0.7-world terms; the rigidbody works in this space's units.
+        const k = this._k;
+        const speed = this.entity.rigidbody.linearVelocity.length() / k;
         this._currentSpeed = speed;
         const kmh = (speed / 0.7) * 3.6;
         if (this._speedEl) this._speedEl.textContent = `${Math.round(kmh)} km/h`;
@@ -877,7 +897,7 @@ export class VehiclePhysicsModel extends ArrivalScript {
         let brakeForce = 0;
         const throttle = kb.isPressed(pc.KEY_W) || kb.isPressed(pc.KEY_UP) || stick.y > 0.1;
         const reverse  = kb.isPressed(pc.KEY_S) || kb.isPressed(pc.KEY_DOWN) || stick.y < -0.1;
-        const fwdSpeed = -this.entity.forward.dot(this.entity.rigidbody.linearVelocity);
+        const fwdSpeed = -this.entity.forward.dot(this.entity.rigidbody.linearVelocity) / k;
         if (throttle) {
             engineForce = this.maxEngineForce;
             if (stick.y > 0.1) engineForce *= Math.min(1, stick.y);
@@ -894,8 +914,8 @@ export class VehiclePhysicsModel extends ArrivalScript {
         }
         if (kb.isPressed(pc.KEY_SPACE)) brakeForce = this.maxBrakingForce;
 
-        this.applyEngineForce(engineForce);
-        this.setBrake(brakeForce);
+        this.applyEngineForce(engineForce * k);
+        this.setBrake(brakeForce * k);
         this._currentEngineForce = engineForce;
     }
 
@@ -926,7 +946,7 @@ export class VehiclePhysicsModel extends ArrivalScript {
             const pos = this.entity.getPosition();
             const fwd = this.entity.forward;
             const yaw = Math.atan2(-fwd.x, -fwd.z) * (180 / Math.PI);
-            this.entity.rigidbody.teleport(pos.x, pos.y + 0.5, pos.z, 0, yaw, 0);
+            this.entity.rigidbody.teleport(pos.x, pos.y + 0.5 * this._k, pos.z, 0, yaw, 0);
             this.entity.rigidbody.linearVelocity = pc.Vec3.ZERO;
             this.entity.rigidbody.angularVelocity = pc.Vec3.ZERO;
         }
@@ -937,9 +957,9 @@ export class VehiclePhysicsModel extends ArrivalScript {
         } else {
             this._checkProximity();
             this.applyEngineForce(0);
-            this.setBrake(this.idleBrake);
+            this.setBrake(this.idleBrake * this._k);
             this._currentEngineForce = 0;
-            this._currentSpeed = this.entity.rigidbody.linearVelocity.length();
+            this._currentSpeed = this.entity.rigidbody.linearVelocity.length() / this._k;
             this._updateDriveSound();
         }
     }
@@ -1053,13 +1073,13 @@ export class VehiclePhysicsModel extends ArrivalScript {
         }
         if (name === "cameraTargetHeightOffset") {
             if (this._mounted) {
-                ArrivalSpace.setCameraTargetHeightOffset(this.cameraTargetHeightOffset);
+                ArrivalSpace.setCameraTargetHeightOffset(this.cameraTargetHeightOffset * this._k);
             }
             return;
         }
         if (name === "cameraTargetDistance") {
             if (this._mounted) {
-                ArrivalSpace.setCameraTargetDistance(this.cameraTargetDistance);
+                ArrivalSpace.setCameraTargetDistance(this.cameraTargetDistance * this._k);
             }
             return;
         }
@@ -1079,7 +1099,7 @@ export class VehiclePhysicsModel extends ArrivalScript {
             return;
         }
         if (name === "chassisScale" && this._chassisModelEntity) {
-            const s = this.chassisScale;
+            const s = this.chassisScale * this._k;
             this._chassisModelEntity.setLocalScale(s, s, s);
             return;
         }
@@ -1088,7 +1108,7 @@ export class VehiclePhysicsModel extends ArrivalScript {
             return;
         }
         if (name === "wheelScale") {
-            const s = this.wheelScale;
+            const s = this.wheelScale * this._k;
             for (const m of this._wheelModelEntities) {
                 if (m && !m._destroyed) m.setLocalScale(s, s, s);
             }
@@ -1097,8 +1117,9 @@ export class VehiclePhysicsModel extends ArrivalScript {
         if (name === "collisionWidth" || name === "collisionHeight" || name === "collisionLength" || name === "collisionY") {
             const chassisShape = this._shapeEntities[0];
             if (chassisShape?.collision) {
-                chassisShape.collision.halfExtents = new pc.Vec3(this.collisionWidth, this.collisionHeight, this.collisionLength);
-                chassisShape.setLocalPosition(0, this.collisionY, 0);
+                const k = this._k;
+                chassisShape.collision.halfExtents = new pc.Vec3(this.collisionWidth * k, this.collisionHeight * k, this.collisionLength * k);
+                chassisShape.setLocalPosition(0, this.collisionY * k, 0);
             }
             return;
         }
@@ -1121,8 +1142,7 @@ export class VehiclePhysicsModel extends ArrivalScript {
                 info.set_m_suspensionStiffness(this.suspensionStiffness);
                 info.set_m_wheelsDampingRelaxation(this.suspensionDamping);
                 info.set_m_wheelsDampingCompression(this.suspensionCompression);
-                info.set_m_frictionSlip(front ? this.frictionSlipFront : this.frictionSlipRear);
-                info.set_m_rollInfluence(this.rollInfluence);
+                this._setWheelGrip(info, front);
             }
         }
     }
