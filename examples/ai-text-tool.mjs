@@ -8,7 +8,8 @@
  * completion — `prompt` only, no chat history. Same API the AI NPC uses for
  * chat, here doing arbitrary text work: ai.complete is general, not NPC-shaped.
  *
- * Runs free on GLM by default. If the space owner has stored a paid provider
+ * Runs free on the platform model (GPT-6 Luna) by default — no API key needed.
+ * If the space owner has stored a paid provider
  * key, set `provider` and the call spends it through this placed entity
  * (bounded by daily caps). Uses the `this.aiComplete(...)` forwarder, which
  * auto-fills this entity's id.
@@ -17,16 +18,17 @@ export class AiTextTool extends ArrivalScript {
     static scriptName = 'AI Text Tool';
 
     title = 'AI Text Tool';
-    provider = 'glm';
+    provider = 'luna';
 
     static properties = {
         title: { title: 'Panel Title' },
         provider: {
             title: 'AI Provider',
             options: [
-                { label: 'GLM (free)', value: 'glm' },
+                { label: 'GPT-6 Luna (free)', value: 'luna' },
                 { label: 'OpenAI (own key)', value: 'openai' },
                 { label: 'Anthropic (own key)', value: 'anthropic' },
+                { label: 'GLM (own key)', value: 'glm' },
             ],
         },
     };

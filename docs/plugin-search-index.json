@@ -237,9 +237,9 @@
       "path": "examples/ai-npc.mjs",
       "kind": "example",
       "title": "AI NPC",
-      "summary": "An LLM-driven character built on ArrivalSpace.ai.complete: click the NPC to open a chat panel; the plugin sends its persona (prePrompt) as the system prompt plus the running chat. Free GLM by default; the owner can add an OpenAI/Anthropic key (server-side, spent only through this entity). Shows createNPC + a chat UI + ai.complete continuation.",
+      "summary": "An LLM-driven character built on ArrivalSpace.ai.complete: click the NPC to open a chat panel; the plugin sends its persona (prePrompt) as the system prompt plus the running chat. Free GPT-6 Luna by default, no API key needed; the owner can optionally add an OpenAI/Anthropic/GLM key (server-side, spent only through this entity). Shows createNPC + a chat UI + ai.complete continuation.",
       "script_name": "AI NPC",
-      "keywords": ["ai npc", "llm", "chatbot", "chat", "ai.complete", "gpt", "openai", "anthropic", "glm", "system prompt", "prePrompt", "persona", "guide", "conversation", "assistant", "provider key", "byo key", "createNPC"]
+      "keywords": ["ai npc", "llm", "chatbot", "chat", "ai.complete", "gpt", "openai", "anthropic", "glm", "luna", "free", "no api key", "system prompt", "prePrompt", "persona", "guide", "conversation", "assistant", "provider key", "byo key", "createNPC"]
     },
     {
       "path": "examples/ai-text-tool.mjs",

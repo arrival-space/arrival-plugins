@@ -1404,8 +1404,10 @@ endpoint. The **plugin supplies its own system prompt and messages**; the
 entity/room only decides *whose* key and *whose* rate caps apply, never the
 prompt.
 
-The free GLM model is used by default, so a plugin works with zero setup. A
-space owner can store their own OpenAI/Anthropic/GLM API key **server-side**
+The free platform model (GPT-6 Luna) is used by default, so a plugin works with
+zero setup — **no API key exists or is needed for it**; don't ask the creator for
+one. A space owner can optionally store their own OpenAI/Anthropic/GLM API key
+**server-side**
 (never visible to plugins or visitors) under Settings → Profile → AI Keys. That
 paid key is spent **only** through a placed vibe entity the owner owns (pass
 `entityId`), and defaults to a cheap model unless the owner set a `model` in
@@ -1421,7 +1423,7 @@ Run a completion. Provide **either** `prompt` (one user turn, no history) **or**
 | `opts.system` | `string?` | System prompt / instructions (max 4000 chars) |
 | `opts.prompt` | `string?` | A single user message (sugar for `messages:[{role:'user',content}]`) |
 | `opts.messages` | `Array?` | Turns `[{role: 'user'\|'assistant', content}]`, last 20 kept |
-| `opts.provider` | `string?` | `'glm'` (free, default) `\| 'openai' \| 'anthropic'` (owner key) |
+| `opts.provider` | `string?` | `'luna'` (free, default) `\| 'openai' \| 'anthropic' \| 'glm'` (owner key) |
 | `opts.entityId` | `string?` | The placed vibe entity ID — **required to spend the owner's paid key** |
 
 **Returns:** `Promise<{answer, provider, model, costUsd, inputTokens, outputTokens} | {error} | null>` —
@@ -1431,7 +1433,7 @@ On plugin instances there is a forwarder `this.aiComplete(opts)` that auto-fills
 `entityId` with this entity's id.
 
 ```javascript
-// one-shot general question (no entity needed → free GLM)
+// one-shot general question (no entity needed → free Luna)
 const res = await ArrivalSpace.ai.complete({ prompt: 'Give me a fun fact about cats.' });
 
 // NPC-style chat with continuation, on this entity
@@ -1450,7 +1452,7 @@ Settings → Profile → AI Keys; `openKeySettings()` navigates there (use it wh
 a paid provider is selected but `keyStatus()` shows no key). `keyStatus()`
 returns `{openai, anthropic, glm}` booleans — keys themselves are never
 returned by any endpoint. Daily caps bound abuse: per visitor, per entity, per
-room, per key-owner, and a global cap on the free GLM key.
+room, per key-owner, and a global cap on the free platform model.
 
 See [`examples/ai-npc.mjs`](../examples/ai-npc.mjs) for an LLM-driven NPC, and
 [`examples/ai-text-tool.mjs`](../examples/ai-text-tool.mjs) for a non-NPC text

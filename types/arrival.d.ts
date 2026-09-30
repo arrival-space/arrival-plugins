@@ -393,7 +393,7 @@ declare class ArrivalScript extends pc.Script {
         system?: string;
         prompt?: string;
         messages?: Array<{ role: 'user' | 'assistant'; content: string }>;
-        provider?: 'glm' | 'openai' | 'anthropic';
+        provider?: 'luna' | 'openai' | 'anthropic' | 'glm';
     }): Promise<{ answer: string; provider: string; model: string; costUsd: number; inputTokens: number; outputTokens: number } | { error: string } | null>;
 
     // ── Player / physics ──
@@ -1464,7 +1464,8 @@ declare namespace ArrivalSpace {
     /**
      * General one-shot LLM completion for plugins — build an NPC, a text tool,
      * a classifier, anything. The plugin supplies its own system prompt and
-     * messages. Free GLM model by default; entity owners can store their own
+     * messages. Free platform model (GPT-6 Luna) by default — no API key needed;
+     * entity owners can optionally store their own
      * OpenAI/Anthropic/GLM key server-side (never exposed to plugins or
      * visitors), spent only through a placed vibe entity they own.
      *
@@ -1479,7 +1480,7 @@ declare namespace ArrivalSpace {
          * @param opts.system - System prompt / instructions (max 4000 chars)
          * @param opts.prompt - A single user message (sugar for messages)
          * @param opts.messages - Turns, last 20 kept
-         * @param opts.provider - 'glm' (free, default) | 'openai' | 'anthropic'
+         * @param opts.provider - 'luna' (free, default) | 'openai' | 'anthropic' | 'glm' (owner key)
          * @param opts.entityId - Placed vibe entity ID; required to spend the owner's paid key
          * @returns {answer, provider, model, costUsd, inputTokens, outputTokens};
          *   {error} on a server error response; null on network failure
@@ -1488,7 +1489,7 @@ declare namespace ArrivalSpace {
             system?: string;
             prompt?: string;
             messages?: Array<{ role: 'user' | 'assistant'; content: string }>;
-            provider?: 'glm' | 'openai' | 'anthropic';
+            provider?: 'luna' | 'openai' | 'anthropic' | 'glm';
             entityId?: string;
         }): Promise<{ answer: string; provider: string; model: string; costUsd: number; inputTokens: number; outputTokens: number } | { error: string } | null>;
 

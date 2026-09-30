@@ -4,8 +4,9 @@
  * An LLM-driven character built on the general ArrivalSpace.ai.complete API.
  * Visitors click the NPC to open a chat panel and ask questions; the plugin
  * sends its persona (`prePrompt`) as the system prompt plus the running chat.
- * Runs on the free GLM model by default — no setup needed. The space owner can
- * select OpenAI/Anthropic instead; their API key is a profile/account setting
+ * Runs on the free platform model (GPT-6 Luna) by default — no API key and no
+ * setup needed; never ask the creator for a key to use it. The space owner can
+ * select OpenAI/Anthropic/GLM instead; their API key is a profile/account setting
  * (Settings → Profile → AI Keys, stored server-side, never visible to
  * visitors) and is spent only through this placed entity, bounded by daily
  * caps. Choosing a non-free provider without a stored key navigates the owner
@@ -20,7 +21,7 @@ export class AiNpc extends ArrivalScript {
     prePrompt = 'You are a friendly guide for this space. Answer visitor questions briefly and helpfully.';
     npcName = 'Guide';
     greeting = 'Hi! Ask me anything about this space.';
-    provider = 'glm';
+    provider = 'luna';
     model = '';
     avatarConfig = {
         parts: {
@@ -49,9 +50,10 @@ export class AiNpc extends ArrivalScript {
         provider: {
             title: 'AI Provider',
             options: [
-                { label: 'GLM (free)', value: 'glm' },
+                { label: 'GPT-6 Luna (free)', value: 'luna' },
                 { label: 'OpenAI (own key)', value: 'openai' },
                 { label: 'Anthropic (own key)', value: 'anthropic' },
+                { label: 'GLM (own key)', value: 'glm' },
             ],
         },
         model: { title: 'Model Override (optional)' },
@@ -161,7 +163,7 @@ export class AiNpc extends ArrivalScript {
             pendingEl.textContent = res?.error || 'No connection — please try again.';
             pendingEl.style.opacity = '0.7';
             // a paid provider without a stored key: point the owner at the settings
-            if (res?.error && this.provider !== 'glm' && ArrivalSpace.isOwner()) {
+            if (res?.error && this.provider !== 'luna' && ArrivalSpace.isOwner()) {
                 this._renderSettingsHint();
             }
             return;
@@ -200,7 +202,7 @@ export class AiNpc extends ArrivalScript {
     // The owner picked a paid provider in the property editor: if they have no
     // key stored for it yet, take them to the account settings to add one.
     async _checkProviderKey() {
-        if (this.provider === 'glm' || !ArrivalSpace.isOwner()) return;
+        if (this.provider === 'luna' || !ArrivalSpace.isOwner()) return;
         const status = await ArrivalSpace.ai.keyStatus();
         if (status && !status[this.provider]) {
             ArrivalSpace.ai.openKeySettings();
