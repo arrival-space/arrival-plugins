@@ -92,8 +92,8 @@ export class AiNpc extends ArrivalScript {
             id: 'aiNpc-panel',
             style: {
                 position: 'fixed',
-                bottom: '8px',
-                right: '16px',
+                bottom: '60px', // clear of the bottom bar
+                right: '56px', // clear of the right-side dock
                 width: '340px',
                 height: '440px',
                 background: '#80808066',
