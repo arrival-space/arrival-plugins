@@ -1445,9 +1445,10 @@ Run a completion. Provide **either** `prompt` (one user turn, no history) **or**
 daily dollar budgets — $0.50 per signed-in visitor, $0.10 per guest, $5 per
 space — enough for hundreds of chat answers or ~15 very large coding requests a
 visitor. Owner keys keep short NPC limits: `system` ≤ 4000 chars, the last 20
-messages of ≤ 2000 chars each, 800-token answers. A request runs as one HTTP
-call that the gateway cuts off after 30 s, so an answer of more than roughly
-2,500 output tokens (at `'medium'` or `'high'` effort) fails with no `answer`.
+messages of ≤ 2000 chars each, 800-token answers. Long answers are fine: the
+free model writes ~90 output tokens/s, so a large piece of code takes minutes,
+and the promise resolves when it is done (the server hands over after 20 s and
+`ai.complete` polls for the result).
 
 On plugin instances there is a forwarder `this.aiComplete(opts)` that auto-fills
 `entityId` with this entity's id.
