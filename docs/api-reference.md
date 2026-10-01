@@ -1426,6 +1426,7 @@ Run a completion. Provide **either** `prompt` (one user turn, no history) **or**
 | `opts.provider` | `string?` | `'luna'` (free, default) `\| 'openai' \| 'anthropic' \| 'glm'` (owner key) |
 | `opts.effort` | `string?` | Free model only: `'low' \| 'medium'` (default) `\| 'high'` — more reasoning: better code, slower, costs more of the daily budget |
 | `opts.entityId` | `string?` | The placed vibe entity ID — **required to spend the owner's paid key** |
+| `opts.signal` | `AbortSignal?` | Cancels: stops waiting **and** stops the model call server-side, freeing one of the visitor's 2 concurrent-call slots; resolves to `{ error: 'Cancelled.', code: 'aborted' }` |
 
 **Returns:** `Promise<{answer, provider, model, effort, truncated, costUsd, inputTokens, outputTokens} | {error, code, scope?, resetsAt?} | null>` —
 `null` on network failure. `truncated: true` means the answer hit the 32k output-token limit and was cut off.
@@ -1438,6 +1439,9 @@ Run a completion. Provide **either** `prompt` (one user turn, no history) **or**
 | `bad_request` | Input over the limits below, missing prompt, or an unknown space |
 | `no_answer` | The model used its whole output budget reasoning and produced no text |
 | `provider_error` / `not_configured` | Model unavailable |
+| `aborted` | The call was cancelled through `opts.signal` |
+
+The promise never rejects — a cancel included.
 
 **Limits.** The free model takes coding-sized input: `system` ≤ 100,000 chars,
 ≤ 100 messages of ≤ 200,000 chars each, ≤ 400,000 chars in total; over that is a
@@ -1463,6 +1467,12 @@ const res = await this.aiComplete({
     messages: [...this._history, { role: 'user', content: question }],
 });
 if (res?.answer) this._showAnswer(res.answer);
+
+// long coding request that the visitor can cancel (or that dies with the plugin)
+this._ai = new AbortController();
+const code = await this.aiComplete({ effort: 'high', prompt: spec, signal: this._ai.signal });
+if (code?.code === 'aborted') return;
+// … in destroy() / a Cancel button: this._ai?.abort();
 ```
 
 #### `ArrivalSpace.ai.setKey(provider, apiKey)` / `clearKey(provider)` / `keyStatus()` / `openKeySettings()`
