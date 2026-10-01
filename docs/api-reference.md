@@ -1401,7 +1401,7 @@ const invKeys = await ArrivalSpace.userData.keys(NS, { prefix: 'inv/' });
 A general one-shot LLM completion so **any** plugin can use AI — build an NPC,
 a text tool, a classifier, anything. Backed by the platform's `/ai/complete`
 endpoint. The **plugin supplies its own system prompt and messages**; the
-entity/room only decides *whose* key and *whose* rate caps apply, never the
+entity/room only decides *whose* key and *whose* budget applies, never the
 prompt.
 
 The free platform model (GPT-6 Luna) is used by default, so a plugin works with
@@ -1420,14 +1420,34 @@ Run a completion. Provide **either** `prompt` (one user turn, no history) **or**
 
 | Param | Type | Description |
 |---|---|---|
-| `opts.system` | `string?` | System prompt / instructions (max 4000 chars) |
+| `opts.system` | `string?` | System prompt / instructions |
 | `opts.prompt` | `string?` | A single user message (sugar for `messages:[{role:'user',content}]`) |
-| `opts.messages` | `Array?` | Turns `[{role: 'user'\|'assistant', content}]`, last 20 kept |
+| `opts.messages` | `Array?` | Turns `[{role: 'user'\|'assistant', content}]` |
 | `opts.provider` | `string?` | `'luna'` (free, default) `\| 'openai' \| 'anthropic' \| 'glm'` (owner key) |
+| `opts.effort` | `string?` | Free model only: `'low' \| 'medium'` (default) `\| 'high'` — more reasoning: better code, slower, costs more of the daily budget |
 | `opts.entityId` | `string?` | The placed vibe entity ID — **required to spend the owner's paid key** |
 
-**Returns:** `Promise<{answer, provider, model, costUsd, inputTokens, outputTokens} | {error} | null>` —
-`{error}` on a server error response (display it), `null` on network failure.
+**Returns:** `Promise<{answer, provider, model, effort, truncated, costUsd, inputTokens, outputTokens} | {error, code, scope?, resetsAt?} | null>` —
+`null` on network failure. `truncated: true` means the answer hit the 32k output-token limit and was cut off.
+`error` is written to be shown to the visitor as-is (e.g. *"You've used today's free AI allowance — it resets in 5h 12m."*).
+
+| `code` | Meaning |
+|---|---|
+| `budget_exceeded` | A daily budget is spent; `scope` is `'visitor'`, `'guest'`, `'space'` or `'platform'` (or `'owner'` on an owner key); `resetsAt` is the ISO time it resets (UTC midnight) |
+| `busy` | This visitor already has 2 free-model calls running (a space: 10) |
+| `bad_request` | Input over the limits below, missing prompt, or an unknown space |
+| `no_answer` | The model used its whole output budget reasoning and produced no text |
+| `provider_error` / `not_configured` | Model unavailable |
+
+**Limits.** The free model takes coding-sized input: `system` ≤ 100,000 chars,
+≤ 100 messages of ≤ 200,000 chars each, ≤ 400,000 chars in total; over that is a
+`bad_request`, never silent truncation. It is free to the plugin and bounded by
+daily dollar budgets — $0.50 per signed-in visitor, $0.10 per guest, $5 per
+space — enough for hundreds of chat answers or ~15 very large coding requests a
+visitor. Owner keys keep short NPC limits: `system` ≤ 4000 chars, the last 20
+messages of ≤ 2000 chars each, 800-token answers. A request runs as one HTTP
+call that the gateway cuts off after 30 s, so an answer of more than roughly
+2,500 output tokens (at `'medium'` or `'high'` effort) fails with no `answer`.
 
 On plugin instances there is a forwarder `this.aiComplete(opts)` that auto-fills
 `entityId` with this entity's id.
@@ -1451,8 +1471,8 @@ Key management. `provider` is `'openai' | 'anthropic' | 'glm'`. Keys are a
 Settings → Profile → AI Keys; `openKeySettings()` navigates there (use it when
 a paid provider is selected but `keyStatus()` shows no key). `keyStatus()`
 returns `{openai, anthropic, glm}` booleans — keys themselves are never
-returned by any endpoint. Daily caps bound abuse: per visitor, per entity, per
-room, per key-owner, and a global cap on the free platform model.
+returned by any endpoint. Owner keys are bounded by daily call caps per visitor,
+entity, room and key-owner; the free platform model by the dollar budgets above.
 
 See [`examples/ai-npc.mjs`](../examples/ai-npc.mjs) for an LLM-driven NPC, and
 [`examples/ai-text-tool.mjs`](../examples/ai-text-tool.mjs) for a non-NPC text
