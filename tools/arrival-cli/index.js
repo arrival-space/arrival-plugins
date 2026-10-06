@@ -315,7 +315,40 @@ function printValidationErrors(json) {
 // arrival avatar publish — a Gaussian-splat avatar onto the account from a Splat.js package
 // (the files the avatar pipeline exports: splat, SBA1 binding, rig GLB snapshot, fit JSON,
 // thumbnail). Uploads through the presigned flow, registers it, optionally assigns it.
-const avatar = program.command("avatar").description("splat avatars on your account");
+const avatar = program.command("avatar").description("avatars on your account");
+
+avatar
+    .command("list")
+    .description("your avatars: id, GLB url and thumbnail")
+    .option("--json", "print them as JSON (for tools)")
+    .action(async (opts) => {
+        try {
+            const avatars = await api.listAvatars(config.load());
+            if (opts.json) { console.log(JSON.stringify(avatars)); return; }
+            if (!avatars.length) { console.log("(no avatars)"); return; }
+            for (const a of avatars) console.log(`${String(a.id).padEnd(8)} ${a.url}`);
+        } catch (e) { fail(e); }
+    });
+
+avatar
+    .command("create")
+    .description("upload a finished avatar GLB and add it to your avatars as a new one")
+    .argument("<file>", "the avatar .glb")
+    .option("--gender <g>", "male | female (which animation set it uses)")
+    .option("--json", "print the new avatar as JSON (for tools)")
+    .action(async (file, opts) => {
+        try {
+            const cfg = config.load();
+            if (!fs.existsSync(file)) throw new Error(`file not found: ${file}`);
+            if (!opts.json) process.stdout.write(`uploading ${path.basename(file)} … `);
+            const { url } = await api.uploadFile(cfg, file);
+            if (!url) throw new Error("The upload returned no URL");
+            if (!opts.json) console.log("ok\nwaiting for the avatar service …");
+            const a = await api.createGlbAvatar(cfg, url, { gender: opts.gender });
+            if (opts.json) { console.log(JSON.stringify(a)); return; }
+            console.log(`✓ avatar ${a.id} — ${a.url}`);
+        } catch (e) { fail(e); }
+    });
 avatar
     .command("publish")
     .description("upload a splat avatar package and register it (--assign makes it your active avatar)")

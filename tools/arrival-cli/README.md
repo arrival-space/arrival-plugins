@@ -28,6 +28,13 @@ arrival validate                 # server-side dry-run — catch problems before
 arrival push                     # apply to the live space
 ```
 
+Avatars:
+
+```bash
+arrival avatar list [--json]                 # your avatars: id, GLB url, thumbnail
+arrival avatar create avatar.glb [--gender female] [--json]   # add a finished GLB as a new avatar
+```
+
 ### Starting from scratch
 
 `arrival create` mints a space server-side (the id is `<userId>_<4 digits>`) and `--pull` checks it

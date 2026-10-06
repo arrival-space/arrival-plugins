@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 
 id = "arrival_space"
-version = "0.1.0"
+version = "0.2.0"
 name = "Arrival.Space"
 tagline = "Pull, edit and push your Arrival.Space spaces"
 maintainer = "Arrival.Space"

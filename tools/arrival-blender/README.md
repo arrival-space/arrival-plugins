@@ -130,6 +130,22 @@ Each space has its own `.blend`, saved in its workspace (`~/ArrivalSpaces/<space
   **Revert to Live Model** in the *Entity* panel throws the Blender version away and loads the live
   file.
 
+### Avatars
+
+The **Avatars** panel lists your avatars with their pictures (the refresh button loads them). Pick
+one and **Open** it: it opens in a new file as its rig (`Armature`, the 67-bone skeleton every
+stock animation binds to by name) with one mesh per part (head, eyes, teeth, body, top, bottom,
+footwear, hair), each selectable and editable on its own. Edit it any way you like: model, add or
+remove parts, change materials. A part that isn't skinned follows the bone it's parented to (or the
+hips).
+
+**Push as New Avatar** exports it as one skinned mesh with its textures embedded and adds it to
+your avatars as a new one; the avatar you opened stays as it is. *Animations* picks the stock
+animation set it plays (guessed from the avatar's head). The *Export Settings* apply (texture size,
+format, Draco). The mouth shape key stays the first one, since the app drives it with the voice
+(lip sync). A mesh with both shape keys and other modifiers can't be merged: apply the modifiers
+first.
+
 ### Export settings
 
 The **Export Settings** panel controls how Push writes a model before uploading it. It's saved

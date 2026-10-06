@@ -1,12 +1,13 @@
 import os
 import re
 import shutil
+import time
 
 import bpy
 from bpy.app.handlers import persistent
 from bpy.props import BoolProperty, EnumProperty, StringProperty
 
-from . import cli, hub, sky, space, thumbs
+from . import avatar, cli, hub, sky, space, thumbs
 from .props import prefs, workspaces_dir
 
 
@@ -225,6 +226,124 @@ def _refresh_spaces():
     thumbs.load(paths)
 
 
+def _refresh_avatars():
+    state.status = "Loading avatars…"
+    out = yield cli.run(prefs(bpy.context).cli_path, ["avatar", "list", "--json"])
+    wm = bpy.context.window_manager.arrival
+    selected = wm.avatars[wm.avatar_index].avatar_id if 0 <= wm.avatar_index < len(wm.avatars) else ""
+    wm.avatars.clear()
+    for a in cli.parse_json_output(out):
+        item = wm.avatars.add()
+        item.avatar_id = str(a.get("id") or "")
+        item.url = str(a.get("url") or "")
+        item.thumbnail = str(a.get("thumbnailUrl") or "")
+        item.created = str(a.get("created_at") or "")
+        item.gender = avatar.guess_gender(a.get("parts"))
+    wm.avatar_index = next((i for i, a in enumerate(wm.avatars) if a.avatar_id == selected), -1)
+    state.last = f"{len(wm.avatars)} avatars"
+    images = {"avatar:" + a.avatar_id: a.thumbnail for a in wm.avatars if a.thumbnail}
+    try:
+        paths = yield cli.Task(thumbs.fetch_urls, images, thumbs.cache_dir(), "Loading avatar images")
+    except Exception as e:  # the list is still usable without images
+        print(f"[arrival] avatar images: {e}")
+        return
+    thumbs.load(paths)
+
+
+class ARRIVAL_OT_refresh_avatars(_AsyncOp, bpy.types.Operator):
+    bl_idname = "arrival.refresh_avatars"
+    bl_label = "Refresh Avatars"
+    bl_description = "Reload the list of your avatars"
+
+    def steps(self):
+        yield from _refresh_avatars()
+
+
+class ARRIVAL_OT_open_avatar(bpy.types.Operator):
+    bl_idname = "arrival.open_avatar"
+    bl_label = "Open Avatar"
+    bl_description = "Open the chosen avatar in a new file, to edit it and push it as a new avatar"
+
+    @classmethod
+    def poll(cls, context):
+        wm = context.window_manager.arrival
+        return not state.busy and 0 <= wm.avatar_index < len(wm.avatars)
+
+    def invoke(self, context, event):
+        if bpy.data.is_dirty:
+            return context.window_manager.invoke_confirm(
+                self, event, title="Leave this file?", message="The avatar opens in a new file. Unsaved changes in this one are lost.",
+                confirm_text="Open", icon="WARNING")
+        return self.execute(context)
+
+    def execute(self, context):
+        a = context.window_manager.arrival.avatars[context.window_manager.arrival.avatar_index]
+        state.pending = {"avatar": {"id": a.avatar_id, "url": a.url, "gender": a.gender or "male"}}
+        _later(lambda: bpy.ops.wm.read_homefile(use_empty=True))
+        return {"FINISHED"}
+
+
+class ARRIVAL_OT_import_avatar(_AsyncOp, bpy.types.Operator):
+    bl_idname = "arrival.import_avatar"
+    bl_label = "Load Avatar"
+    bl_description = "Download an avatar and add it to this scene"
+
+    avatar_id: StringProperty(options={"SKIP_SAVE", "HIDDEN"})
+    url: StringProperty(options={"SKIP_SAVE", "HIDDEN"})
+    gender: StringProperty(options={"SKIP_SAVE", "HIDDEN"})
+
+    def steps(self):
+        state.status = f"Downloading avatar {self.avatar_id}…"
+        files = yield cli.Task(space.download_all, [self.url], cache_dir(), "Downloading the avatar")
+        path = files.get(self.url)
+        if not isinstance(path, str):
+            raise avatar.AvatarError(f"Couldn't download the avatar: {path}")
+        context = bpy.context
+        avatar.import_glb(path)
+        sp = context.scene.arrival
+        sp.avatar_id = self.avatar_id
+        sp.avatar_gender = self.gender if self.gender in ("male", "female") else "male"
+        bpy.ops.ed.undo_push(message="Open Arrival avatar")
+        state.last = f"Opened avatar {self.avatar_id}"
+        self.report({"INFO"}, state.last)
+
+
+class ARRIVAL_OT_push_avatar(_AsyncOp, bpy.types.Operator):
+    bl_idname = "arrival.push_avatar"
+    bl_label = "Push as New Avatar"
+    bl_description = ("Export this scene's avatar as one mesh with its textures and add it to your avatars "
+                      "as a new one. The avatar you opened stays as it is")
+
+    @classmethod
+    def poll(cls, context):
+        return super().poll(context) and any(o.type == "ARMATURE" for o in context.scene.objects)
+
+    def steps(self):
+        context = bpy.context
+        sp = context.scene.arrival
+        stamp = time.strftime("%Y%m%d-%H%M%S")
+        path = os.path.join(cache_dir(), "exports", "avatars", f"avatar-{stamp}.glb")
+        state.status = "Exporting the avatar…"
+        avatar.export(context, path, sp.export)
+        state.status = f"Uploading the avatar ({os.path.getsize(path) // 1024} KB)…"
+        out = yield cli.run(prefs(context).cli_path, ["avatar", "create", path, "--gender", sp.avatar_gender, "--json"])
+        new = cli.parse_json_output(out)
+        wm = bpy.context.window_manager.arrival
+        item = wm.avatars.add()
+        item.avatar_id, item.url = str(new.get("id") or ""), str(new.get("url") or "")
+        item.thumbnail, item.created, item.gender = str(new.get("thumbnailUrl") or ""), str(new.get("created_at") or ""), sp.avatar_gender
+        wm.avatars.move(len(wm.avatars) - 1, 0)
+        wm.avatar_index = 0
+        state.last = f"New avatar {item.avatar_id}"
+        self.report({"INFO"}, f"Added avatar {item.avatar_id} to your avatars")
+        if item.thumbnail:
+            try:
+                paths = yield cli.Task(thumbs.fetch_urls, {"avatar:" + item.avatar_id: item.thumbnail}, thumbs.cache_dir())
+                thumbs.load(paths)
+            except Exception as e:
+                print(f"[arrival] avatar image: {e}")
+
+
 class ARRIVAL_OT_login(_AsyncOp, bpy.types.Operator):
     bl_idname = "arrival.login"
     bl_label = "Sign In"
@@ -238,6 +357,7 @@ class ARRIVAL_OT_login(_AsyncOp, bpy.types.Operator):
         state.status = "Finish signing in in your browser…"
         yield cli.run(prefs(bpy.context).cli_path, args)
         yield from _refresh_spaces()
+        yield from _refresh_avatars()
 
 
 class ARRIVAL_OT_logout(_AsyncOp, bpy.types.Operator):
@@ -730,6 +850,10 @@ def _on_load_post(*_args):
     if wm.arrival.live:
         wm.arrival.live = False
     pending, state.pending = state.pending, None
+    if pending and "avatar" in pending:
+        a = pending["avatar"]
+        _later(lambda: bpy.ops.arrival.import_avatar("EXEC_DEFAULT", avatar_id=a["id"], url=a["url"], gender=a["gender"]))
+        return
     if pending and pending["new"]:
         # A new session: the startup file is open; build the space in it and save it.
         _later(lambda: bpy.ops.arrival.open_space(
@@ -760,7 +884,8 @@ classes = (
     ARRIVAL_OT_login, ARRIVAL_OT_logout, ARRIVAL_OT_refresh_spaces, ARRIVAL_OT_open_space,
     ARRIVAL_OT_push, ARRIVAL_OT_cancel, ARRIVAL_OT_select_entity, ARRIVAL_OT_new_entity,
     ARRIVAL_OT_add_part, ARRIVAL_OT_add_to_entity, ARRIVAL_OT_open_folder, ARRIVAL_OT_revert_model,
-    ARRIVAL_OT_export_preset, ARRIVAL_OT_check_live,
+    ARRIVAL_OT_export_preset, ARRIVAL_OT_check_live, ARRIVAL_OT_refresh_avatars, ARRIVAL_OT_open_avatar,
+    ARRIVAL_OT_import_avatar, ARRIVAL_OT_push_avatar,
 )
 
 

@@ -50,7 +50,17 @@ class SpaceItem(bpy.types.PropertyGroup):
     change_date: StringProperty()
 
 
+class AvatarItem(bpy.types.PropertyGroup):
+    avatar_id: StringProperty()
+    url: StringProperty()        # the avatar's GLB
+    thumbnail: StringProperty()  # its rendered image
+    created: StringProperty()
+    gender: StringProperty()     # guessed from its customizer parts (avatar.guess_gender)
+
+
 _NO_IMAGE_ICON = bpy.types.UILayout.bl_rna.functions["prop"].parameters["icon"].enum_items["WORLD"].value
+_NO_AVATAR_ICON = bpy.types.UILayout.bl_rna.functions["prop"].parameters["icon"].enum_items["ARMATURE_DATA"].value
+_avatar_items = []
 _space_items = []  # Blender reads enum item strings after the callback returns; keep them alive
 
 
@@ -70,6 +80,15 @@ def _space_enum_items(self, context):
     return _space_items
 
 
+def _avatar_enum_items(self, context):
+    _avatar_items[:] = [
+        (a.avatar_id, f"Avatar {a.avatar_id}", f"Avatar {a.avatar_id} · {a.created[:10]}",
+         thumbs.icon_for("avatar:" + a.avatar_id, a.thumbnail) or _NO_AVATAR_ICON, i)
+        for i, a in enumerate(self.avatars)
+    ]
+    return _avatar_items
+
+
 def _live_changed(self, context):
     from . import ops
     ops.live_toggled(self.live)
@@ -87,6 +106,15 @@ class WindowProps(bpy.types.PropertyGroup):
         set=lambda self, value: setattr(self, "space_index", value),
     )
     search: StringProperty(name="Search", description="Filter the spaces by title or id", options={"TEXTEDIT_UPDATE"})
+    avatars: CollectionProperty(type=AvatarItem)
+    avatar_index: IntProperty(default=-1)
+    avatar: EnumProperty(
+        name="Avatar",
+        description="Choose one of your avatars",
+        items=_avatar_enum_items,
+        get=lambda self: self.avatar_index,
+        set=lambda self, value: setattr(self, "avatar_index", value),
+    )
     live: BoolProperty(
         name="Live",
         description="Push moves, renames and folder changes automatically once you stop. Model edits still need Push",
@@ -162,6 +190,14 @@ class SceneProps(bpy.types.PropertyGroup):
     # (added live and pulled after it was saved) isn't a delete.
     known_ids: StringProperty()
     export: PointerProperty(type=ExportSettings)
+    # An avatar opened in this scene (the Avatars panel): which one it came from, and which
+    # animation set the pushed avatar uses.
+    avatar_id: StringProperty()
+    avatar_gender: EnumProperty(
+        name="Animations", default="male",
+        description="Which set of stock animations the pushed avatar plays",
+        items=[("male", "Male", "The male animation set"), ("female", "Female", "The female animation set")],
+    )
 
 
 class ObjectProps(bpy.types.PropertyGroup):
@@ -196,7 +232,7 @@ class ObjectProps(bpy.types.PropertyGroup):
     )
 
 
-classes = (ArrivalPreferences, SpaceItem, WindowProps, ExportSettings, SceneProps, ObjectProps)
+classes = (ArrivalPreferences, SpaceItem, AvatarItem, WindowProps, ExportSettings, SceneProps, ObjectProps)
 
 
 def register():

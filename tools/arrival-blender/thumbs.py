@@ -1,5 +1,7 @@
-# Space tile images: the same square thumbnails as the client's space grid, i.e. the space's
-# <room>_SEO.jpeg resized by the UGC transform service.
+# Tile images for the pickers. Spaces: the same square thumbnails as the client's space grid, i.e.
+# the space's <room>_SEO.jpeg resized by the UGC transform service. Avatars: the image the avatar
+# service renders next to the GLB (the url `arrival avatar list` gives). Keyed by a string: the
+# space id, or "avatar:<id>".
 
 import os
 import urllib.parse
@@ -13,7 +15,7 @@ TRANSFORM_URL = "https://ugc-transform.arrival.space"
 SIZE = 256
 
 _previews = None
-_paths = {}  # space id -> local image file
+_paths = {}  # key -> local image file ("" when there is none)
 
 
 def url(space_id, version):
@@ -22,12 +24,16 @@ def url(space_id, version):
     return f"{TRANSFORM_URL}/{owner}/custom.travel.center.{space_id}_SEO.jpeg?{query}"
 
 
+def fetch_urls(task, urls, cache_dir, label="Loading images"):
+    """Task body: {key: path} for {key: image url}. Images that fail to download are left out."""
+    results = space.download_all(task, sorted(set(urls.values())), cache_dir, label=label)
+    return {key: results[u] for key, u in urls.items() if isinstance(results.get(u), str)}
+
+
 def fetch(task, spaces, cache_dir):
     """Task body: {space_id: path} for [(space_id, changeDate)]. Spaces without a screenshot are
     left out (the service answers 500 for those)."""
-    urls = {sid: url(sid, version) for sid, version in spaces}
-    results = space.download_all(task, sorted(set(urls.values())), cache_dir, label="Loading space images")
-    return {sid: results[u] for sid, u in urls.items() if isinstance(results.get(u), str)}
+    return fetch_urls(task, {sid: url(sid, version) for sid, version in spaces}, cache_dir, "Loading space images")
 
 
 def load(paths):
@@ -43,21 +49,25 @@ def cache_dir():
     return os.path.join(workspaces_dir(bpy.context), ".cache", "thumbs")
 
 
-def icon_id(space_id, version):
-    """The tile's icon. A space the list shows without its image having been loaded this session
+def icon_for(key, image_url):
+    """The tile's icon. A tile the list shows without its image having been loaded this session
     (after Reload Scripts or re-enabling the add-on, or with a list kept in a reopened file) gets
     the copy downloaded before, if there is one."""
-    path = _paths.get(space_id)
+    path = _paths.get(key)
     if path is None:
-        cached = space._cache_path(cache_dir(), url(space_id, version))
-        _paths[space_id] = path = ""  # checked once; a refresh (load) sets it anew
-        if os.path.isfile(cached) and os.path.getsize(cached) > 0:
+        _paths[key] = path = ""  # checked once; a refresh (load) sets it anew
+        cached = space._cache_path(cache_dir(), image_url) if image_url else ""
+        if cached and os.path.isfile(cached) and os.path.getsize(cached) > 0:
             try:
-                load({space_id: cached})
+                load({key: cached})
                 path = cached
             except (RuntimeError, KeyError) as e:
-                print(f"[arrival] space image {space_id}: {e}")
+                print(f"[arrival] image {key}: {e}")
     return _previews[path].icon_id if path in _previews else 0
+
+
+def icon_id(space_id, version):
+    return icon_for(space_id, url(space_id, version))
 
 
 def register():

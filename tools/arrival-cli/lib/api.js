@@ -151,4 +151,56 @@ async function createSplatAvatar(cfg, { glb, splat, binding, fit, thumbnail, ori
     return r.json.data || {};
 }
 
-module.exports = { listSpaces, createSpace, pull, apply, applyChangeset, uploadFile, createSplatAvatar };
+// The API joins the CDN origin and the stored key with a "/", and some keys start with one:
+// "https://ugc…//user_avatars/…", which S3 answers with 403. Collapse it.
+function cleanUrl(url) {
+    return typeof url === "string" ? url.replace(/^(https?:\/\/[^/]+)\/{2,}/i, "$1/") : url;
+}
+
+// The web client's avatar thumbnail (avatar-thumbnail.ts getAvatarThumbnailUrl): next to the GLB,
+// .webp for baked modular avatars (user_avatars/v1/), .png for the rest, versioned by created_at.
+function avatarThumbnail(glbUrl, createdAt) {
+    if (typeof glbUrl !== "string" || !/\.glb$/i.test(glbUrl)) return null;
+    const ext = glbUrl.includes("user_avatars/v1/") ? "webp" : "png";
+    const v = createdAt ? Date.parse(createdAt) || encodeURIComponent(createdAt) : "1";
+    return `${glbUrl.replace(/\.glb$/i, "." + ext)}?v=${v}`;
+}
+
+// Your avatars (GET /api/v1/avatars), with usable urls and a thumbnail for each.
+async function listAvatars(cfg) {
+    const r = await request(cfg, "GET", "/api/v1/avatars");
+    if (!r.res.ok || !r.json || r.json.status !== "ok") {
+        throw new Error((r.json && r.json.message) || `Listing avatars failed (${r.res.status})`);
+    }
+    return ((r.json.data && r.json.data.avatars) || []).map((a) => {
+        const url = cleanUrl(a.url);
+        return { ...a, url, thumbnailUrl: cleanUrl(a.thumbnailUrl) || avatarThumbnail(url, a.created_at) };
+    });
+}
+
+// Register a finished avatar GLB as a new avatar (POST /api/v1/avatars {glbUrl}) and wait for the
+// avatar service: it stores the file as it is and renders its thumbnail. The row only exists once
+// a status poll sees the job done.
+async function createGlbAvatar(cfg, glbUrl, { gender, pollMs = 2000, timeoutMs = 5 * 60 * 1000 } = {}) {
+    const body = { glbUrl };
+    if (gender) body.gender = gender;
+    const r = await request(cfg, "POST", "/api/v1/avatars", {
+        body: JSON.stringify(body), headers: { "Content-Type": "application/json" },
+    });
+    const jobSeq = r.json && r.json.data && r.json.data.jobSeq;
+    if (!r.res.ok || jobSeq == null) {
+        throw new Error((r.json && r.json.message) || `Avatar creation failed (${r.res.status})`);
+    }
+    const until = Date.now() + timeoutMs;
+    while (Date.now() < until) {
+        await new Promise((res) => setTimeout(res, pollMs));
+        const s = await request(cfg, "GET", `/api/v1/avatars/status/${jobSeq}`);
+        if (!s.res.ok) throw new Error((s.json && s.json.message) || `Avatar status failed (${s.res.status})`);
+        const d = (s.json && s.json.data) || {};
+        if (d.status === "failed") throw new Error("The avatar service couldn't process the GLB");
+        if (d.id != null) return { ...d, url: cleanUrl(d.url), thumbnailUrl: cleanUrl(d.thumbnailUrl) || avatarThumbnail(cleanUrl(d.url), d.created_at) };
+    }
+    throw new Error("Timed out waiting for the avatar service");
+}
+
+module.exports = { listSpaces, createSpace, pull, apply, applyChangeset, uploadFile, createSplatAvatar, listAvatars, createGlbAvatar, cleanUrl, avatarThumbnail };

@@ -14,6 +14,10 @@ import threading
 
 CONFIG_FILE = os.path.join(os.path.expanduser("~"), ".arrival", "config.json")
 
+# The oldest CLI with every command this add-on runs (`avatar list` / `avatar create` came in 1.1.0).
+MIN_CLI_VERSION = (1, 1, 0)
+_checked = set()  # argv prefixes whose version passed, checked once per session
+
 
 class CliError(Exception):
     pass
@@ -109,10 +113,34 @@ class Task:
             self.proc.terminate()
 
 
-def _run_cli(task, argv, check=True):
+def _check_version(task, cmd, kwargs):
+    """Raises CliError when the CLI at cmd is older than MIN_CLI_VERSION."""
+    key = tuple(cmd)
+    if key in _checked:
+        return
+    task.proc = subprocess.Popen(
+        cmd + ["--version"], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        env=_env(), text=True, encoding="utf-8", errors="replace", **kwargs,
+    )
+    out, _err = task.proc.communicate()
+    if task.cancelled:
+        raise CliError("Cancelled")
+    m = re.search(r"(\d+)\.(\d+)\.(\d+)", out)
+    version = tuple(int(n) for n in m.groups()) if m else None
+    if version is None or version < MIN_CLI_VERSION:
+        need = ".".join(map(str, MIN_CLI_VERSION))
+        have = ".".join(map(str, version)) if version else "unknown"
+        raise CliError(f"Your Arrival CLI is outdated (version {have}, this add-on needs {need} or newer). "
+                       "Update it: pull the latest arrival-plugins and run `npm install` in tools/arrival-cli.")
+    _checked.add(key)
+
+
+def _run_cli(task, argv, check=True, cmd_len=0):
     kwargs = {}
     if sys.platform == "win32":
         kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+    if cmd_len:
+        _check_version(task, argv[:cmd_len], kwargs)
     task.proc = subprocess.Popen(
         argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         env=_env(), text=True, encoding="utf-8", errors="replace", **kwargs,
@@ -131,7 +159,8 @@ def _run_cli(task, argv, check=True):
 def run(cli_path, args, label="", check=True):
     """Start `arrival <args>` in the background; the Task's result is its stdout. With check=False
     it's (exit code, stdout, stderr), and a failing exit code isn't an error."""
-    return Task(_run_cli, resolve_command(cli_path) + list(args), check, label=label)
+    cmd = resolve_command(cli_path)
+    return Task(_run_cli, cmd + list(args), check, len(cmd), label=label)
 
 
 _APPLIED = re.compile(r"^  (\S+ \S+) (.+)$")

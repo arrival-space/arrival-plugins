@@ -288,7 +288,8 @@ class ARRIVAL_PT_export(bpy.types.Panel):
 
     @classmethod
     def poll(cls, context):
-        return bool(context.scene.arrival.space_id)
+        sp = context.scene.arrival
+        return bool(sp.space_id or sp.avatar_id)
 
     def draw(self, context):
         layout = self.layout
@@ -330,7 +331,54 @@ class ARRIVAL_PT_export(bpy.types.Panel):
         col.label(text="Unedited models aren't re-uploaded.", icon="BLANK1")
 
 
-classes = (ARRIVAL_PT_main, ARRIVAL_PT_space, ARRIVAL_PT_entity, ARRIVAL_PT_export)
+class ARRIVAL_PT_avatars(bpy.types.Panel):
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "Arrival"
+    bl_label = "Avatars"
+
+    @classmethod
+    def poll(cls, context):
+        return bool(_cli_config().get("token"))
+
+    def draw(self, context):
+        layout = self.layout
+        wm = context.window_manager.arrival
+        sp = context.scene.arrival
+
+        row = layout.row()
+        row.label(text=f"Your avatars ({len(wm.avatars)})" if wm.avatars else "Your avatars")
+        row.operator("arrival.refresh_avatars", text="", icon="FILE_REFRESH")
+        if wm.avatars:
+            col = layout.column()
+            col.template_icon_view(wm, "avatar", show_labels=True, scale=6.0, scale_popup=5.0)
+            if 0 <= wm.avatar_index < len(wm.avatars):
+                row = col.row()
+                row.scale_y = 1.3
+                row.operator("arrival.open_avatar", text="Open", icon="IMPORT")
+            else:
+                sub = col.row()
+                sub.enabled = False
+                sub.label(text="Click the image to choose an avatar")
+        else:
+            sub = layout.row()
+            sub.enabled = False
+            sub.label(text="Refresh to list them")
+
+        if any(o.type == "ARMATURE" for o in context.scene.objects):
+            box = layout.box()
+            col = box.column(align=True)
+            col.label(text=f"Editing avatar {sp.avatar_id}" if sp.avatar_id else "Avatar in this scene", icon="ARMATURE_DATA")
+            box.prop(sp, "avatar_gender")
+            row = box.row()
+            row.scale_y = 1.3
+            row.operator("arrival.push_avatar", icon="EXPORT")
+            col = box.column(align=True)
+            col.label(text="Pushed as one mesh with its textures,", icon="INFO")
+            col.label(text="as a new avatar. Export Settings apply.", icon="BLANK1")
+
+
+classes = (ARRIVAL_PT_main, ARRIVAL_PT_space, ARRIVAL_PT_entity, ARRIVAL_PT_export, ARRIVAL_PT_avatars)
 
 
 def register():
