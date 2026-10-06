@@ -158,8 +158,6 @@ export class HtmlCloth extends ArrivalScript {
         if (this._sourceEl) {
             this._elapsed += dt;
 
-            this._drawVideoFrame();
-
             // Curtis idle chatter: say a random idle line every ~9s of silence.
             if (this._elapsed - (this._lastSpeak || -999) > 9) {
                 this._setSpeech(this._pickSpeech("idle"));
@@ -815,8 +813,9 @@ export class HtmlCloth extends ArrivalScript {
     letter-spacing: 0.3em;
     color: var(--accent);
 }
-#htc-video-canvas {
+#htc-video {
     display: block;
+    object-fit: cover;
     width: 100%;
     height: auto;
     aspect-ratio: 194 / 228;
@@ -1004,7 +1003,7 @@ input[type="range"].hover::-webkit-slider-thumb { transform: scale(1.25); }
     <div class="main">
         <div class="face-col">
             <div class="face-frame">
-                <canvas id="htc-video-canvas" width="194" height="228"></canvas>
+                <div id="htc-video-slot"></div>
             </div>
             <div class="id-strip">
                 <span>ID / 042</span>
@@ -1064,9 +1063,11 @@ input[type="range"].hover::-webkit-slider-thumb { transform: scale(1.25); }
         this._hiddenVideo.loop = true;
         this._hiddenVideo.playsInline = true;
         this._hiddenVideo.autoplay = true;
-        // Must be on-screen (not display:none) or Chrome throttles decode.
-        this._hiddenVideo.style.cssText = "position:fixed;right:0;bottom:0;width:2px;height:2px;opacity:0.01;pointer-events:none;z-index:2147483647;";
-        document.body.appendChild(this._hiddenVideo);
+        // The <video> lives inside the layoutsubtree HTML so the engine snapshots
+        // it with the rest of the panel. Drawing it into a nested <canvas> only
+        // got a thin strip through the html-in-canvas capture.
+        this._hiddenVideo.id = "htc-video";
+        this._sourceEl.querySelector("#htc-video-slot").appendChild(this._hiddenVideo);
     }
 
     _wireInteractions() {
@@ -1306,22 +1307,6 @@ input[type="range"].hover::-webkit-slider-thumb { transform: scale(1.25); }
             }
         }
         this._curtisReacts("poke");
-    }
-
-    _drawVideoFrame() {
-        const video = this._hiddenVideo;
-        if (!video || video.readyState < 2 || !this._sourceEl) return;
-        const videoCanvas = this._sourceEl.querySelector("#htc-video-canvas");
-        if (!videoCanvas) return;
-
-        // Toggle canvas.width each frame to invalidate the element's paint
-        // record so texElementImage2D re-reads the bitmap.
-        const baseW = video.videoWidth || 194;
-        videoCanvas.width = baseW + ((this._videoTick = (this._videoTick || 0) + 1) & 1);
-        videoCanvas.height = video.videoHeight || 228;
-
-        const ctx = videoCanvas.getContext("2d");
-        if (ctx) ctx.drawImage(video, 0, 0, videoCanvas.width, videoCanvas.height);
     }
 
     /* ── texture ──────────────────────────────────────────── */
