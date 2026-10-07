@@ -88,7 +88,7 @@ Distilled reference for the ArrivalScript / ArrivalSpace runtime API (PlayCanvas
 - `setUIVisible(visible)  // visible: boolean` — Show or hide the script's UI by toggling the container's display between 'block' and 'none'.
   - _gotcha:_ No-op if the UI container hasn't been created yet.
 - `setParam(name, value, options = {})  // name: string (declared property), value: *, options: {persist?: boolean}` — Persist one of this plugin's editor parameters (the canonical, editor-visible `params` on the entity) so it shows in the panel, survives reloads, and is seen by every visitor. Updates the live this[name] too.
-  - _gotcha:_ Only declared plugin property names are valid. Unlike an editor edit, this does NOT call your own onPropertyChanged — apply side effects yourself. persist:false sets without uploading (batch several then call save()/setParams with persist to upload once). Delegates to setParams.
+  - _gotcha:_ Only declared plugin property names are valid. Unlike an editor edit, this does NOT call your own onPropertyChanged — apply side effects yourself. persist:false sets without uploading (batch several then call save()/setParams with persist to upload once). Delegates to setParams. Persists only when canEditSpace() is true and never in the space agent's inspector; otherwise only the live value changes, it resolves false without contacting the server, and a console error names the attempted write. Values equal to the stored ones are not re-uploaded (resolves true) unless an earlier persist:false change is unsaved.
 - `async setParams(values, options = {})  // values: Object<string, any> (declared name → value), options: {persist?: boolean}` — Persist several editor parameters at once in one upload. See setParam().
   - _gotcha:_ Returns false if there is no host UserModelEntity or values is not an object. Writes each via updateParamValue(..., {silent:true}) so it does not re-enter your own onPropertyChanged. Skips the upload (returns true) when options.persist === false.
 - `setParamOptions(paramName, options, refresh = true)  // options: Array<string|number|object>|object` — Replace the dropdown options for a plugin parameter (updates both the host UserModelEntity.propertySchema and the script's own schema).
@@ -218,6 +218,7 @@ Distilled reference for the ArrivalScript / ArrivalSpace runtime API (PlayCanvas
 - `getRoom()` — Get current room/space info ({roomId, roomName, roomData, owner}).
 - `isOwner()` — Check whether the current user is the owner of the current space.
   - _gotcha:_ Owner comparison is loose (==) to tolerate number/string user-ID mismatch.
+- `canEditSpace()` — Check whether the current user can edit the current space (owner, site admin, team/per-space editor, seat holder; server-computed on space load). Plugin-code writes persist only when true. Requires VERSION ≥ 1.16.0.
 - `getUser()` — Get the current user's profile summary ({userID, userName, uniqueName, avatar}).
 - `getStaticGates()` — Get all static gates of the current space via the GateServer.
   - _gotcha:_ Returns [] (with a warning) when the GateServer is not found.

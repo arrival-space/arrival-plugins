@@ -59,7 +59,7 @@ export class MyPlugin extends ArrivalScript {
 - Put runtime-editable fields as class properties.
 - Add `static properties` for titles, min/max/step, dropdown `options`.
 - Use `onPropertyChanged` for targeted updates.
-- To set + persist a param from code (e.g. pre-configure on install), use `await this.setParam(name, value)` or `this.setParams({ ... })` — writes the real editor param (shows in the panel, applied on load, seen by everyone). It does **not** call your own `onPropertyChanged`.
+- To set + persist a param from code (e.g. pre-configure on install), use `await this.setParam(name, value)` or `this.setParams({ ... })` — writes the real editor param (shows in the panel, applied on load, seen by everyone). It does **not** call your own `onPropertyChanged`. It persists only when the current user can edit the space (`ArrivalSpace.canEditSpace()`); otherwise it resolves `false` and nothing is sent.
 - For dynamic dropdowns, call:
   - `this.setParamOptions(paramName, options, false)`
   - `this.refreshParamSchema()`

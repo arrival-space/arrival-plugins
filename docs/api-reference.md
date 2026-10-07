@@ -288,6 +288,8 @@ Persist the vibe's own **editor parameters** — the canonical `params` stored o
 
 Only **declared plugin properties** are valid names. The live `this[name]` is updated too, but your own `onPropertyChanged()` is **not** called (you're the one setting it, so apply any side effects yourself). Returns a promise that resolves once persisted.
 
+Persists only when the current user can edit the space ([`ArrivalSpace.canEditSpace()`](#arrivalspacecaneditspace)). For everyone else only the live value changes, nothing is sent to the server, the promise resolves `false` and a console error names the attempted write. The space agent's inspector browser never persists either. Values equal to the stored ones are not re-uploaded (resolves `true`), unless an earlier `{ persist: false }` change is still unsaved.
+
 ```javascript
 // One value:
 await this.setParam('greeting', 'Hello!');
@@ -668,6 +670,12 @@ Get current room info.
 #### `ArrivalSpace.isOwner()`
 
 Check whether the current user owns the current space.
+
+**Returns:** `boolean`
+
+#### `ArrivalSpace.canEditSpace()`
+
+Check whether the current user can edit the current space — the owner, a site admin, a team or per-space editor, or a seat holder. Decided by the server when the space loads. Plugin-code writes (`setParam`/`setParams`/`save`, `createPlugin`/`reloadPlugin`/`removePlugin`) persist only when this is `true`. Requires `ArrivalSpace.VERSION` ≥ `1.16.0`.
 
 **Returns:** `boolean`
 

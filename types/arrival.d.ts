@@ -455,7 +455,10 @@ declare class ArrivalScript extends pc.Script {
      * onInstall() — so the value shows in the parameter panel, survives reloads, and is
      * seen by every visitor, exactly as if the user had set it in the editor. Only
      * declared plugin properties are valid names. Updates the live `this[name]` too but
-     * does NOT call your own onPropertyChanged().
+     * does NOT call your own onPropertyChanged(). Persists only when
+     * ArrivalSpace.canEditSpace() is true; otherwise resolves false without contacting the server.
+     * Values equal to the stored ones resolve true without an upload (unless a persist:false
+     * change is still unsaved).
      * @param name A declared plugin property name.
      * @param value The new value.
      * @param options persist:false sets without uploading (batch, then call save()).
@@ -1928,6 +1931,16 @@ declare namespace ArrivalSpace {
      * if (ArrivalSpace.isOwner()) showOwnerControls();
      */
     function isOwner(): boolean;
+
+    /**
+     * True if the current user can edit the current space — the owner, a site admin, a team or
+     * per-space editor, or a seat holder (decided by the server when the space loads). Plugin-code
+     * writes (setParam/setParams/save, createPlugin/reloadPlugin/removePlugin) persist only when true.
+     * Requires VERSION ≥ 1.16.0.
+     * @example
+     * editButton.style.display = ArrivalSpace.canEditSpace() ? '' : 'none';
+     */
+    function canEditSpace(): boolean;
 
     // ═══════════════════════════════════════════════════════════════════════════
     // PLAYER — movement, physics, body
