@@ -785,6 +785,21 @@ ArrivalSpace.setPlayerVelocity({ y: 10 }); // Preserve X/Z.
 player, disabled controller/rigidbody/collision, non-dynamic rigidbody, paused world, or active
 sequence editor.
 
+#### `ArrivalSpace.setGravity(gravity)` / `ArrivalSpace.getGravity()`
+
+Set / get the physics world gravity (default `{ x: 0, y: -9.81, z: 0 }`). A bare number sets only
+the vertical component. Affects every dynamic body, the player included — restore it in
+`destroy()`. Requires `ArrivalSpace.VERSION` ≥ `1.15.0`.
+
+```javascript
+ArrivalSpace.setGravity(-1.62); // Moon
+```
+
+#### `ArrivalSpace.setPlayerJumpHeight(multiplier)`
+
+Scale the player's jump impulse (`1` = the room's default; same knob as the room setting).
+Requires `ArrivalSpace.VERSION` ≥ `1.15.0`.
+
 This sets velocity once. Gravity, collisions and player input continue afterward; steering can
 change X/Z on the next movement update. Upward motion releases ground support and prevents
 ground damping during takeoff. Normal ground handling resumes on descent.
