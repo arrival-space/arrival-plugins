@@ -60,6 +60,7 @@ export class MyPlugin extends ArrivalScript {
 - Add `static properties` for titles, min/max/step, dropdown `options`.
 - Use `onPropertyChanged` for targeted updates.
 - To set + persist a param from code (e.g. pre-configure on install), use `await this.setParam(name, value)` or `this.setParams({ ... })` — writes the real editor param (shows in the panel, applied on load, seen by everyone). It does **not** call your own `onPropertyChanged`. It persists only when the current user can edit the space (`ArrivalSpace.canEditSpace()`); otherwise it resolves `false` and nothing is sent.
+- Params are for small settings. A document the vibe creates or edits at runtime (a level layout, quiz questions, images) goes in a file: `ArrivalSpace.fs` works like Node's `fs/promises`, scoped to this space (every vibe in the space sees the same files; folders are just path prefixes). Everyone can read; users who can edit the space can write anywhere (`ArrivalSpace.canEditSpace()`). Logged-in visitors can write only inside their own `ArrivalSpace.fs.homedir()` folder (`visitors/<userId>`, 1 MB per file), and only when the space allows visitor files (`allowVisitorFiles` in room.json); anything else gets EACCES. `await ArrivalSpace.fs.url(path)` gives a URL for <img src> etc. Requires `ArrivalSpace.VERSION` ≥ `1.17.0`. See `docs/api-reference.md` "Space Files" and `examples/pin-board.mjs`.
 - For dynamic dropdowns, call:
   - `this.setParamOptions(paramName, options, false)`
   - `this.refreshParamSchema()`

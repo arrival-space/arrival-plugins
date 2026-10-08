@@ -1464,6 +1464,86 @@ declare namespace ArrivalSpace {
      */
     const userData: UserData;
 
+    /** Errors from {@link fs} carry Node's fs codes. */
+    interface SpaceFsError extends Error {
+        code: "ENOENT" | "EACCES" | "EISDIR" | "ENOTDIR" | "ENOTEMPTY" | "EINVAL" | "EFBIG" | "EDQUOT" | "EAGAIN" | "ECONFLICT" | "EIO" | "ENOSYS";
+        errno?: number;
+        syscall?: string;
+        path?: string;
+    }
+
+    interface SpaceFsStats {
+        size: number;
+        mtime: Date;
+        mtimeMs: number;
+        /** Increments on every save; pass to writeFile's `ifVersion`. Undefined for folders. */
+        version?: number;
+        mime?: string;
+        isFile(): boolean;
+        isDirectory(): boolean;
+        isSymbolicLink(): boolean;
+    }
+
+    interface SpaceFsDirent {
+        name: string;
+        parentPath: string;
+        isFile(): boolean;
+        isDirectory(): boolean;
+        isSymbolicLink(): boolean;
+    }
+
+    type SpaceFsData = string | Uint8Array | ArrayBuffer | ArrayBufferView | Blob;
+
+    /** Shape of {@link fs}. Mirrors Node's `fs/promises`. */
+    interface SpaceFs {
+        readFile(path: string): Promise<Uint8Array>;
+        readFile(path: string, encoding: "utf8" | "utf-8" | "base64" | { encoding: "utf8" | "utf-8" | "base64" }): Promise<string>;
+        /** Creates or replaces. `ifVersion` rejects with ECONFLICT when the file changed since (0 = must not exist). */
+        writeFile(path: string, data: SpaceFsData, options?: string | { encoding?: string; ifVersion?: number }): Promise<void>;
+        appendFile(path: string, data: SpaceFsData, options?: string | { encoding?: string }): Promise<void>;
+        /** `''` is the space root. */
+        readdir(path?: string, options?: { recursive?: boolean }): Promise<string[]>;
+        readdir(path: string, options: { withFileTypes: true; recursive?: boolean }): Promise<SpaceFsDirent[]>;
+        stat(path: string): Promise<SpaceFsStats>;
+        lstat(path: string): Promise<SpaceFsStats>;
+        access(path: string): Promise<void>;
+        unlink(path: string): Promise<void>;
+        rm(path: string, options?: { recursive?: boolean; force?: boolean }): Promise<void>;
+        rmdir(path: string, options?: { recursive?: boolean }): Promise<void>;
+        /** No-op: folders appear with their first file. */
+        mkdir(path: string, options?: { recursive?: boolean }): Promise<undefined>;
+        copyFile(src: string, dest: string): Promise<void>;
+        /** Files only. */
+        rename(oldPath: string, newPath: string): Promise<void>;
+        /** Fires for saves by anyone (other clients within ~10 s). A folder path watches everything below it. */
+        watch(path: string, listener: (eventType: "change" | "rename", filename: string) => void): { close(): void };
+        watch(path: string, options: object, listener: (eventType: "change" | "rename", filename: string) => void): { close(): void };
+        /** Not in Node: CDN URL of the file's current version, for <img src>, loaders, fetch. */
+        url(path: string): Promise<string>;
+        /** Like os.homedir(): the current user's own folder, `visitors/<userId>`. */
+        homedir(): string;
+    }
+
+    /**
+     * Files of the current space, like Node's `fs/promises` (every vibe in the space sees the
+     * same files; folders are just path prefixes). Everyone can read; users who can edit the
+     * space can write anywhere ({@link canEditSpace}). Logged-in visitors can write only inside
+     * their own `fs.homedir()` folder (`visitors/<userId>`, 1 MB per file), and only when the
+     * space allows visitor files (`allowVisitorFiles` in room.json); anything else rejects with
+     * EACCES. Requires VERSION ≥ 1.17.0.
+     *
+     * @example
+     * // Editor data, with a default when nothing was saved yet
+     * let course;
+     * try { course = JSON.parse(await ArrivalSpace.fs.readFile('golf/course.json', 'utf8')); }
+     * catch (e) { if (e.code === 'ENOENT') course = { holes: [] }; else throw e; }
+     * if (ArrivalSpace.canEditSpace()) await ArrivalSpace.fs.writeFile('golf/course.json', JSON.stringify(course));
+     *
+     * // A visitor's own data
+     * await ArrivalSpace.fs.writeFile(`${ArrivalSpace.fs.homedir()}/score.json`, JSON.stringify(score));
+     */
+    const fs: SpaceFs;
+
     /**
      * General one-shot LLM completion for plugins — build an NPC, a text tool,
      * a classifier, anything. The plugin supplies its own system prompt and

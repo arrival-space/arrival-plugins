@@ -270,6 +270,7 @@ per-entity `data`, but are still read at the room level for legacy spaces.
 | `addPlugin` | url/id | A single plugin to append |
 | `sceneObjects` | array | Programmatic scene-object instantiation args |
 | `enableEntities` | array | `[name, enabled]` pairs to enable/disable named scene entities |
+| `allowVisitorFiles` | bool | Lets logged-in visitors write [space files](api-reference.md#space-files-arrivalspacefs) inside their own `ArrivalSpace.fs.homedir()` (`visitors/<userId>`). Default off: only editors write. Set it when a vibe saves per-visitor data (API 1.17.0) |
 
 > Prefer the normal entity workflow (`space/entities/*.json` +
 > `space/plugins/*.mjs`) over these room-level hooks — see the main repo docs.

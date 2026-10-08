@@ -218,7 +218,7 @@ Optional. Fired **once** — right after a user adds this vibe to the space in-a
 - **In-app add only.** It's tied to the user actually creating the entity in their browser — *not* the per-load path. So it never fires on reload, never for other visitors, and never for CLI/MCP deploys (which create the entity through the API and never run the in-app create flow). That makes it safe to show setup UI: the person who just added it is right there.
 - **No re-fires, no flag.** Reloads don't re-create the entity, so there's nothing to dedupe — no persisted marker, no owner-check.
 - **May be async.** Returning a promise is fine; the install flow doesn't block on it. An abandoned or cancelled setup simply does nothing — if you want to re-prompt, track that yourself.
-- **Pre-set the vibe's parameters.** The cleanest way to persist setup is to write the vibe's own editor parameters with [`this.setParams({...})`](#setparamname-value-options--setparamsvalues-options) — they show in the parameter panel, are applied automatically on every load, and are seen by every visitor. Use `ArrivalSpace.pluginStore` only for data that isn't an editor parameter.
+- **Pre-set the vibe's parameters.** The cleanest way to persist setup is to write the vibe's own editor parameters with [`this.setParams({...})`](#setparamname-value-options--setparamsvalues-options) — they show in the parameter panel, are applied automatically on every load, and are seen by every visitor. Keep params small (numbers, strings, colors); save documents such as a level layout to a file with [`ArrivalSpace.fs`](#space-files-arrivalspacefs).
 - **Deploying via CLI/MCP?** Set the vibe's `params` directly at deploy time instead of relying on this hook — see [`docs/00-agent-quickstart.md`](00-agent-quickstart.md).
 
 `ctx`: `{ isFirstInstall: true, entityId: string, spaceId: string }`.
@@ -1309,6 +1309,90 @@ Default: `deleteFromServer=true`
 Hot-reload a plugin with new code while preserving the same plugin entity.
 
 **Returns:** `Promise<{ success: boolean, id?: string, url?: string, error?: string }>`
+
+---
+
+### Space Files (`ArrivalSpace.fs`)
+
+**Requires `ArrivalSpace.VERSION` ≥ `1.17.0`.**
+
+`ArrivalSpace.fs` works like Node's `fs/promises`, scoped to the current space. Every vibe in the
+space sees the same files; folders are just path prefixes (they appear with their first file, so
+`mkdir` is a no-op). Use it for documents a vibe creates or edits at runtime — a level or course
+layout, quiz questions, a gallery's images, a visitor's saved game. Keep editor parameters
+(`setParam`) for small settings.
+
+**Who can write**
+
+- **Everyone can read** every file of the space.
+- **Users who can edit the space** (`ArrivalSpace.canEditSpace()`) can write anywhere.
+- **Logged-in visitors** can write only inside their own folder, `ArrivalSpace.fs.homedir()`
+  (`visitors/<userId>`), and only when the space allows it: `allowVisitorFiles: true` in the
+  room settings (`space/room.json` `data`). Guests can't write.
+- Anything else rejects with `EACCES`.
+
+Keep the two apart: data editors build for everyone (the course) goes in the space root, e.g.
+`golf/course.json`; data that belongs to one visitor (their scorecard) goes in `fs.homedir()`.
+
+```javascript
+const fs = ArrivalSpace.fs;
+
+// Editor data: read with a default when nothing was saved yet
+async function loadCourse() {
+    try {
+        return JSON.parse(await fs.readFile('golf/course.json', 'utf8'));
+    } catch (e) {
+        if (e.code === 'ENOENT') return { holes: [] };
+        throw e;
+    }
+}
+if (ArrivalSpace.canEditSpace()) await fs.writeFile('golf/course.json', JSON.stringify(course));
+
+// Visitor data: their own folder
+await fs.writeFile(`${fs.homedir()}/golf-score.json`, JSON.stringify({ strokes: [3, 4, 2] }));
+
+// Everyone's visitor files
+for (const id of await fs.readdir('visitors').catch(() => [])) { /* visitors/<id>/golf-score.json */ }
+
+// Binary files and URLs
+await fs.writeFile('gallery/1.png', blob);
+img.src = await fs.url('gallery/1.png');
+
+// React to saves by anyone (other clients within ~10 s, this client immediately)
+const watcher = fs.watch('golf/course.json', () => reloadCourse());
+// in destroy(): watcher.close();
+```
+
+| Method | Notes |
+|---|---|
+| `readFile(path, encoding?)` | `'utf8'` → string, `'base64'` → string, none → `Uint8Array`. |
+| `writeFile(path, data, options?)` | `data`: string, `Uint8Array`, `ArrayBuffer` or `Blob` (objects: `JSON.stringify` first). Replaces the file. `{ ifVersion }` rejects with `ECONFLICT` when someone saved in between (`version` comes from `stat`). |
+| `appendFile(path, data)` | Read + write. |
+| `readdir(path, { withFileTypes?, recursive? })` | `''` is the space root. |
+| `stat(path)` / `access(path)` | `stat`: `size`, `mtime`, `version`, `isFile()`, `isDirectory()`. |
+| `unlink(path)`, `rm(path, { recursive?, force? })`, `rmdir` | Folders need `recursive`. |
+| `copyFile(src, dest)`, `rename(old, new)` | Files only. |
+| `mkdir(path)` | No-op. |
+| `watch(path, listener)` | `listener(eventType, filename)`, returns `{ close() }`. A folder path watches everything below it. |
+| `url(path)` | Async. CDN URL of the current version, for `<img src>`, loaders, `fetch`. Not in Node. |
+| `homedir()` | Sync. `visitors/<userId>`, like `os.homedir()`. |
+
+**Errors** carry Node's codes: `ENOENT`, `EACCES`, `EISDIR`, `ENOTDIR`, `ENOTEMPTY`, `EINVAL` (bad
+path or file type), `EFBIG`, `EDQUOT`, `EAGAIN` (too many writes, retry later), `ECONFLICT`.
+
+**Limits**
+
+- File types: `.json .txt .csv .md .bin`, images (`.png .jpg .jpeg .webp .gif .ktx2`), audio/video
+  (`.mp3 .ogg .wav .m4a .mp4 .webm`), 3D (`.glb .gltf .ply .splat .sog .spz`) and `.pdf`.
+  Never scripts or HTML (`.js .mjs .html .svg`, …).
+- Paths: letters, digits, `. _ -` and spaces; no `..`; up to 255 characters.
+- Editors: 5 MB per file, 1000 files per space, 30 writes per minute per space.
+- Visitors: 1 MB per file, 20 MB and 100 files each, 10 writes per minute.
+- Everything counts toward the space owner's storage.
+- Duplicating a space copies its files, except `visitors/`.
+- Reads are public — don't store secrets.
+
+See `examples/pin-board.mjs`.
 
 ---
 

@@ -1,9 +1,17 @@
 {
   "version": 1,
-  "updated_at": "2026-09-22",
+  "updated_at": "2026-10-08",
   "source": "curated",
-  "total_entries": 64,
+  "total_entries": 65,
   "entries": [
+    {
+      "path": "examples/pin-board.mjs",
+      "kind": "example",
+      "title": "Pin Board",
+      "summary": "Editors save the board text to a shared space file, visitors pin a note into their own fs.homedir() folder, and everyone sees all notes, refreshed with fs.watch. Requires API 1.17.0.",
+      "script_name": "Pin Board",
+      "keywords": ["ArrivalSpace.fs", "space files", "readFile", "writeFile", "readdir", "watch", "homedir", "visitor files", "allowVisitorFiles", "save data", "canEditSpace", "createHTMLPanel", "notes"]
+    },
     {
       "path": "examples/velocity-pad.mjs",
       "kind": "example",
@@ -37,8 +45,8 @@
       "path": "docs/api-reference.md",
       "kind": "doc",
       "title": "API Reference",
-      "summary": "Reference for ArrivalScript lifecycle, ArrivalSpace helpers, model loading, UI, audio, physics, animation, avatars, and plugin management.",
-      "keywords": ["api", "reference", "arrivalscript", "arrivalspace", "methods", "helpers", "physics", "ui", "models", "splat", "gsplat", "ply"]
+      "summary": "Reference for ArrivalScript lifecycle, ArrivalSpace helpers, model loading, UI, audio, physics, animation, avatars, plugin management, and space files (ArrivalSpace.fs).",
+      "keywords": ["api", "reference", "arrivalscript", "arrivalspace", "methods", "helpers", "physics", "ui", "models", "splat", "gsplat", "ply", "fs", "files", "space files", "readFile", "writeFile", "homedir"]
     },
     {
       "path": "docs/arrival-script-api.md",
