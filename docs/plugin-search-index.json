@@ -46,7 +46,7 @@
       "kind": "doc",
       "title": "API Reference",
       "summary": "Reference for ArrivalScript lifecycle, ArrivalSpace helpers, model loading, UI, audio, physics, animation, avatars, plugin management, and space files (ArrivalSpace.fs).",
-      "keywords": ["api", "reference", "arrivalscript", "arrivalspace", "methods", "helpers", "physics", "ui", "models", "splat", "gsplat", "ply", "fs", "files", "space files", "readFile", "writeFile", "homedir"]
+      "keywords": ["api", "reference", "arrivalscript", "arrivalspace", "methods", "helpers", "physics", "ui", "models", "splat", "gsplat", "ply", "fs", "files", "space files", "readFile", "writeFile", "homedir", "pluginStore", "leaderboard", "high score"]
     },
     {
       "path": "docs/arrival-script-api.md",

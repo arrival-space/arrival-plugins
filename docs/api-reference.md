@@ -1391,6 +1391,7 @@ path or file type), `EFBIG`, `EDQUOT`, `EAGAIN` (too many writes, retry later), 
 - Everything counts toward the space owner's storage.
 - Duplicating a space copies its files, except `visitors/`.
 - Reads are public — don't store secrets.
+- Shared lists many visitors add to (scores, votes, a leaderboard) fit [`ArrivalSpace.pluginStore`](#plugin-store-arrivalspacepluginstore) better: `get(key, { sort, limit })` returns the top entries in one request, while reading every visitor's file costs one fetch per visitor.
 
 See `examples/pin-board.mjs`.
 
@@ -1425,6 +1426,50 @@ Delete plugin file from current user's plugin folder.
 Get public URL for plugin file.
 
 **Returns:** `string | false`
+
+---
+
+### Plugin Store (`ArrivalSpace.pluginStore`)
+
+A small shared store per space for lists that many visitors add to — best times, votes, high
+scores. Any logged-in visitor can write; everyone in the space reads the same entries.
+
+- Values are strings up to 1024 characters (stringify objects yourself); keys up to 64.
+- `numval` is a number the server sorts by, so a leaderboard is one `get` call.
+- Each entry belongs to the user who wrote it; `delete` removes only your own entry.
+
+#### `ArrivalSpace.pluginStore.push(key, value, options?)`
+
+| Option | Type | Description |
+|---|---|---|
+| `numval` | `number?` | Sort value (score, time, …) |
+| `mode` | `"unique"` (default) | `"min"` | `"max"` | `"append"` | `unique`: one entry per user, replaced. `min`/`max`: one entry per user, kept only if `numval` is lower/higher. `append`: a new entry every call. |
+| `spaceId` | `string?` | Another space (defaults to the current one) |
+
+**Returns:** `Promise<object | false>`
+
+#### `ArrivalSpace.pluginStore.get(key, options?)`
+
+| Option | Type | Description |
+|---|---|---|
+| `sort` | `"asc"` (default) | `"desc"` | By `numval` |
+| `limit` | `number?` | Default 10, max 100 |
+| `prefix` | `boolean?` | Match every key starting with `key` |
+| `spaceId` | `string?` | Another space |
+
+**Returns:** `Promise<Array<{ userId, pkey, value, numval, updatedAt }> | false>`
+
+#### `ArrivalSpace.pluginStore.delete(key, options?)`
+
+Delete your own entry for `key`. **Returns:** `Promise<boolean>`
+
+```javascript
+// Best time per player, top 10 fastest
+await ArrivalSpace.pluginStore.push('best-time', ArrivalSpace.getUser().userName, { numval: 12.3, mode: 'min' });
+const board = await ArrivalSpace.pluginStore.get('best-time', { sort: 'asc', limit: 10 });
+```
+
+See `examples/scavenger-hunt-leaderboard.mjs`.
 
 ---
 

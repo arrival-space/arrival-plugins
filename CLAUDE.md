@@ -33,6 +33,7 @@ When extending the adapter:
     - Add or update the relevant section in `docs/api-reference.md`.
     - Add type signatures to `types/arrival.d.ts`.
     - If it merits an example, add one under `examples/` and update `docs/plugin-search-index.json` + `README.md` (see "When Adding/Renaming/Removing Examples" below).
+6. Tell the space agent: the backend's `user_server/space_code_agent/api_cheatsheet.md` (common APIs, inlined in its prompt) and a re-sync of `reference_engine/arrival-script/arrival-api.js` from the client. Every backend deploy pulls this repo's `main` into the agent, so new API docs reach it with the next backend deploy — that deploy must come after the client with the API is live.
 
 ## Plugin Shape (Hard Rules)
 
