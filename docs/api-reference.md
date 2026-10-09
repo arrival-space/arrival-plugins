@@ -810,7 +810,7 @@ See [Velocity Pad](../examples/velocity-pad.mjs).
 
 Get the local player's current movement input intent. Works on desktop (W/S/A/D, arrow keys) and mobile (virtual joystick) — sourced from the same input pipeline the character controller uses, so plugins do not need to poll the keyboard or `getLeftStick()` separately.
 
-Gamepads (browser `standard` mapping, e.g. PS5 / Xbox controllers): the platform uses the left stick to walk, the right stick to look and the bottom face button (Cross / A) to jump. No other button is used by the platform; a plugin can read them in `update()` with `navigator.getGamepads()` (`gamepad.buttons[i].pressed`, standard button order).
+Gamepads (browser `standard` mapping, e.g. PS5 / Xbox controllers): the platform uses the left stick to walk, the right stick to look and the bottom face button (Cross / A) to jump. No other button is used by the platform; a plugin can read them in `update()` with `navigator.getGamepads()` (`gamepad.buttons[i].pressed`, standard button order). Rumble is the browser API too: `gamepad.vibrationActuator?.playEffect('dual-rumble', { duration: 200, strongMagnitude: 1, weakMagnitude: 0.5 })` (Chromium browsers; other browsers and some pads have no `vibrationActuator`). One controller can be listed more than once, so rumble every connected pad.
 
 
 
