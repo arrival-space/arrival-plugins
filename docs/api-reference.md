@@ -749,6 +749,7 @@ Same path as the platform's own spawn/teleport — no physics sweep between the 
 | `position` | `{x,y,z}` | World position |
 | `options.azimuth` | `number` | Heading in degrees. **0° faces −Z**, 90° faces −X — the same convention as a spawn point's `rotation.y` (see `room-config.md`) |
 | `options.forward` | `{x,y,z}` | Heading as a direction vector instead (Y ignored, normalised for you) |
+| `options.elevation` | `number` | Camera pitch in degrees, + looks up, clamped to −80…70 (API 1.19.0) |
 
 **Returns:** `boolean` — `false` if there is no local player or the position isn't finite.
 
@@ -1231,7 +1232,9 @@ Typical `params` keys:
 
 #### `ArrivalSpace.loadSpace(urlOrId)`
 
-Load a space by full URL or shorthand (username/path).
+Load a space by full URL or shorthand (username/path). Query params of the URL (other than
+`gate`) end up in the destination's URL, so its vibes can read them from `location.search`,
+e.g. `loadSpace("https://arrival.space/12345678_1234?color=red")` (API 1.19.0).
 
 ```javascript
 await ArrivalSpace.loadSpace("johndoe");

@@ -2042,6 +2042,8 @@ declare namespace ArrivalSpace {
             forward?: ArrivalVec3Like;
             /** Look direction in degrees (firstPersonView convention); alternative to `forward`. */
             azimuth?: number;
+            /** Camera pitch in degrees, + looks up, clamped to -80..70. API 1.19.0 */
+            elevation?: number;
         },
     ): boolean;
 
