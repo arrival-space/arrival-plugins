@@ -111,9 +111,6 @@ export class AnnotationMarker extends ArrivalScript {
         panel.setLocalPosition(0, 0, 0);
         if (!this.billboard) panel.setLocalEulerAngles(90, 0, 0);
         if (panel.render) panel.render.castShadows = this.castShadows;
-        // Fix collision: createTexturePanel sets halfExtents in world units but entity is
-        // already scaled by (width, 1, height), causing double-scaling. Use unit-space extents.
-        if (panel.collision) panel.collision.halfExtents = new pc.Vec3(0.5, 0.01, 0.5);
     }
 
     _renderIcon() {
@@ -273,16 +270,10 @@ export class AnnotationMarker extends ArrivalScript {
         if (this.fixedScreenSize) {
             const s = Math.max(0.15, dist / AnnotationMarker.REF_DIST);
             this._container.setLocalScale(s, s, s);
-            // Collision shapes don't inherit parent scale (PlayCanvas known issue) — update manually
-            if (this._iconPanel?.collision) {
-                const hs = this.iconSize / 2 * s;
-                this._iconPanel.collision.halfExtents = new pc.Vec3(hs, 0.01, hs);
-            }
-            if (this._descPanel?.collision) {
-                this._descPanel.collision.halfExtents = new pc.Vec3(this.panelWidth / 2 * s, 0.01, this.panelHeight / 2 * s);
-            }
+            this._sizeColliders(s);
         } else {
             this._container.setLocalScale(1, 1, 1);
+            this._sizeColliders(1);
         }
 
         if (this.openByDistance) {
@@ -293,6 +284,19 @@ export class AnnotationMarker extends ArrivalScript {
                 else this._hideDescription();
             }
         }
+    }
+
+    // Primitive collision shapes ignore entity scale (their own and their parents'), so the
+    // world-unit half extents follow the container scale by hand. Setting halfExtents rebuilds
+    // the physics shape, so only when the size actually changed.
+    _sizeColliders(s) {
+        const fit = (panel, hx, hz) => {
+            const he = panel?.collision?.halfExtents;
+            if (!he || (Math.abs(he.x - hx) < 1e-4 && Math.abs(he.z - hz) < 1e-4)) return;
+            panel.collision.halfExtents = new pc.Vec3(hx, 0.01, hz);
+        };
+        fit(this._iconPanel, this.iconSize / 2 * s, this.iconSize / 2 * s);
+        fit(this._descPanel, this.panelWidth / 2 * s, this.panelHeight / 2 * s);
     }
 
     // ── Properties ──

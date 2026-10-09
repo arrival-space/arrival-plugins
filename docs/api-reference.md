@@ -1054,7 +1054,7 @@ ArrivalSpace.setPlayerAnimSpeed('Forward', null);
 Create a controllable NPC with avatar, animation, and optional interaction helpers.
 
 Supports:
-- spawn/transform options (`position`, `rotation`, `scale`, `parent`)
+- spawn/transform options (`position`, `rotation`, `scale`, `parent`). `scale` is the NPC root's scale, default `1`. The avatar inside is already shown at the space's `worldScale` like the player's, so `1` is a normal-size human; don't multiply by `worldScale` again.
 - avatar setup (`avatarUrl`, `avatarConfig`, `avatarParts`, `avatarGender`)
 - movement tuning (`speed`, `turnSpeed`, `stopDistance`)
 - optional custom animation refs (`animations.idle`, `animations.walk`, `animations.jump`) — each accepts a catalog/GLB clip **or a raw Mixamo `.fbx` URL**, which the platform converts to a generic clip on the fly and retargets onto the avatar (VRM and modular/RPM); no pre-conversion needed

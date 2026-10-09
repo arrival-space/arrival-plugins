@@ -108,7 +108,7 @@ still while the picture pinwheels.
 
 ## Auto-play and loop
 
-**`loop` and `autoplay` are NOT part of the `.path` file.** The `Sequence`
+**`loop` and `autoPlay` are NOT part of the `.path` file.** The `Sequence`
 schema is only `{ id, name, disabled, description, data }`, and `data` is only
 `{ fps, entities, markers, disabledEntities? }` — there are **no playback flags
 in the sequence**. Playback config lives on the **cutscene entity's JSON data**
@@ -117,12 +117,14 @@ in the sequence**. Playback config lives on the **cutscene entity's JSON data**
 
 ```jsonc
 // create_entity entity_data — playback config goes HERE, not in the .path
-{ "name": "My Anim", "loop": true, "autoplay": true, "targetEntityId": "my_entity_id" }
+{ "name": "My Anim", "loop": true, "autoPlay": true, "targetEntityId": "my_entity_id" }
 ```
 
+The key is `autoPlay` (camel case); a lowercase `autoplay` on the entity is
+ignored. With `autoPlay: true` the cutscene starts as the space's intro,
+right after the loading screen hides. (`autoplay`, lowercase, is the attribute
+of the `sequencePlayer` *script* - see `docs/sequences.md` - not this entity key.)
 `CutsceneScript.setData({ loop })` / `getLoop()` control looping at runtime.
-Whether a cutscene starts automatically on space load (vs. needing a trigger) is
-client-driven — **verify in a live client**.
 
 ## Gotchas
 

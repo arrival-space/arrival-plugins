@@ -98,6 +98,7 @@ not documented — do not write new code that way.
 - Avatar override: `ArrivalSpace.setAvatarParts` and `ArrivalSpace.resetAvatar` in `destroy()`
 - Player animation override: `ArrivalSpace.setPlayerAnimation`, `setPlayerAnimSpeed`, `setPlayerSpeed`
 - Global physics stepping: `ArrivalSpace.setPhysicsStepRate` (world-global, latest call wins)
+- Collision primitives (`box`, `sphere`, `capsule`, `cylinder`, `cone`) ignore entity scale, their own and their parents': size them in world units (`halfExtents`, `radius`, `height`). `pc.Render` is not exported on the global `pc`.
 - Avatar visual offset: `ArrivalSpace.setPlayerAvatarOffset`
 - Player input hooks: `this.onKeyDown`, `this.onKeyUp`
 - Standing-object detection: `ArrivalSpace.getStandingObject`, `ArrivalSpace.onStandingObjectChanged`
