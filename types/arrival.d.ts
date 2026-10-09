@@ -923,6 +923,8 @@ declare namespace ArrivalSpace {
         userName: string | undefined;
         uniqueName: string | undefined;
         avatar: string | undefined;
+        /** false for a guest (no sign-in); a guest's userID belongs to that temporary account only. API 1.18.0 */
+        isRegistered: boolean;
     }
 
     /**

@@ -221,7 +221,7 @@ Distilled reference for the ArrivalScript / ArrivalSpace runtime API (PlayCanvas
 - `isOwner()` — Check whether the current user is the owner of the current space.
   - _gotcha:_ Owner comparison is loose (==) to tolerate number/string user-ID mismatch.
 - `canEditSpace()` — Check whether the current user can edit the current space (owner, site admin, team/per-space editor, seat holder; server-computed on space load). Plugin-code writes persist only when true. Requires VERSION ≥ 1.16.0.
-- `getUser()` — Get the current user's profile summary ({userID, userName, uniqueName, avatar}).
+- `getUser()` — Get the current user's profile summary ({userID, userName, uniqueName, avatar, isRegistered}); isRegistered is false for a guest (API 1.18.0).
 - `getStaticGates()` — Get all static gates of the current space via the GateServer.
   - _gotcha:_ Returns [] (with a warning) when the GateServer is not found.
 - `getStaticGate(index: number)` — Get a specific static gate by index (0-6).

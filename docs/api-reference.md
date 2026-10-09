@@ -960,7 +960,9 @@ if (info) console.log(`flying at ${info.speed} m/s (max ${info.maxSpeed})`);
 
 Get current user profile summary.
 
-**Returns:** `{ userID, userName, uniqueName, avatar }`
+**Returns:** `{ userID, userName, uniqueName, avatar, isRegistered }`
+
+`isRegistered` is `false` for a guest (no sign-in); a guest's `userID` belongs to that temporary account only. API 1.18.0.
 
 #### `ArrivalSpace.captureView(width?, height?)`
 
