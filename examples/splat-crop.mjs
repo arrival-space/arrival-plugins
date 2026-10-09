@@ -190,21 +190,12 @@ export class SplatCrop extends ArrivalScript {
         return this._shaderLang() === "wgsl" ? CROP_WGSL : CROP_GLSL;
     }
 
-    // Reach the shared material used by the unified splat pipeline. Mirrors
-    // splat-reveal.mjs _getUnifiedMaterial().
+    // The unified pipeline's template material: every unified splat renderer copies
+    // its chunks and parameters from it. Patch the template, not a renderer's own
+    // material — the WebGPU hybrid renderer's compute pass reads the template only.
+    // Mirrors splat-reveal.mjs _getUnifiedMaterial().
     _getUnifiedMaterial() {
-        try {
-            const app = this.app;
-            const cam = app.root.findByName("Camera")?.camera;
-            if (!cam) return null;
-            const cameraData = app.renderer?.gsplatDirector?.getCameraData(cam.camera);
-            const layer = app.scene.layers.getLayerByName("Splats");
-            const layerInfo = cameraData?.layersMap?.get(layer);
-            return layerInfo?.gsplatManager?.renderer?._material ||
-                app.scene.gsplat?.material || null;
-        } catch (e) {
-            return null;
-        }
+        return this.app.scene.gsplat?.material || null;
     }
 
     // Returns true if at least one splat material was found and patched.
@@ -292,7 +283,13 @@ export class SplatCrop extends ArrivalScript {
     }
 
     _updateAllUniforms() {
-        for (const [mat, e] of this._entries) this._setUniforms(mat, e.comp);
+        for (const [mat, e] of this._entries) {
+            this._setUniforms(mat, e.comp);
+            // On WebGL a unified splat renderer re-copies the template's uniforms only
+            // when its version changes. Cheap: no shader rebuild unless chunks or
+            // defines changed.
+            mat.update();
+        }
     }
 
     // ────────────────────────────────────────────

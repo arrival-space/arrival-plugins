@@ -12,7 +12,7 @@
  *
  * --- How it hooks the UNIFIED LOD-streaming splat (the important part) ---
  * Arrival.Space renders the environment splat through PlayCanvas' unified,
- * LOD-streaming gsplat pipeline (engine 2.19.x), which pre-transforms splats
+ * LOD-streaming gsplat pipeline, which pre-transforms splats
  * into a GPU work buffer. REPLACING the vertex shader on the shared material
  * therefore breaks rendering and the splat vanishes.
  *
@@ -418,20 +418,11 @@ export class SplatReveal extends ArrivalScript {
         });
     }
 
-    // Reach the shared material used by the unified splat pipeline. Mirrors the
-    // client's getUnifiedSplatMaterial(). Returns null if unavailable.
+    // The unified pipeline's template material: every unified splat renderer copies
+    // its chunks and parameters from it. Patch the template, not a renderer's own
+    // material — the WebGPU hybrid renderer's compute pass reads the template only.
     _getUnifiedMaterial() {
-        try {
-            const app = this.app;
-            const cam = app.root.findByName("Camera")?.camera;
-            if (!cam) return null;
-            const cameraData = app.renderer?.gsplatDirector?.getCameraData(cam.camera);
-            const layer = app.scene.layers.getLayerByName("Splats");
-            const layerInfo = cameraData?.layersMap?.get(layer);
-            return layerInfo?.gsplatManager?.renderer?._material || null;
-        } catch (e) {
-            return null;
-        }
+        return this.app.scene.gsplat?.material || null;
     }
 
     // Fetch a material's shader-chunk map for one language, or null if the
@@ -559,7 +550,14 @@ export class SplatReveal extends ArrivalScript {
 
     update(dt) {
         if (this._materials.size === 0) return;
+        this._step(dt);
+        // On WebGL a unified splat renderer re-copies the template's uniforms only when
+        // its version changes, so publish this frame's values. Cheap: no shader rebuild
+        // unless chunks or defines changed.
+        for (const m of this._materials) m.update();
+    }
 
+    _step(dt) {
         // Keep the bloom twinkle alive while the chunk is active.
         this._time += dt;
         for (const m of this._materials) m.setParameter("uTime", this._time);
