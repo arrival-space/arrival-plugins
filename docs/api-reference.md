@@ -98,7 +98,7 @@ Show/hide this script's 2D UI container.
 
 #### `lockInput()` / `unlockInput()`
 
-Temporarily lock/unlock game pointer input while interacting with UI.
+Temporarily lock/unlock game pointer input while interacting with UI. Interactive `createUI` elements lock input on their own while hovered; that lock is tracked separately, so leaving UI never releases a `lockInput()` lock. A `createUI` element whose CSS sets `pointer-events: none` is click-through and doesn't lock.
 
 #### `lockKeyboard()` / `unlockKeyboard()`
 
