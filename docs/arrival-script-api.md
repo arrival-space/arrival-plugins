@@ -229,6 +229,8 @@ Distilled reference for the ArrivalScript / ArrivalSpace runtime API (PlayCanvas
 - `getCenterAsset()` — Get the center asset entity of the current space (the main 3D content in the room center).
   - _gotcha:_ Looks up a fixed center GUID ('496ba0ce-2628-4a36-8e02-2d7332d55528'); returns null if the GateServer or entity is absent.
 - `getCutsceneScript(entityId: string)` — Get the cutsceneScript instance on a given entity via the GateServer.
+  - _events:_ the controller fires `sequence:marker` `{ marker, sequence }` during playback and `sequence:complete` `{ sequence, reverse, skipped }` when a run finishes or is skipped (any trigger; not while looping). Subscribe with `on`, remove with `off` in `destroy()`.
+  - _hold/pause:_ `pauseCutscene({ duration?: seconds })` holds the running cutscene on its current frame (auto-resumes after `duration`), `resumeCutscene()` continues; calling pause again while held replaces the hold; both return `false` when there is nothing to pause/resume. Fires `sequence:pause` `{ sequence, frame, duration }` / `sequence:resume` `{ sequence, frame }`. Query with `isCutscenePlaying()` / `isCutscenePaused()`.
 - `loadSpace(urlOrId: string)` — Load a space by full URL or by username/path; bare ids are expanded to https://live.arrival.space/<id>.
 - `loadUserSpace(userId: string)` — Load a user's home space by user ID.
 - `reloadSpace()` — Reload the currently loaded space (custom.travel.center with the current room id).

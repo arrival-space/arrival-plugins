@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated_at": "2026-10-08",
+  "updated_at": "2026-10-09",
   "source": "curated",
   "total_entries": 69,
   "entries": [
@@ -96,15 +96,15 @@
       "path": "docs/sequences.md",
       "kind": "doc",
       "title": "Sequences & Cutscenes",
-      "summary": "Guide to keyframe animation with the sequencePlayer runtime — the same system referred to as sequences, cutscenes, or animations. Covers the entity-aware sequence shape, adapters/getters, markers and sequence:marker events, Catmull-Rom interpolation, authored cutscenes via getCutsceneScript, and playback attributes including reverse/loop/autoplay.",
-      "keywords": ["sequence", "sequences", "cutscene", "cutscenes", "animation", "animations", "animate", "keyframe", "keyframes", "timeline", "sequenceplayer", "playsequence", "getcutscenescript", "marker", "markers", "sequence:marker", "reverse", "reverse playback", "play backwards", "play then reverse", "play forward then reverse", "wait then reverse", "oncomplete", "sequence:complete", "await completion", "on finish", "when animation finishes", "isplaying", "no overlap", "one at a time", "reach sequenceplayer from cutscene", "loop", "autoplay", "camera fly-through", "interpolation", "catmull-rom", "adapter", "getter"]
+      "summary": "Guide to keyframe animation with the sequencePlayer runtime — the same system referred to as sequences, cutscenes, or animations. Covers the entity-aware sequence shape, adapters/getters, markers and sequence:marker events, reacting to a cutscene finishing via the controller's sequence:complete event ({ sequence, reverse, skipped }), holding/pausing a running cutscene with pauseCutscene({ duration }) / resumeCutscene(), Catmull-Rom interpolation, authored cutscenes via getCutsceneScript, and playback attributes including reverse/loop/autoplay.",
+      "keywords": ["sequence", "sequences", "cutscene", "cutscenes", "animation", "animations", "animate", "keyframe", "keyframes", "timeline", "sequenceplayer", "playsequence", "getcutscenescript", "marker", "markers", "sequence:marker", "reverse", "reverse playback", "play backwards", "play then reverse", "play forward then reverse", "wait then reverse", "oncomplete", "sequence:complete", "await completion", "on finish", "when animation finishes", "animation finished", "animation end", "on animation end", "cutscene finished", "cutscene end", "after cutscene", "cutscene skipped", "skipped", "pause", "pause cutscene", "pausecutscene", "resume", "resumecutscene", "hold", "hold cutscene", "hold frame", "freeze cutscene", "wait for click", "sequence:pause", "sequence:resume", "iscutscenepaused", "isplaying", "no overlap", "one at a time", "reach sequenceplayer from cutscene", "loop", "autoplay", "camera fly-through", "interpolation", "catmull-rom", "adapter", "getter"]
     },
     {
       "path": "docs/cutscenes-via-mcp.md",
       "kind": "doc",
       "title": "Creating Cutscenes Headlessly (CLI / MCP) — .path files",
       "summary": "How to author a cutscene/animation without the in-app Sequence Editor or a plugin: serialize a Sequence to a .path file, upload_text_file it, and create_entity from the resource_key. Covers the position/rotation(quat)/scale property keys, attaching the animation by target entity id in data.entities, auto-play/loop, and a worked recipe for spinning an image on one of its corners.",
-      "keywords": ["cutscene", "cutscenes", "animation", "animate", "move object", "spin", "rotate", "spin on corner", "corner pivot", "path file", ".path", "headless", "mcp", "cli", "create cutscene", "cutscene without plugin", "sequence file", "keyframes", "upload_text_file", "create_entity", "timeline", "no vibe", "no plugin"]
+      "keywords": ["cutscene", "cutscenes", "animation", "animate", "move object", "spin", "rotate", "spin on corner", "corner pivot", "path file", ".path", "headless", "mcp", "cli", "create cutscene", "cutscene without plugin", "sequence file", "keyframes", "upload_text_file", "create_entity", "timeline", "no vibe", "no plugin", "camera cutscene", "main-camera", "intro", "space intro", "autoPlay", "camera fly-through", "look at quaternion"]
     },
     {
       "path": "examples/spin-image.path",

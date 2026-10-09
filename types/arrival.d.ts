@@ -2060,6 +2060,15 @@ declare namespace ArrivalSpace {
         fire(event: string, ...args: any[]): void;
     }
 
+    interface CutsceneCompleteEvent {
+        /** The sequence that just played. */
+        sequence: Sequence;
+        /** True if this run played backwards. */
+        reverse: boolean;
+        /** True if the viewer skipped it (Skip button / key / skipIntroCutscene()). */
+        skipped: boolean;
+    }
+
     interface CutscenePlaybackOptions {
         /** Marks this run as the auto-playing intro (skips the seamless "in" keyframe). */
         isIntro?: boolean;
@@ -2100,12 +2109,41 @@ declare namespace ArrivalSpace {
         /** Whether the cutscene is set to loop. */
         getLoop(): boolean;
 
+        /** Whether the cutscene is set to play in reverse. */
+        getReverse(): boolean;
+
+        /**
+         * Hold the running cutscene on its current frame. With `duration` (seconds)
+         * it resumes automatically; calling again while held replaces the hold.
+         * Returns false if no cutscene is running. Requires `ArrivalSpace.VERSION` >= 1.19.0.
+         */
+        pauseCutscene(options?: { duration?: number }): boolean;
+
+        /** Continue a paused cutscene from its held frame. Returns false if there is no paused cutscene. */
+        resumeCutscene(): boolean;
+
+        /** A playback run is active and advancing. */
+        isCutscenePlaying(): boolean;
+
+        /** A playback run is active but held by pauseCutscene(). */
+        isCutscenePaused(): boolean;
+
         /**
          * Subscribe to the cutscene's timeline markers. The controller re-fires
          * each `sequence:marker` from its SequencePlayer as `{ marker, sequence }`.
          * Unsubscribe with `off(...)` in `destroy()`.
          */
         on(event: "sequence:marker", callback: (data: { marker: SequenceMarker; sequence: Sequence }) => void, scope?: any): { off(): void } | void;
+        /**
+         * Fires once when a run finishes or is skipped, whoever started it
+         * (autoplay intro, position trigger, another plugin). Never fires while
+         * looping. Requires `ArrivalSpace.VERSION` >= 1.19.0.
+         */
+        on(event: "sequence:complete", callback: (data: CutsceneCompleteEvent) => void, scope?: any): { off(): void } | void;
+        /** Fires when pauseCutscene() holds the run. `duration` is null for an open-ended hold. */
+        on(event: "sequence:pause", callback: (data: { sequence: Sequence; frame: number; duration: number | null }) => void, scope?: any): { off(): void } | void;
+        /** Fires when a held run continues (resumeCutscene() or a timed hold ending). */
+        on(event: "sequence:resume", callback: (data: { sequence: Sequence; frame: number }) => void, scope?: any): { off(): void } | void;
         on(event: string, callback: Function, scope?: any): { off(): void } | void;
         off(event: string, callback: Function, scope?: any): void;
     }

@@ -53,6 +53,8 @@ const sequence = {
     data: {
         fps: 30,
         entities: {
+            // "main-camera" is the reserved id for the viewer's camera (world-space
+            // position + rotation quat, looking down -Z). See cutscenes-via-mcp.md.
             "main-camera": {
                 position: {
                     id: "position",
@@ -283,7 +285,8 @@ play/loop boundary, so set the direction up front for predictable marker events.
 ### Events
 
 - `"sequence:marker"` -> `{ marker, sequence }`
-- `"sequence:complete"`
+- `"sequence:complete"` — no payload on the raw player (the cutscene controller's
+  `sequence:complete` carries `{ sequence, reverse, skipped }`)
 - `"sequencePlayerScript:currentFrameChange"` -> `frame`
 
 ## Interpolation
@@ -328,10 +331,132 @@ _play() {
 - `getLoop()` / `getReverse()` — read the current `loop` / `reverse` flags
 - `on("sequence:marker", ({ marker, sequence }) => ...)` — react to timeline
   markers as the cutscene plays; unsubscribe with `off(...)` in `destroy()`
+- `on("sequence:complete", ({ sequence, reverse, skipped }) => ...)` — react to
+  the cutscene **finishing**, no matter who started it (see
+  [Reacting When A Cutscene Finishes](#reacting-when-a-cutscene-finishes))
+- `pauseCutscene(options?)` / `resumeCutscene()` — hold the running cutscene on
+  its current frame and continue later; `pauseCutscene({ duration: 2 })` holds
+  for 2 s then resumes on its own (see [Holding / Pausing A Cutscene](#holding--pausing-a-cutscene))
+- `isCutscenePlaying()` / `isCutscenePaused()` — query the current run
 
 The controller re-fires the same `sequence:marker` events its `SequencePlayer`
 emits, so marker-reactive plugins can listen on the cutscene entity without
 owning the player.
+
+### Reacting When A Cutscene Finishes
+
+There are two ways to run code when a cutscene ends:
+
+| You want to…                                                        | Use                                         |
+| ------------------------------------------------------------------- | ------------------------------------------- |
+| react to **a run you start** yourself                               | `playCutscene({ onComplete })`              |
+| react to **every** run — autoplay intro, position trigger, a button, another plugin | `cutscene.on("sequence:complete", …)` |
+
+`sequence:complete` fires on the **controller** once per run, after the camera,
+UI and input have been restored, with:
+
+| Field      | Type       | Meaning                                                             |
+| ---------- | ---------- | ------------------------------------------------------------------- |
+| `sequence` | `Sequence` | The sequence that just played                                       |
+| `reverse`  | `boolean`  | `true` if this run played backwards                                 |
+| `skipped`  | `boolean`  | `true` if the viewer skipped it (Skip button / key / `skipIntroCutscene()`) |
+
+```javascript
+export class OpenDoorAfterCutscene extends ArrivalScript {
+    static scriptName = "openDoorAfterCutscene";
+
+    cutsceneEntityId = "";
+
+    static properties = {
+        cutsceneEntityId: { title: "Cutscene", editor: "entity", filterTypes: ["cutscene"] },
+    };
+
+    initialize() {
+        this._cutscene = ArrivalSpace.getCutsceneScript(this.cutsceneEntityId);
+        this._cutscene?.on("sequence:complete", this._onCutsceneComplete, this);
+    }
+
+    _onCutsceneComplete({ reverse, skipped }) {
+        if (reverse) return;              // only react to the forward run
+        console.log(skipped ? "Cutscene skipped" : "Cutscene finished");
+        // open the door, start the game, show a panel, ...
+    }
+
+    destroy() {
+        this._cutscene?.off("sequence:complete", this._onCutsceneComplete, this);
+    }
+}
+```
+
+Notes:
+
+- Subscribe on the **controller** from `getCutsceneScript()`, never on
+  `entity.script.sequencePlayer` — that player is created per run and destroyed
+  at completion, taking its listeners with it.
+- A **looping** cutscene (`loop: true`) never completes, so the event never
+  fires. Use a marker on the last frame if you need a per-loop cue.
+- The cutscene entity may not be loaded yet when your `initialize()` runs. If
+  `getCutsceneScript()` returns `null`, retry (e.g. in `update()` until found)
+  or resolve it lazily in `onPropertyChanged`.
+- If the listener replays the cutscene, guard against loops (e.g. only replay
+  when `!reverse`).
+- Feature-detect with `ArrivalSpace.VERSION` ≥ `1.19.0`; older clients never
+  fire `sequence:complete` on the controller (only `onComplete` works there).
+
+### Holding / Pausing A Cutscene
+
+Freeze a running cutscene on its current frame, then continue from that same
+frame:
+
+| Method                         | Returns   | Effect                                                                 |
+| ------------------------------ | --------- | ---------------------------------------------------------------------- |
+| `pauseCutscene()`              | `boolean` | Hold until `resumeCutscene()`. `false` if no cutscene is running        |
+| `pauseCutscene({ duration })`  | `boolean` | Hold for `duration` **seconds**, then resume automatically              |
+| `resumeCutscene()`             | `boolean` | Continue from the held frame. `false` if there is no paused cutscene    |
+| `isCutscenePlaying()`          | `boolean` | A run is active and advancing                                          |
+| `isCutscenePaused()`           | `boolean` | A run is active but held                                               |
+
+Events on the controller (alongside `sequence:marker` / `sequence:complete`):
+
+- `"sequence:pause"` → `{ sequence, frame, duration }` (`duration` is `null` for an open-ended hold)
+- `"sequence:resume"` → `{ sequence, frame }` (also fires when a timed hold ends)
+
+**Hold on a marker** — the most common pattern: put a marker in the timeline
+(set its `event`, e.g. `"hold"`) and pause there:
+
+```javascript
+initialize() {
+    this._cutscene = ArrivalSpace.getCutsceneScript(this.cutsceneEntityId);
+    this._cutscene?.on("sequence:marker", this._onMarker, this);
+}
+
+_onMarker({ marker }) {
+    if (marker.event === "hold") this._cutscene.pauseCutscene({ duration: 2 });  // 2 s beat
+    if (marker.event === "waitForClick") this._cutscene.pauseCutscene();          // until resumeCutscene()
+}
+
+_onPlayerClicked() {
+    if (this._cutscene?.isCutscenePaused()) this._cutscene.resumeCutscene();
+}
+
+destroy() {
+    this._cutscene?.off("sequence:marker", this._onMarker, this);
+}
+```
+
+Notes:
+
+- While held, a camera cutscene keeps the camera, hidden UI and input lock in
+  place. The viewer can still **skip** it: that ends the run and fires
+  `sequence:complete` with `skipped: true` (any pending timed hold is cancelled).
+- Markers already passed don't fire again on resume, so pausing from inside a
+  `sequence:marker` handler is safe (no re-trigger loop).
+- Calling `pauseCutscene()` again while held replaces the hold: a new `duration`
+  restarts the timer, no `duration` turns it into an open-ended hold.
+- Only affects **playback** runs; the Sequence Editor's own play/pause controls
+  are separate. For code-driven `sequencePlayer`s you own, use
+  `pauseSequence()` / `resumeSequence()` directly.
+- Requires `ArrivalSpace.VERSION` ≥ `1.19.0`.
 
 ### Reverse & Completion
 
@@ -385,7 +510,19 @@ Reference:
 
 - `examples/firework-marker-fx.mjs`
 
-### 3. Play A Cutscene From The World
+### 3. React When A Cutscene Ends
+
+Subscribe to the controller's `sequence:complete` to chain gameplay onto a
+cutscene's end — including the autoplay intro or runs triggered elsewhere. See
+[Reacting When A Cutscene Finishes](#reacting-when-a-cutscene-finishes).
+
+### 4. Hold A Cutscene On A Beat
+
+Pause from a `sequence:marker` handler with `pauseCutscene({ duration })` for a
+timed beat, or `pauseCutscene()` + `resumeCutscene()` to wait for player input.
+See [Holding / Pausing A Cutscene](#holding--pausing-a-cutscene).
+
+### 5. Play A Cutscene From The World
 
 Trigger a picked cutscene from a button, proximity check, or any other input.
 
@@ -398,7 +535,7 @@ Important in third person:
 - use `ArrivalSpace.getPlayer()` for player position
 - use `ArrivalSpace.getCamera()` only when you want the camera transform
 
-### 4. Drive A Referenced Entity
+### 6. Drive A Referenced Entity
 
 Cutscenes can also animate other entities' properties (for example a Custom
 Sound entity's volume). You can control such an entity directly from a plugin:

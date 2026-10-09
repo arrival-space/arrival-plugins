@@ -209,7 +209,9 @@ more than one kind. Valid values:
   `"dynamic-gate"`, `"center-asset"`.
 - `"camera"` — also offers the room's main camera. When the camera is chosen the
   stored value is a reserved camera id rather than a scene entity, so it won't
-  resolve to a real entity — special-case it if you allow `"camera"`.
+  resolve to a real entity — special-case it if you allow `"camera"`. (Cutscene
+  camera tracks are keyed `"main-camera"` in `data.entities`, see
+  `cutscenes-via-mcp.md`; the picker likely stores the same id — verify before relying on it.)
 
 The stored id may be empty `""` (nothing picked / cleared) or point at an entity
 that hasn't loaded yet, so always guard for `null` after resolving it.

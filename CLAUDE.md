@@ -129,6 +129,8 @@ cutscene, keyed to its target by the entity id in `data.entities`. `.path` is a
 first-class asset type (like `.mjs` → plugin, `.png` → image). Full flow, quat
 details, auto-play/loop, and a corner-spin recipe are in
 [`docs/cutscenes-via-mcp.md`](docs/cutscenes-via-mcp.md) (+ `examples/spin-image.path`).
+For a **camera** fly-through or space intro, key the `.path` to `main-camera` and set
+`autoPlay: true` on the cutscene entity (see the "Camera cutscenes" section of that doc).
 When a request is "animate/move/spin X", prefer this over a vibe unless
 logic/UI/input/physics is needed — and if it's ambiguous, ask the user which they want.
 

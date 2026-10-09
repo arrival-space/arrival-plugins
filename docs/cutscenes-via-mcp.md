@@ -56,6 +56,83 @@ axis `(ax, ay, az)`: `{ x: ax·sin(θ/2), y: ay·sin(θ/2), z: az·sin(θ/2), w:
 The runtime interpolates with Catmull-Rom; keep keyframe steps ≤ 90° so quat
 interpolation never takes a shortcut in the wrong direction.
 
+## Camera cutscenes (fly-throughs and space intros)
+
+To move the **viewer's camera** rather than an object, key the sequence to the
+reserved id **`main-camera`** (what the Sequence Editor writes for camera
+tracks). It is not a scene entity, so there is nothing to create first.
+
+| Property key | `type`   | `keyframeData`     | Notes |
+|--------------|----------|--------------------|-------|
+| `position`   | `vec3`   | `{ x, y, z }`      | Camera position in world space |
+| `rotation`   | `quat`   | `{ x, y, z, w }`   | Camera orientation. The camera looks down **−Z** |
+| `fov`        | `number` | degrees            | Optional |
+| `scale`      | `vec3`   | `{ x:1, y:1, z:1 }`| The Sequence Editor writes it; you can omit it |
+
+Sequence Editor exports also carry post-effect tracks such as `brightness`,
+`contrast` and `saturation` on `main-camera`.
+
+**An intro is just a camera cutscene with `autoPlay: true`** on its entity, set
+the same way as [Auto-play and loop](#auto-play-and-loop) below. Nothing in
+`room.json` is needed. The old `introCamSequence` room key is legacy, so leave
+it alone.
+
+### Look-at → quaternion
+
+Authoring tools think in "camera at A looking at B". To convert that to a
+quaternion with a level horizon (no roll):
+
+```
+f = normalize(target - eye)        // forward
+z = -f                             // camera looks down -Z
+x = normalize(cross(UP, z))
+y = cross(z, x)
+rotation = quat from the matrix with columns [x, y, z]
+```
+
+Two rules keep Catmull-Rom quaternion playback from spinning the wrong way:
+
+- **Same hemisphere:** if `dot(q, prevQ) < 0`, negate `q`.
+- **Small steps:** split any turn of more than ~60–90° between consecutive
+  keyframes into in-between keyframes (slerp the rotation and lerp the position).
+  A pull-back that swings from facing a planet to facing the Sun easily turns
+  more than 150°.
+
+### Pausing a camera tour for input
+
+Give the `.path` a marker per stop with a stable `event` and a `payload`, e.g.
+`{ "id": "stop-3", "frameNumber": 420, "label": "Earth", "event": "tour:stop", "payload": { "index": 3 } }`;
+`.path` markers keep both fields. A companion vibe holds the cutscene on each one
+and resumes on input:
+
+```javascript
+_onMarker({ marker }) {
+    if (marker.event !== "tour:stop") return;
+    this._cutscene.pauseCutscene();                  // open-ended hold
+    this._waitingFor = marker.payload.index;         // show info, outline the target, ...
+}
+
+_onTargetClicked(index) {                            // from ArrivalSpace.onEntityClick
+    if (index === this._waitingFor && this._cutscene.isCutscenePaused()) {
+        this._waitingFor = -1;
+        this._cutscene.resumeCutscene();
+    }
+}
+```
+
+Resolve the controller lazily, because the cutscene entity may load after the vibe:
+retry `ArrivalSpace.getCutsceneScript(id)` from `update()` until it returns one.
+An `autoPlay` intro can already be running by then, so check
+`isCutscenePlaying()` / `isCutscenePaused()` when you find it.
+
+Unverified, so test these in a live client:
+
+- Whether the input lock a camera cutscene holds while paused also blocks
+  `ArrivalSpace.onEntityClick`. Offer a 2D button as a fallback until it is confirmed.
+- Whether `main-camera` keyframes are absolute world coordinates or relative
+  to the cutscene entity. Placing the cutscene entity at the origin makes the
+  two the same.
+
 ## Minimal example
 
 A 4-second loop that lifts an entity 1 m and back:
@@ -117,13 +194,38 @@ in the sequence**. Playback config lives on the **cutscene entity's JSON data**
 
 ```jsonc
 // create_entity entity_data — playback config goes HERE, not in the .path
-{ "name": "My Anim", "loop": true, "autoPlay": true, "targetEntityId": "my_entity_id" }
+{ "displayName": "My Anim", "loop": true, "autoPlay": true }
 ```
 
-The key is `autoPlay` (camel case); a lowercase `autoplay` on the entity is
-ignored. With `autoPlay: true` the cutscene starts as the space's intro,
-right after the loading screen hides. (`autoplay`, lowercase, is the attribute
-of the `sequencePlayer` *script* - see `docs/sequences.md` - not this entity key.)
+The flag is **`autoPlay`, with a capital P**: that is what the in-app editor
+saves on real cutscene entities. The `sequencePlayer` script attribute is
+lowercase `autoplay`, but that is a different thing. Other entity fields seen on
+saved cutscenes: `loop`, `seamlessInAndOut`, `displayName`, `scale`.
+
+In a CLI workspace a cutscene entity looks like this. The `.path` goes in
+`space/assets/` and is referenced by the `assets/<name>` token, which push
+uploads:
+
+```json
+{
+  "id": "my-intro",
+  "type": "UserModelEntity",
+  "data": {
+    "glbUrl": "assets/my-intro.path",
+    "displayName": "Intro",
+    "autoPlay": true,
+    "loop": false,
+    "position": { "x": 0, "y": 0, "z": 0 },
+    "rotation": { "x": 0, "y": 0, "z": 0 },
+    "scale": 1
+  }
+}
+```
+
+A lowercase `autoplay` on the entity is ignored. With `autoPlay: true` the
+cutscene starts as the space's intro, right after the loading screen hides; that
+is how a space intro is made (see
+[Camera cutscenes](#camera-cutscenes-fly-throughs-and-space-intros)).
 `CutsceneScript.setData({ loop })` / `getLoop()` control looping at runtime.
 
 ## Gotchas
