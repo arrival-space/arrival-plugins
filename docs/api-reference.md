@@ -290,6 +290,8 @@ Only **declared plugin properties** are valid names. The live `this[name]` is up
 
 Persists only when the current user can edit the space ([`ArrivalSpace.canEditSpace()`](#arrivalspacecaneditspace)). For everyone else only the live value changes, nothing is sent to the server, the promise resolves `false` and a console error names the attempted write. The space agent's inspector browser never persists either. Values equal to the stored ones are not re-uploaded (resolves `true`), unless an earlier `{ persist: false }` change is still unsaved.
 
+Size limit: each save uploads the entity's whole data (all params, JSON-encoded) and is capped at 100 KB; larger saves fail with HTTP 413. A param holding a JSON string counts with its escaping (every `"` becomes `\"`), so ~90 KB of JSON text already exceeds it. Space files ([`ArrivalSpace.fs`](#space-files-arrivalspacefs)) take up to 5 MB per file.
+
 ```javascript
 // One value:
 await this.setParam('greeting', 'Hello!');

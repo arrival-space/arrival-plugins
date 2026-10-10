@@ -459,6 +459,9 @@ declare class ArrivalScript extends pc.Script {
      * ArrivalSpace.canEditSpace() is true; otherwise resolves false without contacting the server.
      * Values equal to the stored ones resolve true without an upload (unless a persist:false
      * change is still unsaved).
+     * Each save uploads the entity's whole data (all params, JSON-encoded), capped at 100 KB
+     * (HTTP 413 over it); a JSON string in a param counts with its escaping. ArrivalSpace.fs
+     * files take up to 5 MB.
      * @param name A declared plugin property name.
      * @param value The new value.
      * @param options persist:false sets without uploading (batch, then call save()).
