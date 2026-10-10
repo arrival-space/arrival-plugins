@@ -1395,11 +1395,11 @@ path or file type), `EFBIG`, `EDQUOT`, `EAGAIN` (too many writes, retry later), 
   (`.mp3 .ogg .wav .m4a .mp4 .webm`), 3D (`.glb .gltf .ply .splat .sog .spz`) and `.pdf`.
   Never scripts or HTML (`.js .mjs .html .svg`, …).
 - Paths: letters, digits, `. _ -` and spaces; no `..`; up to 255 characters.
-- Editors: 5 MB per file, 1000 files per space, 30 writes per minute per space.
-- Visitors: 1 MB per file, 20 MB and 100 files each, 10 writes per minute.
+- Editors: 5 MB per file, 1000 files per space; 120 writes per minute and 2000 per hour per space, all editors together.
+- Visitors: 1 MB per file, 20 MB and 100 files each; 10 writes per minute and 100 per hour each, 120 per minute for all visitors together.
 - Everything counts toward the space owner's storage.
 - Duplicating a space copies its files, except `visitors/`.
-- Reads are public — don't store secrets.
+- Reads are public: every visitor, logged in or not, can `readFile`, `readdir` and `url` every file of the space — data a vibe shows to visitors needs no copy in params. Don't store secrets.
 - Shared lists many visitors add to (scores, votes, a leaderboard) fit [`ArrivalSpace.pluginStore`](#plugin-store-arrivalspacepluginstore) better: `get(key, { sort, limit })` returns the top entries in one request, while reading every visitor's file costs one fetch per visitor.
 
 See `examples/pin-board.mjs`.
