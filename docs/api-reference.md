@@ -626,6 +626,69 @@ space's outline style, it doesn't choose its own.
 
 ---
 
+### Raycasts
+
+Two ways to ask "what is there", with different answers. Both skip the local player (its
+avatar and capsule) unless `includePlayer: true`.
+
+| | `raycastScreen(x, y)` | `raycastPhysics(origin, direction)` |
+|---|---|---|
+| Hits | what is **drawn**: splats, every mesh, vibe objects - no collider needed | **colliders** only: ground boxes, a space's collision mesh, rigidbodies |
+| On a splat | the splat surface the player sees | the collision mesh, or the flat ground box when the space has none |
+| A mesh without a collider | hit | passed through - the ray returns the floor behind it |
+| Cost | one render of the scene into a depth buffer, async (about a frame); calls in the same frame share it | synchronous, well under a millisecond |
+| Returns `normal` | no - a splat's depth is too grainy per pixel for a surface direction | yes, from the collider |
+
+Measured in a splat space whose only collider is a ground box: through the same screen points,
+physics hit the box 0.05-0.75 m off the visible gravel, and through a tent wall it returned the
+floor 10 m behind it.
+
+#### `ArrivalSpace.raycastScreen(x, y, options?)`
+
+The surface the player sees at a screen position. `x`/`y` are CSS pixels relative to the
+canvas, as in mouse and touch events.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `ignore` | `pc.Entity[]` | `[]` | Entities (with children) to see through, e.g. your own markers |
+| `includePlayer` | `boolean` | `false` | Hit the local player's avatar too |
+| `resolution` | `number` | `0.5` | Fraction of the screen resolution rendered, 0.25..1 |
+
+**Returns:** `Promise<{ point: pc.Vec3, distance: number, entity: pc.Entity | null, isSplat: boolean } | null>`
+- `null` where nothing is drawn (sky) and on very faint splat edges.
+- `entity` is the hit mesh's entity, `null` on a splat.
+
+```javascript
+const hit = await ArrivalSpace.raycastScreen(event.x, event.y, { ignore: [this.marker] });
+if (hit) this.marker.setPosition(hit.point);
+```
+
+Example: [`examples/measure-tool.mjs`](../examples/measure-tool.mjs) - distances, paths, areas and heights.
+
+#### `ArrivalSpace.raycastPhysics(origin, direction, maxDistance?, options?)`
+
+A ray against colliders. `origin`/`direction` are `{x,y,z}` (direction normalized for you),
+`maxDistance` defaults to 100 m. Options: `ignore` (entities to pass through) and
+`includePlayer` (hit the player's capsule and the free-camera sphere).
+
+**Returns:** `{ point: pc.Vec3, normal: pc.Vec3, distance: number, entity: pc.Entity } | null`
+
+```javascript
+// keep a ball on the ground every frame
+const from = ball.getPosition().clone().add(new pc.Vec3(0, 1, 0));
+const hit = ArrivalSpace.raycastPhysics(from, { x: 0, y: -1, z: 0 }, 5);
+if (hit) ball.setPosition(hit.point.x, hit.point.y + radius, hit.point.z);
+```
+
+#### `ArrivalSpace.disableClickToWalk()`
+
+Clicks and taps on the ground stop walking the player there; the camera still orbits and the
+movement keys still work. Several vibes can hold it at once.
+
+**Returns:** `() => void` - gives click-to-walk back (safe to call twice). Call it in `destroy()`.
+
+---
+
 ### Cleanup
 
 #### `ArrivalSpace.disposeEntity(entity, options?)`

@@ -2,8 +2,16 @@
   "version": 1,
   "updated_at": "2026-10-08",
   "source": "curated",
-  "total_entries": 65,
+  "total_entries": 66,
   "entries": [
+    {
+      "path": "examples/measure-tool.mjs",
+      "kind": "example",
+      "title": "Measure Tool",
+      "summary": "Click points on splats, meshes or vibe objects to measure distances, paths, areas and heights with live labels; uses raycastScreen and disableClickToWalk. Requires API 1.20.0.",
+      "script_name": "Measure Tool",
+      "keywords": ["raycastScreen", "raycastPhysics", "raycast", "surface picking", "pick point", "splat surface", "measure", "distance", "area", "height", "slope", "disableClickToWalk", "worldToScreen", "click vs drag"]
+    },
     {
       "path": "examples/pin-board.mjs",
       "kind": "example",

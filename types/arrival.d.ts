@@ -816,6 +816,37 @@ declare namespace ArrivalSpace {
      */
     function setOutline(entity: pc.Entity, on?: boolean): boolean;
 
+    /**
+     * The surface the player SEES at a screen position (CSS pixels, as in mouse events): splats,
+     * meshes, vibe objects - no collider needed. One depth render, async (about a frame); calls
+     * in the same frame share it. Skips the local player unless includePlayer. No normal: a
+     * splat's per-pixel depth is too grainy. null where nothing is drawn.
+     */
+    function raycastScreen(
+        x: number,
+        y: number,
+        options?: { ignore?: pc.Entity[]; includePlayer?: boolean; resolution?: number },
+    ): Promise<{ point: pc.Vec3; distance: number; entity: pc.Entity | null; isSplat: boolean } | null>;
+
+    /**
+     * A ray against COLLIDERS (ground boxes, collision meshes, rigidbodies). Synchronous, well
+     * under a millisecond. Does not see what is drawn: a mesh without a collider is passed
+     * through, and on a splat it hits the collision mesh or ground box. Skips the player's
+     * capsule and the free camera unless includePlayer.
+     */
+    function raycastPhysics(
+        origin: { x: number; y: number; z: number },
+        direction: { x: number; y: number; z: number },
+        maxDistance?: number,
+        options?: { ignore?: pc.Entity[]; includePlayer?: boolean },
+    ): { point: pc.Vec3; normal: pc.Vec3; distance: number; entity: pc.Entity } | null;
+
+    /**
+     * Stop clicks/taps on the ground from walking the player there; camera orbit and movement
+     * keys keep working. Several callers can hold it. @returns release function.
+     */
+    function disableClickToWalk(): () => void;
+
     /** Safely dispose an entity and its resources */
     function disposeEntity(entity: pc.Entity, options?: DisposeEntityOptions): void;
 
