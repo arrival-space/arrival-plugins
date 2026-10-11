@@ -2,8 +2,16 @@
   "version": 1,
   "updated_at": "2026-10-08",
   "source": "curated",
-  "total_entries": 66,
+  "total_entries": 67,
   "entries": [
+    {
+      "path": "examples/ray-probe.mjs",
+      "kind": "example",
+      "title": "Ray Probe",
+      "summary": "A drone circles above the vibe and measures its height above the ground with raycastVisual (what is drawn, splats included) and raycastPhysics (colliders), drawing both hits. Requires API 1.21.0.",
+      "script_name": "Ray Probe",
+      "keywords": ["raycastVisual", "raycastPhysics", "raycast", "ground height", "height above ground", "line of sight", "splat surface", "minSplatOpacity", "drawLine", "async ray"]
+    },
     {
       "path": "examples/measure-tool.mjs",
       "kind": "example",
