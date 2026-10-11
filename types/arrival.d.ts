@@ -820,12 +820,28 @@ declare namespace ArrivalSpace {
      * The surface the player SEES at a screen position (CSS pixels, as in mouse events): splats,
      * meshes, vibe objects - no collider needed. One depth render, async (about a frame); calls
      * in the same frame share it. Skips the local player unless includePlayer. No normal: a
-     * splat's per-pixel depth is too grainy. null where nothing is drawn.
+     * splat's per-pixel depth is too grainy. null where nothing is drawn. minSplatOpacity
+     * (default the scene's 0.3): Gaussians fainter than this are seen through; another value
+     * waits one more render and applies to splat shadows during it.
      */
     function raycastScreen(
         x: number,
         y: number,
-        options?: { ignore?: pc.Entity[]; includePlayer?: boolean; resolution?: number },
+        options?: { ignore?: pc.Entity[]; includePlayer?: boolean; resolution?: number; minSplatOpacity?: number },
+    ): Promise<{ point: pc.Vec3; distance: number; entity: pc.Entity | null; isSplat: boolean } | null>;
+
+    /**
+     * What is DRAWN along a 3D ray (splats, meshes, vibe objects), e.g. the visible ground under
+     * an object. A narrow (5 degree) camera renders from the origin: async, about 30-80 ms, rays
+     * run one at a time. minSplatOpacity defaults to 0.1 - from angles a splat was not captured
+     * from, surfaces are often a blend of faint Gaussians; lower values also hit faint floaters.
+     * Skips the local player unless includePlayer. null where nothing is within maxDistance (50).
+     */
+    function raycastVisual(
+        origin: { x: number; y: number; z: number },
+        direction: { x: number; y: number; z: number },
+        maxDistance?: number,
+        options?: { ignore?: pc.Entity[]; includePlayer?: boolean; minSplatOpacity?: number },
     ): Promise<{ point: pc.Vec3; distance: number; entity: pc.Entity | null; isSplat: boolean } | null>;
 
     /**

@@ -628,20 +628,29 @@ space's outline style, it doesn't choose its own.
 
 ### Raycasts
 
-Two ways to ask "what is there", with different answers. Both skip the local player (its
+Three ways to ask "what is there", with different answers. All skip the local player (its
 avatar and capsule) unless `includePlayer: true`.
 
-| | `raycastScreen(x, y)` | `raycastPhysics(origin, direction)` |
-|---|---|---|
-| Hits | what is **drawn**: splats, every mesh, vibe objects - no collider needed | **colliders** only: ground boxes, a space's collision mesh, rigidbodies |
-| On a splat | the splat surface the player sees | the collision mesh, or the flat ground box when the space has none |
-| A mesh without a collider | hit | passed through - the ray returns the floor behind it |
-| Cost | one render of the scene into a depth buffer, async (about a frame); calls in the same frame share it | synchronous, well under a millisecond |
-| Returns `normal` | no - a splat's depth is too grainy per pixel for a surface direction | yes, from the collider |
+| | `raycastScreen(x, y)` | `raycastVisual(origin, direction)` | `raycastPhysics(origin, direction)` |
+|---|---|---|---|
+| Hits | what is **drawn** at a screen point: splats, every mesh, vibe objects - no collider needed | what is **drawn** along any 3D ray | **colliders** only: ground boxes, a space's collision mesh, rigidbodies |
+| On a splat | the splat surface the player sees | the splat surface seen from the ray's origin | the collision mesh, or the flat ground box when the space has none |
+| A mesh without a collider | hit | hit | passed through - the ray returns the floor behind it |
+| Cost | one render into a depth buffer, async (about a frame); calls in the same frame share it | a narrow camera renders from the origin, async (about 30-80 ms); rays run one at a time | synchronous, well under a millisecond |
+| Returns `normal` | no - a splat's depth is too grainy per pixel for a surface direction | no | yes, from the collider |
 
 Measured in a splat space whose only collider is a ground box: through the same screen points,
 physics hit the box 0.05-0.75 m off the visible gravel, and through a tent wall it returned the
-floor 10 m behind it.
+floor 10 m behind it. Along the same rays, `raycastScreen` and `raycastVisual` agreed to
+0.00-0.23 m.
+
+**Splat opacity.** A splat is a cloud of semi-transparent Gaussians, and a pick sees through
+every single one fainter than `minSplatOpacity`. Seen from the angles it was captured from, a
+surface stacks many Gaussians per pixel and is hit at the engine default 0.3. From other angles
+(straight down onto a walk-through filmed at eye level) it is often a blend of faint ones: at
+0.3, rays from 0.5 m above the ground missed or landed 0.6 m low at 4 of 9 spots; at 0.1, 8 of
+9 were within -0.03..+0.15 m. Lower values also make faint floaters in the air count. A value
+other than the scene's waits for one more render and applies to splat shadows during it.
 
 #### `ArrivalSpace.raycastScreen(x, y, options?)`
 
@@ -653,6 +662,7 @@ canvas, as in mouse and touch events.
 | `ignore` | `pc.Entity[]` | `[]` | Entities (with children) to see through, e.g. your own markers |
 | `includePlayer` | `boolean` | `false` | Hit the local player's avatar too |
 | `resolution` | `number` | `0.5` | Fraction of the screen resolution rendered, 0.25..1 |
+| `minSplatOpacity` | `number` | scene's (`0.3`) | Gaussians fainter than this are seen through, 0.01..1 |
 
 **Returns:** `Promise<{ point: pc.Vec3, distance: number, entity: pc.Entity | null, isSplat: boolean } | null>`
 - `null` where nothing is drawn (sky) and on very faint splat edges.
@@ -664,6 +674,27 @@ if (hit) this.marker.setPosition(hit.point);
 ```
 
 Example: [`examples/measure-tool.mjs`](../examples/measure-tool.mjs) - distances, paths, areas and heights.
+
+#### `ArrivalSpace.raycastVisual(origin, direction, maxDistance?, options?)`
+
+What is drawn along a 3D ray - the visible ground under an object, the line of sight between
+two points. `origin`/`direction` are `{x,y,z}` (direction normalized for you), `maxDistance`
+defaults to 50 m. The ray renders through a 5 degree view; where its centre finds nothing, the
+median of the hits close around it is used (needs a third of them).
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `ignore` | `pc.Entity[]` | `[]` | Entities (with children) to see through, e.g. the object itself |
+| `includePlayer` | `boolean` | `false` | Hit the local player's avatar too |
+| `minSplatOpacity` | `number` | `0.1` | Gaussians fainter than this are seen through, 0.01..1 |
+
+**Returns:** `Promise<{ point: pc.Vec3, distance: number, entity: pc.Entity | null, isSplat: boolean } | null>`
+
+```javascript
+// height of the visible ground under a flying object
+const hit = await ArrivalSpace.raycastVisual(drone.getPosition(), { x: 0, y: -1, z: 0 }, 30, { ignore: [drone] });
+if (hit) label.textContent = `${hit.distance.toFixed(1)} m above ground`;
+```
 
 #### `ArrivalSpace.raycastPhysics(origin, direction, maxDistance?, options?)`
 
