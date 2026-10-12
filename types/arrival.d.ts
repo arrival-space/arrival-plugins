@@ -773,6 +773,29 @@ declare namespace ArrivalSpace {
     /** Play a 3D positional sound */
     function playSound(url: string, options?: PlaySoundOptions): Promise<{ entity: pc.Entity; slot: pc.SoundSlot }>;
 
+    /**
+     * Speak text with an AI voice, streamed: playback starts while the rest is generated
+     * (~0.5-2 s for a new line, ~0.4 s for a line spoken before). Any language. Positional when
+     * given an entity (follows it, stops when it is destroyed) or a position. done resolves true
+     * when spoken to the end, false when stopped or failed (error says why); never throws.
+     * level is the current loudness 0..1. Requires VERSION >= 1.23.0.
+     */
+    function speak(
+        text: string,
+        options?: {
+            voice?: "alloy" | "ash" | "ballad" | "coral" | "echo" | "fable" | "onyx" | "nova" | "sage" | "shimmer" | "verse" | "marin" | "cedar";
+            instructions?: string;
+            speed?: number;
+            entity?: pc.Entity;
+            position?: { x: number; y: number; z: number };
+            volume?: number;
+            refDistance?: number;
+            maxDistance?: number;
+            rollOffFactor?: number;
+            positional?: boolean;
+        },
+    ): { done: Promise<boolean>; stop(): void; readonly playing: boolean; readonly level: number; readonly error: string | null };
+
     /** Create a material */
     function createMaterial(options?: CreateMaterialOptions): pc.StandardMaterial;
 
