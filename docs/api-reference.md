@@ -1815,7 +1815,7 @@ itself, and a positional voice would hear itself through the speakers and interr
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `instructions` | `string` | a short friendly persona | Who it is and how it talks (up to 4000 characters) |
+| `instructions` | `string` | a short friendly persona | Who it is and how it talks (up to 16000 characters) |
 | `voice` | `string` | `'marin'` | `alloy`, `ash`, `ballad`, `coral`, `echo`, `sage`, `shimmer`, `verse`, `marin`, `cedar` |
 | `quality` | `'standard' | 'high'` | `'standard'` | `'high'`: the larger voice model (`gpt-realtime-2.1`), more natural and quicker-witted, about three times the cost |
 | `greeting` | `string` | - | Said word for word first, before the visitor speaks |
