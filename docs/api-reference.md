@@ -1800,6 +1800,48 @@ returns `{openai, anthropic, glm}` booleans — keys themselves are never
 returned by any endpoint. Owner keys are bounded by daily call caps per visitor,
 entity, room and key-owner; the free platform model by the dollar budgets above.
 
+#### `ArrivalSpace.ai.voiceChat(opts?)`
+
+Talk with an AI voice in realtime: the visitor speaks into the microphone and it answers aloud -
+about half a second after they stop, and they can interrupt it (OpenAI `gpt-realtime-2.1-mini`,
+browser to provider over WebRTC). The browser asks for the microphone on the first call. The
+conversation is the local visitor's alone - other players don't hear it - and ends after 10
+minutes, on `stop()`, or when `entity` is destroyed. Connecting takes about 4-5 s. Each visitor has
+a monthly number of conversations. Requires `ArrivalSpace.VERSION >= 1.24.0`.
+
+It plays like a call, not positionally: the browser's echo cancellation only covers audio it plays
+itself, and a positional voice would hear itself through the speakers and interrupt itself.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `instructions` | `string` | a short friendly persona | Who it is and how it talks (up to 4000 characters) |
+| `voice` | `string` | `'marin'` | `alloy`, `ash`, `ballad`, `coral`, `echo`, `sage`, `shimmer`, `verse`, `marin`, `cedar` |
+| `greeting` | `string` | - | Said word for word first, before the visitor speaks |
+| `entity` | `pc.Entity` | - | The conversation ends when this entity is destroyed |
+| `volume` | `number` | `1` | |
+| `onUserText` | `(text) => void` | - | What the visitor said, transcribed |
+| `onReply` | `(text) => void` | - | What it answered |
+| `onStateChange` | `(state) => void` | - | `'connecting'`, `'listening'`, `'speaking'`, `'ended'` |
+
+**Returns:** `{ done, stop(), say(text), setMicMuted(muted), state, level, error }`
+- `done`: `Promise<void>`, resolves when the conversation ends. Never rejects.
+- `say(text)`: send text as if the visitor had said it, e.g. what they clicked.
+- `level`: its voice's loudness `0..1` while speaking, e.g. for a mouth.
+- `error`: why it ended early (`null` otherwise): no microphone, the monthly allowance used, connection lost.
+
+OpenAI's usage policy requires telling visitors that the voice is AI-generated.
+
+```javascript
+const chat = ArrivalSpace.ai.voiceChat({
+    instructions: "You are Marco, who has run this noodle stand for thirty years. Answer briefly.",
+    voice: "cedar", greeting: "Hi, I'm Marco - an AI voice. Hungry?", entity: npc.entity,
+    onStateChange: (s) => npc.setHeadLabel(`Marco (${s})`),
+});
+// chat.stop() when the visitor walks away
+```
+
+Example: [`examples/voice-npc.mjs`](../examples/voice-npc.mjs) - click an NPC and talk to it.
+
 See [`examples/ai-npc.mjs`](../examples/ai-npc.mjs) for an LLM-driven NPC, and
 [`examples/ai-text-tool.mjs`](../examples/ai-text-tool.mjs) for a non-NPC text
 tool — both built on `ai.complete`.

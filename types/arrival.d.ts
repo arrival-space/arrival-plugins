@@ -1673,6 +1673,33 @@ declare namespace ArrivalSpace {
          * @returns whether the settings screen could be opened
          */
         function openKeySettings(): boolean;
+
+        /**
+         * Talk with an AI voice in realtime: the visitor speaks into the microphone, it answers
+         * aloud (~0.5 s after they stop; they can interrupt). Asks for the microphone on first use.
+         * The local visitor's alone; ends after 10 min, on stop(), or when `entity` is destroyed.
+         * Plays like a call, not positionally. done resolves when it ends; error says why it ended
+         * early (no microphone, monthly allowance used, connection lost). Never throws.
+         * Requires VERSION >= 1.24.0.
+         */
+        function voiceChat(opts?: {
+            instructions?: string;
+            voice?: "alloy" | "ash" | "ballad" | "coral" | "echo" | "sage" | "shimmer" | "verse" | "marin" | "cedar";
+            greeting?: string;
+            entity?: pc.Entity;
+            volume?: number;
+            onUserText?: (text: string) => void;
+            onReply?: (text: string) => void;
+            onStateChange?: (state: "connecting" | "listening" | "speaking" | "ended") => void;
+        }): {
+            done: Promise<void>;
+            stop(): void;
+            say(text: string): void;
+            setMicMuted(muted: boolean): void;
+            readonly state: "connecting" | "listening" | "speaking" | "ended";
+            readonly level: number;
+            readonly error: string | null;
+        };
     }
 
     // ═══════════════════════════════════════════════════════════════════════════

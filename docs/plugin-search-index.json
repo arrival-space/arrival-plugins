@@ -2,7 +2,7 @@
   "version": 1,
   "updated_at": "2026-10-08",
   "source": "curated",
-  "total_entries": 68,
+  "total_entries": 69,
   "entries": [
     {
       "path": "examples/ray-probe.mjs",
@@ -533,6 +533,14 @@
       "summary": "A glowing orb speaks its text with an AI voice (ArrivalSpace.speak, streamed) when a visitor comes close, and pulses with the loudness of its voice (speech.level). Requires API 1.23.0.",
       "script_name": "Speaking Sign",
       "keywords": ["speak", "text to speech", "tts", "voice", "ai voice", "narrator", "narration", "talking npc", "speech level", "lip sync", "proximity trigger", "positional audio"]
+    },
+    {
+      "path": "examples/voice-npc.mjs",
+      "kind": "example",
+      "title": "Voice NPC",
+      "summary": "Click an NPC and talk to it with your voice: ArrivalSpace.ai.voiceChat answers aloud in realtime and in character (persona, voice, greeting); the head label shows listening/speaking; walking away ends it. Requires API 1.24.0.",
+      "script_name": "Voice NPC",
+      "keywords": ["voice chat", "talk to npc", "speech to speech", "realtime voice", "microphone", "conversation", "voiceChat", "ai npc", "persona", "voice assistant", "createNPC", "setHeadLabel"]
     }
   ]
 }
