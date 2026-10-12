@@ -718,6 +718,23 @@ movement keys still work. Several vibes can hold it at once.
 
 **Returns:** `() => void` - gives click-to-walk back (safe to call twice). Call it in `destroy()`.
 
+#### `ArrivalSpace.disableXrTurn()`
+
+In VR, the right thumbstick stops snap-turning the player (45° per flick), e.g. while it steers
+a vehicle the player is seated in. Head tracking still turns the view and movement is unchanged;
+the stick's axes stay readable from the controller
+(`pc.app.xr.input.inputSources[i].gamepad.axes`, right stick = `axes[2]`, `axes[3]`). Several
+vibes can hold it at once. Requires `ArrivalSpace.VERSION >= 1.22.0`.
+
+**Returns:** `() => void` - gives snap turning back (safe to call twice). Call it on dismount and in `destroy()`.
+
+```javascript
+// seated: the right stick steers the car
+this._releaseTurn = ArrivalSpace.disableXrTurn();
+// on dismount / in destroy():
+this._releaseTurn?.();
+```
+
 ---
 
 ### Cleanup

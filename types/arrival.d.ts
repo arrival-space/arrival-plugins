@@ -863,6 +863,13 @@ declare namespace ArrivalSpace {
      */
     function disableClickToWalk(): () => void;
 
+    /**
+     * VR: the right thumbstick stops snap-turning the player (e.g. while it steers a vehicle);
+     * its axes stay readable from the XR input source. Several callers can hold it.
+     * @returns release function.
+     */
+    function disableXrTurn(): () => void;
+
     /** Safely dispose an entity and its resources */
     function disposeEntity(entity: pc.Entity, options?: DisposeEntityOptions): void;
 
