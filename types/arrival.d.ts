@@ -1678,7 +1678,8 @@ declare namespace ArrivalSpace {
          * Talk with an AI voice in realtime: the visitor speaks into the microphone, it answers
          * aloud (~0.5 s after they stop; they can interrupt). Asks for the microphone on first use.
          * The local visitor's alone; ends after 10 min, on stop(), or when `entity` is destroyed; an NPC's
-         * entity moves its mouth with the voice.
+         * entity moves its mouth with the voice. Every conversation (instructions and transcript) is kept for
+         * review by the arrival.space team.
          * Plays like a call, not positionally. done resolves when it ends; error says why it ended
          * early (no microphone, monthly allowance used, connection lost). Never throws.
          * Requires VERSION >= 1.24.0.

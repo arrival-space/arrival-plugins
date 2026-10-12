@@ -1807,7 +1807,8 @@ about half a second after they stop, and they can interrupt it (OpenAI `gpt-real
 browser to provider over WebRTC). The browser asks for the microphone on the first call. The
 conversation is the local visitor's alone - other players don't hear it - and ends after 10
 minutes, on `stop()`, or when `entity` is destroyed. Connecting takes about 4-5 s. Each visitor has
-a monthly number of conversations. Requires `ArrivalSpace.VERSION >= 1.24.0`.
+a monthly number of conversations. Every conversation - the instructions and what both sides
+said - is kept for review by the arrival.space team. Requires `ArrivalSpace.VERSION >= 1.24.0`.
 
 It plays like a call, not positionally: the browser's echo cancellation only covers audio it plays
 itself, and a positional voice would hear itself through the speakers and interrupt itself.
