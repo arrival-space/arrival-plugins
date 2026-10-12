@@ -1842,6 +1842,19 @@ const chat = ArrivalSpace.ai.voiceChat({
 // chat.stop() when the visitor walks away
 ```
 
+```javascript
+// a tool: the AI calls it the moment the visitor agrees
+ArrivalSpace.ai.voiceChat({
+    instructions: "You sell lemonade. When they agree to buy, call serve.",
+    tools: [{
+        name: "serve",
+        description: "Call when the visitor agrees to buy a lemonade - never before.",
+        parameters: { type: "object", properties: { size: { type: "string", enum: ["small", "large"] } }, required: ["size"] },
+        run: ({ size }) => { this.pourLemonade(size); return `A ${size} lemonade is on the counter.`; },
+    }],
+});
+```
+
 Example: [`examples/voice-npc.mjs`](../examples/voice-npc.mjs) - click an NPC and talk to it.
 
 See [`examples/ai-npc.mjs`](../examples/ai-npc.mjs) for an LLM-driven NPC, and

@@ -1686,7 +1686,11 @@ declare namespace ArrivalSpace {
         function voiceChat(opts?: {
             instructions?: string;
             voice?: "alloy" | "ash" | "ballad" | "coral" | "echo" | "sage" | "shimmer" | "verse" | "marin" | "cedar";
+            /** 'high': the larger voice model, about three times the cost */
+            quality?: "standard" | "high";
             greeting?: string;
+            /** Actions it calls while talking; run's return value goes back to it as the result. */
+            tools?: Array<{ name: string; description: string; parameters?: object; run: (args: any) => unknown }>;
             entity?: pc.Entity;
             volume?: number;
             onUserText?: (text: string) => void;
