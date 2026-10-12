@@ -449,6 +449,49 @@ Play positional or non-positional audio.
 
 **Returns:** `Promise<{ entity: pc.Entity, slot: pc.SoundSlot }>`
 
+#### `ArrivalSpace.speak(text, options?)`
+
+Speak text with an AI voice (OpenAI `gpt-4o-mini-tts`), streamed: playback starts while the
+rest is still being generated - about 0.5-2 s for a new line, about 0.4 s for a line spoken
+before (finished lines are cached, also across visitors). Any language the voices speak
+(Arabic, Hindi, German, ...); the voices are tuned for English. Requires
+`ArrivalSpace.VERSION >= 1.23.0`.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `voice` | `string` | `'marin'` | `alloy`, `ash`, `ballad`, `coral`, `echo`, `fable`, `onyx`, `nova`, `sage`, `shimmer`, `verse`, `marin`, `cedar` |
+| `instructions` | `string` | - | How to say it: tone, accent, pace, emotion (up to 1000 characters) |
+| `speed` | `number` | `1` | 0.25 to 4 |
+| `entity` | `pc.Entity` | - | Speak from this entity; follows it, stops when it is destroyed |
+| `position` | `{x,y,z}` | - | Or from a fixed world position |
+| `volume` | `number` | `1` | |
+| `refDistance` / `maxDistance` / `rollOffFactor` | `number` | `1` / `100` / `1` | 3D falloff, as in `playSound` |
+| `positional` | `boolean` | with `entity` or `position` | 3D positional audio |
+
+**Returns:** `{ done, stop(), playing, level, error }`
+- `done`: `Promise<boolean>` - `true` when spoken to the end, `false` when stopped or failed. Never rejects.
+- `stop()`: stops at once.
+- `playing`: `true` until it ends or is stopped.
+- `level`: current loudness, `0..1` - e.g. to open a mouth or pulse a light.
+- `error`: why it failed (`null` otherwise), e.g. an unknown voice or the speaker's monthly allowance being used up.
+
+Limits: each listener's client generates the speech under that listener's own account, up to a
+monthly allowance of new speech (lines served from the cache don't count). A text over 4096
+characters is split into requests after sentence ends. OpenAI's usage policy requires telling
+listeners that the voice is AI-generated.
+
+```javascript
+// an NPC greets the player once and moves its mouth while talking
+const speech = ArrivalSpace.speak("Welcome to the market!", {
+    entity: this.npc, voice: "cedar", instructions: "Warm, unhurried tour guide.",
+});
+this._speech = speech;                      // read speech.level in update()
+await speech.done;
+// in destroy(): this._speech?.stop();
+```
+
+Example: [`examples/speaking-sign.mjs`](../examples/speaking-sign.mjs) - a sign that speaks when you come close and glows with its voice.
+
 ---
 
 ### Materials
