@@ -776,7 +776,7 @@ declare namespace ArrivalSpace {
     /**
      * Speak text with an AI voice, streamed: playback starts while the rest is generated
      * (~0.5-2 s for a new line, ~0.4 s for a line spoken before). Any language. Positional when
-     * given an entity (follows it, stops when it is destroyed) or a position. done resolves true
+     * given an entity (follows it, stops when it is destroyed; an NPC's entity moves its mouth) or a position. done resolves true
      * when spoken to the end, false when stopped or failed (error says why); never throws.
      * level is the current loudness 0..1. Requires VERSION >= 1.23.0.
      */
@@ -1677,7 +1677,8 @@ declare namespace ArrivalSpace {
         /**
          * Talk with an AI voice in realtime: the visitor speaks into the microphone, it answers
          * aloud (~0.5 s after they stop; they can interrupt). Asks for the microphone on first use.
-         * The local visitor's alone; ends after 10 min, on stop(), or when `entity` is destroyed.
+         * The local visitor's alone; ends after 10 min, on stop(), or when `entity` is destroyed; an NPC's
+         * entity moves its mouth with the voice.
          * Plays like a call, not positionally. done resolves when it ends; error says why it ended
          * early (no microphone, monthly allowance used, connection lost). Never throws.
          * Requires VERSION >= 1.24.0.

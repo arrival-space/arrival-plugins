@@ -462,7 +462,7 @@ before (finished lines are cached, also across visitors). Any language the voice
 | `voice` | `string` | `'marin'` | `alloy`, `ash`, `ballad`, `coral`, `echo`, `fable`, `onyx`, `nova`, `sage`, `shimmer`, `verse`, `marin`, `cedar` |
 | `instructions` | `string` | - | How to say it: tone, accent, pace, emotion (up to 1000 characters) |
 | `speed` | `number` | `1` | 0.25 to 4 |
-| `entity` | `pc.Entity` | - | Speak from this entity; follows it, stops when it is destroyed |
+| `entity` | `pc.Entity` | - | Speak from this entity; follows it, stops when it is destroyed. An avatar (an NPC's entity) moves its mouth with the voice |
 | `position` | `{x,y,z}` | - | Or from a fixed world position |
 | `volume` | `number` | `1` | |
 | `refDistance` / `maxDistance` / `rollOffFactor` | `number` | `1` / `100` / `1` | 3D falloff, as in `playSound` |
@@ -1817,7 +1817,7 @@ itself, and a positional voice would hear itself through the speakers and interr
 | `instructions` | `string` | a short friendly persona | Who it is and how it talks (up to 4000 characters) |
 | `voice` | `string` | `'marin'` | `alloy`, `ash`, `ballad`, `coral`, `echo`, `sage`, `shimmer`, `verse`, `marin`, `cedar` |
 | `greeting` | `string` | - | Said word for word first, before the visitor speaks |
-| `entity` | `pc.Entity` | - | The conversation ends when this entity is destroyed |
+| `entity` | `pc.Entity` | - | The conversation ends when this entity is destroyed; an avatar (an NPC's entity) moves its mouth with the voice |
 | `volume` | `number` | `1` | |
 | `onUserText` | `(text) => void` | - | What the visitor said, transcribed |
 | `onReply` | `(text) => void` | - | What it answered |
