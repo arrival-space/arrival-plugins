@@ -1232,6 +1232,9 @@ Common controller methods:
 - `npc.stop()`
 - `npc.lookAt(target)`
 - `npc.setAnimation(state, animationRef, options?)` — `animationRef` is a catalog/GLB clip or a raw Mixamo `.fbx` URL (auto-converted and retargeted)
+- `npc.setActivity(name)` — a looping clip from the avatar's own set: `'talking'` (hand gestures), `'listening'`, `'thinking'`, `'waving'`, or `null` for idle. Walking and `playOnce` pause it. Requires `ArrivalSpace.VERSION >= 1.25.0`.
+- `npc.playOnce(animationRef)` — plays a clip once (a catalog key such as `'quick_formal_bow.glb'`, `'salute.glb'`, `'waving.glb'`, or a GLB / Mixamo `.fbx` URL); resolves `true` when it finished, `false` when another `playOnce` replaced it or the NPC was destroyed. 1.25.0.
+- `npc.setLookTarget(target, { height, turnBody = true }?)` — the head and neck keep turning to a point or an entity, on top of whatever clip plays: up to 70° sideways and 30° up or down; past 45° the body turns after it. An avatar (the player from `ArrivalSpace.getPlayer()`, another NPC) is looked in the eyes; other entities at `height` (default 1.5) above their origin. `null` looks straight ahead again. 1.25.0.
 - `npc.applyAvatarConfig(config, renderOptions?)`
 - `npc.setAvatarParts(parts, options?)`
 - `npc.setSpeed(value)`, `npc.setTurnSpeed(value)`, `npc.setStopDistance(value)`

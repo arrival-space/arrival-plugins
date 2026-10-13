@@ -538,9 +538,9 @@
       "path": "examples/voice-npc.mjs",
       "kind": "example",
       "title": "Voice NPC",
-      "summary": "Click an NPC and talk to it with your voice: ArrivalSpace.ai.voiceChat answers aloud in realtime and in character (persona, voice, greeting); the head label shows listening/speaking; walking away ends it. Requires API 1.24.0.",
+      "summary": "Click an NPC and talk to it with your voice: ArrivalSpace.ai.voiceChat answers aloud in realtime and in character (persona, voice, greeting); the head label shows listening/speaking, the body gestures while it talks (npc.setActivity) and it keeps looking at you (npc.setLookTarget); walking away ends it. Requires API 1.25.0.",
       "script_name": "Voice NPC",
-      "keywords": ["voice chat", "talk to npc", "speech to speech", "realtime voice", "microphone", "conversation", "voiceChat", "ai npc", "persona", "voice assistant", "createNPC", "setHeadLabel"]
+      "keywords": ["voice chat", "talk to npc", "speech to speech", "realtime voice", "microphone", "conversation", "voiceChat", "ai npc", "persona", "voice assistant", "createNPC", "setHeadLabel", "setActivity", "setLookTarget", "npc gestures", "look at player", "head tracking"]
     }
   ]
 }

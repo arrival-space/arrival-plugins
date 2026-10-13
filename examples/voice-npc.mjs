@@ -5,10 +5,12 @@
  *
  * Features demonstrated:
  * - ArrivalSpace.ai.voiceChat: realtime speech in, speech out, with a persona and a greeting
- * - onStateChange: the head label shows whether it is listening or speaking
+ * - onStateChange: the head label shows whether it is listening or speaking, and the body
+ *   gestures while it talks (npc.setActivity)
+ * - npc.setLookTarget: it keeps looking at you, turning its body when you walk around it
  * - ending a conversation on click, on distance, and on unload
  *
- * Requires ArrivalSpace.VERSION >= 1.24.0. The browser asks for the microphone on first use.
+ * Requires ArrivalSpace.VERSION >= 1.25.0. The browser asks for the microphone on first use.
  * The voice is AI-generated - the greeting says so.
  */
 export class VoiceNpc extends ArrivalScript {
@@ -51,8 +53,8 @@ export class VoiceNpc extends ArrivalScript {
     _chat = null;
 
     async initialize() {
-        if (!ArrivalSpace.ai?.voiceChat) {
-            this.warn("Voice NPC needs ArrivalSpace.VERSION >= 1.24.0");
+        if (ArrivalSpace.VERSION.localeCompare("1.25.0", undefined, { numeric: true }) < 0) {
+            this.warn("Voice NPC needs ArrivalSpace.VERSION >= 1.25.0");
             return;
         }
         this._npc = await this.createNPC({
@@ -74,12 +76,16 @@ export class VoiceNpc extends ArrivalScript {
             onStateChange: (state) => {
                 if (state === "ended") return;
                 this._npc.setHeadLabel(`${this.npcName} (${label[state]})`);
+                this._npc.setActivity(state === "speaking" ? "talking" : "listening");
             },
         });
         this._chat = chat;
+        this._npc.setLookTarget(ArrivalSpace.getPlayer());
         chat.done.then(() => {
             if (this._chat !== chat) return;
             this._chat = null;
+            this._npc?.setActivity(null);
+            this._npc?.setLookTarget(null);
             if (chat.error) this.warn(`voice chat ended: ${chat.error}`);
             this._npc?.setHeadLabel(`${this.npcName} (click to talk)`);
         });
@@ -89,7 +95,6 @@ export class VoiceNpc extends ArrivalScript {
         if (!this._chat || !this._npc) return;
         const player = ArrivalSpace.getPlayer();
         if (!player) return;
-        this._npc.lookAt(player.getPosition());
         if (player.getPosition().distance(this._npc.entity.getPosition()) > this.talkDistance) this._chat.stop();
     }
 
