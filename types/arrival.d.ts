@@ -1682,7 +1682,7 @@ declare namespace ArrivalSpace {
          * review by the arrival.space team.
          * Plays like a call, not positionally. done resolves when it ends; error says why it ended
          * early (monthly allowance used, connection lost). Never throws. Without a microphone (none, or
-         * refused) it still connects: the visitor types with sendText (1.25.0), it answers aloud.
+         * refused) it still connects: the visitor types with sendText (1.26.0), it answers aloud.
          * Requires VERSION >= 1.24.0.
          */
         function voiceChat(opts?: {
@@ -1704,10 +1704,10 @@ declare namespace ArrivalSpace {
             stop(): void;
             /** The plugin's own words in the conversation: an event, a hint, what the visitor clicked */
             say(text: string): void;
-            /** The visitor typing instead of speaking (1.25.0) */
+            /** The visitor typing instead of speaking (1.26.0) */
             sendText(text: string): void;
             setMicMuted(muted: boolean): void;
-            /** false without a microphone (none, or access refused); null until known (1.25.0) */
+            /** false without a microphone (none, or access refused); null until known (1.26.0) */
             readonly hasMicrophone: boolean | null;
             readonly state: "connecting" | "listening" | "speaking" | "ended";
             readonly level: number;

@@ -1832,10 +1832,10 @@ itself, and a positional voice would hear itself through the speakers and interr
 **Returns:** `{ done, stop(), say(text), sendText(text), setMicMuted(muted), hasMicrophone, state, level, error }`
 - `done`: `Promise<void>`, resolves when the conversation ends. Never rejects.
 - `say(text)`: the plugin's own words in the conversation, e.g. what the visitor clicked or an event ("[they walked out]").
-- `sendText(text)`: the visitor typing instead of speaking; counts as their words (`onUserText`, the transcript). 1.25.0.
-- `hasMicrophone`: `false` when there is no microphone or access was refused - it connects all the same and answers typed text aloud; `null` until known. 1.25.0.
+- `sendText(text)`: the visitor typing instead of speaking; counts as their words (`onUserText`, the transcript). 1.26.0.
+- `hasMicrophone`: `false` when there is no microphone or access was refused - it connects all the same and answers typed text aloud; `null` until known. 1.26.0.
 - `level`: its voice's loudness `0..1` while speaking, e.g. for a mouth.
-- `error`: why it ended early (`null` otherwise): the monthly allowance used, connection lost. Before 1.25.0 also: no microphone.
+- `error`: why it ended early (`null` otherwise): the monthly allowance used, connection lost. Before 1.26.0 also: no microphone.
 
 OpenAI's usage policy requires telling visitors that the voice is AI-generated.
 
