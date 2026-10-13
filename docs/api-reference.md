@@ -1825,15 +1825,17 @@ itself, and a positional voice would hear itself through the speakers and interr
 | `tools` | `Array<{ name, description, parameters?, run(args) }>` | - | Actions it can take while talking. It calls one when the conversation calls for it - the `description` says when; arguments follow `parameters` (JSON Schema). What `run` returns (or resolves to) goes back to it as the result, so it can talk about what happened |
 | `entity` | `pc.Entity` | - | The conversation ends when this entity is destroyed; an avatar (an NPC's entity) moves its mouth with the voice |
 | `volume` | `number` | `1` | |
-| `onUserText` | `(text) => void` | - | What the visitor said, transcribed |
+| `onUserText` | `(text) => void` | - | What the visitor said (transcribed) or typed with `sendText` |
 | `onReply` | `(text) => void` | - | What it answered |
 | `onStateChange` | `(state) => void` | - | `'connecting'`, `'listening'`, `'speaking'`, `'ended'` |
 
-**Returns:** `{ done, stop(), say(text), setMicMuted(muted), state, level, error }`
+**Returns:** `{ done, stop(), say(text), sendText(text), setMicMuted(muted), hasMicrophone, state, level, error }`
 - `done`: `Promise<void>`, resolves when the conversation ends. Never rejects.
-- `say(text)`: send text as if the visitor had said it, e.g. what they clicked.
+- `say(text)`: the plugin's own words in the conversation, e.g. what the visitor clicked or an event ("[they walked out]").
+- `sendText(text)`: the visitor typing instead of speaking; counts as their words (`onUserText`, the transcript). 1.25.0.
+- `hasMicrophone`: `false` when there is no microphone or access was refused - it connects all the same and answers typed text aloud; `null` until known. 1.25.0.
 - `level`: its voice's loudness `0..1` while speaking, e.g. for a mouth.
-- `error`: why it ended early (`null` otherwise): no microphone, the monthly allowance used, connection lost.
+- `error`: why it ended early (`null` otherwise): the monthly allowance used, connection lost. Before 1.25.0 also: no microphone.
 
 OpenAI's usage policy requires telling visitors that the voice is AI-generated.
 

@@ -1681,7 +1681,8 @@ declare namespace ArrivalSpace {
          * entity moves its mouth with the voice. Every conversation (instructions and transcript) is kept for
          * review by the arrival.space team.
          * Plays like a call, not positionally. done resolves when it ends; error says why it ended
-         * early (no microphone, monthly allowance used, connection lost). Never throws.
+         * early (monthly allowance used, connection lost). Never throws. Without a microphone (none, or
+         * refused) it still connects: the visitor types with sendText (1.25.0), it answers aloud.
          * Requires VERSION >= 1.24.0.
          */
         function voiceChat(opts?: {
@@ -1694,14 +1695,20 @@ declare namespace ArrivalSpace {
             tools?: Array<{ name: string; description: string; parameters?: object; run: (args: any) => unknown }>;
             entity?: pc.Entity;
             volume?: number;
+            /** What the visitor said (transcribed) or typed with sendText */
             onUserText?: (text: string) => void;
             onReply?: (text: string) => void;
             onStateChange?: (state: "connecting" | "listening" | "speaking" | "ended") => void;
         }): {
             done: Promise<void>;
             stop(): void;
+            /** The plugin's own words in the conversation: an event, a hint, what the visitor clicked */
             say(text: string): void;
+            /** The visitor typing instead of speaking (1.25.0) */
+            sendText(text: string): void;
             setMicMuted(muted: boolean): void;
+            /** false without a microphone (none, or access refused); null until known (1.25.0) */
+            readonly hasMicrophone: boolean | null;
             readonly state: "connecting" | "listening" | "speaking" | "ended";
             readonly level: number;
             readonly error: string | null;
