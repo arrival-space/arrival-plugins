@@ -1809,9 +1809,15 @@ Talk with an AI voice in realtime: the visitor speaks into the microphone and it
 about half a second after they stop, and they can interrupt it (OpenAI `gpt-realtime-2.1-mini`,
 browser to provider over WebRTC). The browser asks for the microphone on the first call. The
 conversation is the local visitor's alone - other players don't hear it - and ends after 10
-minutes, on `stop()`, or when `entity` is destroyed. Connecting takes about 4-5 s. Each visitor has
-a monthly number of conversations. Every conversation - the instructions and what both sides
-said - is kept for review by the arrival.space team. Requires `ArrivalSpace.VERSION >= 1.24.0`.
+minutes, on `stop()`, or when `entity` is destroyed. Connecting takes about 4-5 s. Every
+conversation - the instructions and what both sides said - is kept for review by the arrival.space
+team. Requires `ArrivalSpace.VERSION >= 1.24.0`.
+
+Voice conversations are a Business feature, paid by the space's owner: Business includes 300 voice
+minutes a month, Business Plus 450. A conversation counts from its start to its last line (1-10
+minutes); with `quality: "high"` every minute counts three times. Visitors need an account (a guest
+gets the sign-up prompt) and have up to 20 conversations a day. In a space without a Business plan,
+or with its minutes used up, it ends right away with `error` saying so.
 
 It plays like a call, not positionally: the browser's echo cancellation only covers audio it plays
 itself, and a positional voice would hear itself through the speakers and interrupt itself.
@@ -1835,7 +1841,7 @@ itself, and a positional voice would hear itself through the speakers and interr
 - `sendText(text)`: the visitor typing instead of speaking; counts as their words (`onUserText`, the transcript). 1.26.0.
 - `hasMicrophone`: `false` when there is no microphone or access was refused - it connects all the same and answers typed text aloud; `null` until known. 1.26.0.
 - `level`: its voice's loudness `0..1` while speaking, e.g. for a mouth.
-- `error`: why it ended early (`null` otherwise): the monthly allowance used, connection lost. Before 1.26.0 also: no microphone.
+- `error`: why it ended early (`null` otherwise), in words for the visitor: sign up to talk, the space's plan or its voice minutes, the visitor's conversations today, connection lost. Before 1.26.0 also: no microphone.
 
 OpenAI's usage policy requires telling visitors that the voice is AI-generated.
 

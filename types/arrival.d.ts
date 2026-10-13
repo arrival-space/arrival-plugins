@@ -1681,7 +1681,9 @@ declare namespace ArrivalSpace {
          * entity moves its mouth with the voice. Every conversation (instructions and transcript) is kept for
          * review by the arrival.space team.
          * Plays like a call, not positionally. done resolves when it ends; error says why it ended
-         * early (monthly allowance used, connection lost). Never throws. Without a microphone (none, or
+         * early, in words for the visitor (sign up to talk, the space owner's plan or voice minutes, the
+         * visitor's conversations today, connection lost). Never throws. A Business feature paid by the
+         * space owner: 300 voice minutes a month (Business), 450 (Business Plus). Without a microphone (none, or
          * refused) it still connects: the visitor types with sendText (1.26.0), it answers aloud.
          * Requires VERSION >= 1.24.0.
          */
