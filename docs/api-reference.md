@@ -1369,7 +1369,80 @@ ArrivalSpace.setAppUIVisible(true);
 
 ---
 
-### Post Effects (Advanced)
+### Post Effects & Sky
+
+Two ways to change the space's look:
+
+- **Save it** with [`ArrivalSpace.setRoomSettings()`](#arrivalspacesetroomsettingschanges) — a vibe
+  that sets up its space (the lighting it was made for, a hidden skybox) writes the space's own
+  settings, so the settings panel shows what's in effect and the owner can tune it there. Prefer
+  this for anything meant to stay.
+- **Override it while the plugin runs** with `setPostEffects()` / `setSkyboxHidden()` — nothing is
+  saved, the room's settings come back when the plugin restores them (do it in `destroy()`). For
+  effects that come and go (a flash, a dream sequence, a volume you walk into).
+
+#### `ArrivalSpace.setRoomSettings(changes)`
+
+Change and save the space's own settings — what its settings panel edits; the keys of
+`ArrivalSpace.getRoom().roomData` (e.g. `skyboxHidden`, `skyboxIntensity`, `stageLightType`,
+`stageLightIntensity`, `framePosteffectParams`, …). Applied at once, stored with the space, shown in
+the panel. `framePosteffectParams` is merged (only the keys given change). Values already stored
+aren't written again. `roomPrivacy` can't be set here.
+
+Only for a user who can edit the space ([`canEditSpace()`](#arrivalspacecaneditspace)); for
+everyone else (and in the agent's inspector browser) nothing changes and it resolves `false` — so
+call it where an editor sets the space up (an `onInstall`, a setup panel's OK), not for every
+visitor. Requires `ArrivalSpace.VERSION` ≥ `1.27.0`.
+
+**Returns:** `Promise<boolean>` — true once saved (or already so).
+
+```javascript
+// a setup panel's OK: the look this vibe was made for, kept by the space
+if (ArrivalSpace.canEditSpace() && ArrivalSpace.setRoomSettings) {
+    await ArrivalSpace.setRoomSettings({
+        skyboxHidden: true,
+        framePosteffectParams: { hdrEnabled: true, toneMapping: 3, bloomEnabled: true, bloomIntensity: 0.14 },
+    });
+}
+```
+
+#### `ArrivalSpace.setPostEffects(params)` / `ArrivalSpace.getPostEffects()`
+
+Override post-effect parameters; only the keys given change, the rest keep the room's values.
+`getPostEffects()` returns the current ones (keep a copy to restore later).
+
+| Key | Type | |
+|---|---|---|
+| `hdrEnabled` | `boolean` | the HDR pipeline (needed for SSAO) |
+| `toneMapping` | `number` | 0–4 (3: ACES) |
+| `saturation`, `contrast`, `brightness`, `sharpness`, `gamma` | `number` | |
+| `bloomEnabled`, `bloomIntensity`, `bloomThreshold`, `bloomBlurLevel` | | bloom |
+| `ssaoType` | `"none" \| "lighting" \| "combine"` | ambient occlusion (HDR only) |
+| `ssaoIntensity`, `ssaoRadius`, `ssaoPower`, `ssaoSamples`, `ssaoBlur` | | |
+
+```javascript
+initialize() {
+    this._roomLook = ArrivalSpace.getPostEffects();
+    ArrivalSpace.setPostEffects({ hdrEnabled: true, toneMapping: 3, bloomEnabled: true, bloomIntensity: 0.14 });
+}
+destroy() {
+    if (this._roomLook) ArrivalSpace.setPostEffects(this._roomLook);
+}
+```
+
+#### `ArrivalSpace.setSkyboxHidden(hidden)` / `ArrivalSpace.getSkyboxHidden()`
+
+Hide or show the skybox's backdrop — the sky image still lights the scene, as with the room's
+own "Hide Skybox". `true` hides, `false` shows, `null` returns to the room's setting (do that in
+`destroy()`). `getSkyboxHidden()` is the current state. Requires `ArrivalSpace.VERSION` ≥ `1.27.0`.
+
+```javascript
+ArrivalSpace.setSkyboxHidden?.(true);   // e.g. a plugin that draws its own sky
+// ...
+ArrivalSpace.setSkyboxHidden?.(null);   // the room's own setting again
+```
+
+#### Local volumes (advanced)
 
 For local volume-like effects (see `examples/post-process-volume.mjs`), plugins can use:
 

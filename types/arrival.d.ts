@@ -956,6 +956,13 @@ declare namespace ArrivalSpace {
         bloomThreshold?: number;
         bloomBlurLevel?: number;
         gamma?: number;
+        /** Ambient occlusion (HDR only) */
+        ssaoType?: "none" | "lighting" | "combine";
+        ssaoIntensity?: number;
+        ssaoRadius?: number;
+        ssaoPower?: number;
+        ssaoSamples?: number;
+        ssaoBlur?: boolean;
     }
 
     /** Override post-effect parameters. Only provided keys are changed; omitted keys keep room defaults. */
@@ -963,6 +970,23 @@ declare namespace ArrivalSpace {
 
     /** Return the current effective post-effect parameters. */
     function getPostEffects(): PostEffectsParams | null;
+
+    /**
+     * Hide (true) or show (false) the skybox's backdrop while the plugin runs — the sky still lights
+     * the scene. null: the room's own setting again. Not saved into the room. (1.27.0)
+     */
+    function setSkyboxHidden(hidden: boolean | null): boolean;
+
+    /** Whether the skybox is hidden: setSkyboxHidden's override, else the room's setting. (1.27.0) */
+    function getSkyboxHidden(): boolean;
+
+    /**
+     * Change and save the space's own settings (what its settings panel edits — keys of
+     * getRoom().roomData); applied at once and shown in the panel. framePosteffectParams is merged.
+     * Only for a user who can edit the space, else resolves false and nothing changes;
+     * roomPrivacy can't be set. (1.27.0)
+     */
+    function setRoomSettings(changes: Record<string, any> & { framePosteffectParams?: PostEffectsParams; skyboxHidden?: boolean }): Promise<boolean>;
 
     // ═══════════════════════════════════════════════════════════════════════════
     // SCENE UTILITIES (available to all plugins)
