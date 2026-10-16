@@ -19,6 +19,9 @@ bpy.ops.export_scene.gltf(filepath='urn.glb', export_format='GLB', export_apply=
   alternate variants. Nested directories are fine. Nothing is thrown away.
 - `print()` output comes back too, and so does the full traceback if the script raises.
   Read it and fix the script rather than guessing.
+- The worker runs **Blender 5.1**. Its glTF exporter has no `export_colors` (older
+  Blender) — passing it fails the export. Vertex colors are
+  `export_vertex_color='MATERIAL' | 'ACTIVE' | 'NAME' | 'NONE'`.
 - `$ARRIVAL_OUT` holds the same directory as an absolute path, if you want it.
 
 ### Images are the one exception: give them a directory
@@ -27,7 +30,8 @@ bpy.ops.export_scene.gltf(filepath='urn.glb', export_format='GLB', export_apply=
 `'name.ext'`. **Blender's image writer does not.** With no directory component it tries
 to create a directory called `''` and the render fails with
 `Couldn't create directory for file preview.png` — whether or not a `.blend` has been
-saved, and for `Image.save_render()` as well as `bpy.ops.render.render()`.
+saved, and for `Image.save_render()`, `Image.save()` (with `filepath_raw`) and
+`bpy.ops.render.render()` alike — a baked texture is an image too.
 
 ```python
 out = os.environ['ARRIVAL_OUT']

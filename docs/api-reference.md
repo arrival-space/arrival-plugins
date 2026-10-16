@@ -1740,7 +1740,8 @@ Run a completion. Provide **either** `prompt` (one user turn, no history) **or**
 |---|---|---|
 | `opts.system` | `string?` | System prompt / instructions |
 | `opts.prompt` | `string?` | A single user message (sugar for `messages:[{role:'user',content}]`) |
-| `opts.messages` | `Array?` | Turns `[{role: 'user'\|'assistant', content}]` |
+| `opts.messages` | `Array?` | Turns `[{role: 'user'\|'assistant', content, images?}]` |
+| `opts.images` | `string[]?` | Images for the model to look at, with `prompt` (or added to the last user turn): https URLs or data: URLs (e.g. a canvas the plugin drew, a photo the visitor picked). At most 4 per request. Every provider takes them except an owner GLM key on a text-only model |
 | `opts.provider` | `string?` | `'luna'` (free, default) `\| 'openai' \| 'anthropic' \| 'glm'` (owner key) |
 | `opts.effort` | `string?` | Free model only: `'low' \| 'medium'` (default) `\| 'high'` — more reasoning: better code, slower, costs more of the daily budget |
 | `opts.entityId` | `string?` | The placed vibe entity ID — **required to spend the owner's paid key** |
@@ -1785,6 +1786,9 @@ const res = await this.aiComplete({
     messages: [...this._history, { role: 'user', content: question }],
 });
 if (res?.answer) this._showAnswer(res.answer);
+
+// let the model look at an image (an https URL, or a data: URL from a canvas you drew)
+const seen = await this.aiComplete({ prompt: 'Describe this poster in one sentence.', images: [posterUrl] });
 
 // long coding request that the visitor can cancel (or that dies with the plugin)
 this._ai = new AbortController();

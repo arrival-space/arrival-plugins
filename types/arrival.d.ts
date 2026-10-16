@@ -392,7 +392,9 @@ declare class ArrivalScript extends pc.Script {
     aiComplete(opts?: {
         system?: string;
         prompt?: string;
-        messages?: Array<{ role: 'user' | 'assistant'; content: string }>;
+        messages?: Array<{ role: 'user' | 'assistant'; content: string; images?: string[] }>;
+        /** Images for the model: https or data: URLs, at most 4 (with prompt, or added to the last user turn). */
+        images?: string[];
         provider?: 'luna' | 'openai' | 'anthropic' | 'glm';
     }): Promise<{ answer: string; provider: string; model: string; costUsd: number; inputTokens: number; outputTokens: number } | { error: string } | null>;
 
@@ -1644,7 +1646,8 @@ declare namespace ArrivalSpace {
          * history) OR `messages` (a chat, including prior turns).
          * @param opts.system - System prompt / instructions (max 4000 chars)
          * @param opts.prompt - A single user message (sugar for messages)
-         * @param opts.messages - Turns, last 20 kept
+         * @param opts.messages - Turns, last 20 kept; a user turn may carry `images`
+         * @param opts.images - Images for the model: https or data: URLs, at most 4 per request
          * @param opts.provider - 'luna' (free, default) | 'openai' | 'anthropic' | 'glm' (owner key)
          * @param opts.entityId - Placed vibe entity ID; required to spend the owner's paid key
          * @returns {answer, provider, model, costUsd, inputTokens, outputTokens};
@@ -1653,7 +1656,8 @@ declare namespace ArrivalSpace {
         function complete(opts: {
             system?: string;
             prompt?: string;
-            messages?: Array<{ role: 'user' | 'assistant'; content: string }>;
+            messages?: Array<{ role: 'user' | 'assistant'; content: string; images?: string[] }>;
+            images?: string[];
             provider?: 'luna' | 'openai' | 'anthropic' | 'glm';
             entityId?: string;
         }): Promise<{ answer: string; provider: string; model: string; costUsd: number; inputTokens: number; outputTokens: number } | { error: string } | null>;
