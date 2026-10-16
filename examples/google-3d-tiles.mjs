@@ -87,12 +87,13 @@
  *     the first tiles around the viewer stream in. Until they're in, app.googleTilesLoading
  *     is true (the "googletiles:loaded" event fires when it turns false), so a vibe can wait
  *     for the city — e.g. Tiles Collision holds the player until then.
- *   - A centered Welcome popup (shown on load; "Show Welcome Popup" toggles it) asks
+ *   - A centered Welcome popup (shown once, when the vibe is added — onInstall; "Show
+ *     Welcome Popup" opens it for anyone who can edit) asks
  *     for the Google Maps API key (or a Cesium Ion token), a starting longitude /
  *     latitude / height, and an HDR toggle. Pressing OK starts streaming, re-centres
  *     the globe (no re-download), applies HDR, saves the values to the vibe's params
  *     (owner) and won't pop again — flip "Show Welcome Popup" back on to reconfigure.
- *     "HDR" (on by default) drives the room's HDR render pipeline so the sky and sun
+ *     "HDR" (ticked in the popup on a first setup) drives the room's HDR render pipeline so the sky and sun
  *     disc bloom.
  */
 
@@ -895,9 +896,10 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
     // chosen — an install from before it keeps its look; the Welcome popup offers it ticked when a
     // space is set up (no key yet).
     recommendedLighting = false;
-    // Show the centered welcome popup (initial location + HDR) when the vibe loads.
-    // Pressing OK saves the values and turns this off; flip it back on to re-open.
-    showPanel = true;
+    // The centered welcome popup (key, initial location, HDR). It opens by itself once, when a
+    // user adds the vibe (onInstall) — never on a load, so an installed vibe never goes through
+    // the setup again. This toggle opens it from the editor; OK saves the values and turns it off.
+    showPanel = false;
 
     // Colour grade — brightness, contrast, saturation, and tint. These ride the
     // shader chunk and operate on the final composed pixel, so they apply whether
@@ -1062,9 +1064,6 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
         } else if (this.hdr) {
             this._keepHdrChoice();
         }
-        // the Welcome popup on its own only for a space not set up yet (no key) — "Show Welcome
-        // Popup" in the editor opens it any time
-        if (this.showPanel && !this.apiKey && !this.cesiumIonToken) this._openWelcome();
 
         if (this.atmosphere) this._buildSky();
 
@@ -2166,9 +2165,20 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
     // UI
     // ────────────────────────────────────────────
 
+    /**
+     * The set-up, once: the platform calls this right after a user adds the vibe, in their browser
+     * (not on reloads, for visitors, or for CLI/MCP deploys).
+     */
+    onInstall() {
+        this._openWelcome();
+    }
+
     // ── Welcome popup: credentials + initial location + HDR, then press OK ──
     _openWelcome() {
         if (this._panelEl) return;
+        // set-up is for whoever can edit the space — visitors never see the popup
+        const canEdit = ArrivalSpace.canEditSpace?.() ?? ArrivalSpace.isOwner?.();
+        if (!canEdit) return;
         try {
             const num = (v) => (Number.isFinite(v) ? v : 0);
             const inputStyle =
