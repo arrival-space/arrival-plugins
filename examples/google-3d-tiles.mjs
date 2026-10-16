@@ -65,6 +65,19 @@
  *     Brightness" for a stronger bloom). With no CameraFrame the atmosphere
  *     applies its own display tonemap so it doesn't blow out. "Sky Exposure"
  *     scales either path.
+ *   - "Recommended Lighting" (on by default, offered in the Welcome popup) gives the
+ *     tiles the look they were tuned for: HDR with ACES tone mapping, a little bloom,
+ *     no ambient occlusion, and the room's skybox hidden (the atmosphere is the sky;
+ *     the skybox still lights the scene). Pressing OK saves it — and the HDR choice —
+ *     into the space's own settings (ArrivalSpace.setRoomSettings, client 1.27.0, for
+ *     someone who can edit the space), so the space's settings panel shows what's in
+ *     effect and it can be tuned there. Older clients get the look at runtime instead.
+ *   - "Direct Light" re-lights the tiles: the sky lights them and a sun — the room's own
+ *     directional light, or else one the vibe adds along the atmosphere's sun, with
+ *     shadows.
+ *   - The room's ambient occlusion reaches the tiles in both modes: "combine" darkens
+ *     the final image; "lighting" darkens lit materials' ambient light, so the vibe
+ *     applies it to Google's unlit tiles itself (on their colour, before the haze).
  *   - A centered Welcome popup (shown on load; "Show Welcome Popup" toggles it) asks
  *     for the Google Maps API key (or a Cesium Ion token), a starting longitude /
  *     latitude / height, and an HDR toggle. Pressing OK starts streaming, re-centres
@@ -75,6 +88,14 @@
  */
 
 const TILE_API = "https://tile.googleapis.com/";
+
+// "Recommended Lighting": the post effects the tiles look best with (HDR + ACES, a little bloom,
+// no ambient occlusion); the room's skybox is hidden as well.
+const RECOMMENDED_POST_EFFECTS = {
+    hdrEnabled: true, toneMapping: 3,
+    bloomEnabled: true, bloomIntensity: 0.14, bloomThreshold: 0.9, bloomBlurLevel: 4,
+    ssaoType: "none",
+};
 
 const CESIUM_ION_API = "https://api.cesium.com/v1/";
 // Cesium Ion's "Google Photorealistic 3D Tiles" asset. Its endpoint returns a
@@ -351,6 +372,8 @@ uniform float uBrightness;   // 1 = unchanged
 uniform vec3  uTint;         // (1,1,1) = unchanged
 uniform float uContrast;     // 1 = unchanged
 uniform float uSaturation;   // 1 = unchanged
+uniform float uSsaoOnColor;  // 1: an unlit tile takes the screen-space AO (see the main chunk)
+uniform float uLitAmount;    // re-lit tiles: 0 = Google's photo as is … 1 = fully lit (1 on unlit tiles: no-op)
 ${ATMO_DECL_GLSL}
 ${ATMO_FUNC_GLSL}
 `;
@@ -362,6 +385,9 @@ if (uPatchEnable > 0.5) {
 // The colour grade writes the composed colour, so it must run in the forward
 // pass only — gl_FragColor holds depth/pick IDs in the shadow/pick/prepass.
 #ifdef FORWARD_PASS
+// Direct Light Amount: between Google's photo as it is (its albedo, what the unlit
+// tile shows) and the re-lit result. 1 on unlit tiles, where it changes nothing.
+gl_FragColor.rgb = mix(litArgs_albedo, gl_FragColor.rgb, uLitAmount);
 // Brightness + tint multiply the final pixel, so they apply whether the tile is
 // lit or left as Google's unlit baked photo. Then contrast (around mid-grey),
 // then saturation.
@@ -371,6 +397,12 @@ if (abs(uSaturation - 1.0) > 0.001) {
     float luma = dot(gl_FragColor.rgb, vec3(0.2126, 0.7152, 0.0722));
     gl_FragColor.rgb = mix(vec3(luma), gl_FragColor.rgb, uSaturation);
 }
+// Ambient occlusion in the room's "lighting" mode darkens a material's ambient
+// light — Google's tiles are unlit, so it never reached them. An unlit tile takes
+// it on its colour instead (lit tiles, with Direct Light, get it the usual way).
+#ifdef LIT_SSAO
+gl_FragColor.rgb *= mix(1.0, texture2DLod(ssaoTexture, gl_FragCoord.xy * ssaoTextureSizeInv, 0.0).r, uSsaoOnColor);
+#endif
 // Aerial perspective: extinguish the tile by transmittance and add the
 // inscattered light along the camera->fragment segment (real metres).
 if (uAtmoEnable > 0.5) {
@@ -406,6 +438,8 @@ uniform uBrightness: f32;
 uniform uTint: vec3f;
 uniform uContrast: f32;
 uniform uSaturation: f32;
+uniform uSsaoOnColor: f32;
+uniform uLitAmount: f32;
 ${ATMO_DECL_WGSL}
 ${ATMO_FUNC_WGSL}
 `;
@@ -417,6 +451,8 @@ if (uniform.uPatchEnable > 0.5) {
 // Forward pass only — output.color is the composed colour here; the shadow/
 // pick/prepass don't define it and write depth/pick IDs instead.
 #ifdef FORWARD_PASS
+// Direct Light Amount: the photo as it is ... the re-lit result (see the GLSL note).
+output.color = vec4f(mix(litArgs_albedo, output.color.rgb, uniform.uLitAmount), output.color.a);
 // Brightness + tint apply to the final pixel (lit or unlit); then contrast
 // (around mid-grey), then saturation.
 output.color = vec4f(output.color.rgb * uniform.uTint * uniform.uBrightness, output.color.a);
@@ -425,6 +461,10 @@ if (abs(uniform.uSaturation - 1.0) > 0.001) {
     let luma = dot(output.color.rgb, vec3f(0.2126, 0.7152, 0.0722));
     output.color = vec4f(mix(vec3f(luma), output.color.rgb, uniform.uSaturation), output.color.a);
 }
+// The room's "lighting" ambient occlusion on an unlit tile's colour (see the GLSL note).
+#ifdef LIT_SSAO
+output.color = vec4f(output.color.rgb * mix(1.0, textureSampleLevel(ssaoTexture, ssaoTextureSampler, pcPosition.xy * uniform.ssaoTextureSizeInv, 0.0).r, uniform.uSsaoOnColor), output.color.a);
+#endif
 // Aerial perspective (forward pass): extinction + inscatter on the tile.
 if (uniform.uAtmoEnable > 0.5) {
     let ap0 = (uniform.uWorldToTile * vec4f(vPositionW, 1.0)).xyz;
@@ -821,6 +861,9 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
     // and sun disc render as linear HDR and bloom. The atmosphere shaders follow this
     // automatically via _hdrActive(). The room's prior HDR state is restored on unload.
     hdr = true;
+    // The look the tiles were tuned for (RECOMMENDED_POST_EFFECTS + the skybox hidden), applied
+    // while the vibe runs and undone on unload; the room's saved settings are never changed.
+    recommendedLighting = true;
     // Show the centered welcome popup (initial location + HDR) when the vibe loads.
     // Pressing OK saves the values and turns this off; flip it back on to re-open.
     showPanel = true;
@@ -841,8 +884,10 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
     // switched to lit and those two knobs apply. The colour grade above is
     // independent of this gate.
     directLight = false;
+    // How much of the re-lighting shows: 0 = Google's photo as it is, 1 = fully lit by the sun and sky.
+    directLightAmount = 1;
     gloss = 0.5;
-    ambientResponse = 1.0;
+    ambientResponse = 0.3;   // the sky's light on re-lit tiles (their photo already has daylight baked in)
 
     // Atmosphere (analytic single-scattering sky + aerial perspective).
     atmosphere = true;
@@ -879,12 +924,14 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
         freeCamMaxSpeed: { title: "Free Cam Max Speed (m/s)", min: 50, max: 1000000, step: 50 },
         showStatus: { title: "Show Status" },
         hdr: { title: "HDR" },
+        recommendedLighting: { title: "Recommended Lighting (HDR, bloom, sky hidden; saved to the space)" },
         showPanel: { title: "Show Welcome Popup" },
         materialBrightness: { title: "Brightness", min: 0, max: 3, step: 0.05 },
         contrast: { title: "Contrast", min: 0, max: 3, step: 0.05 },
         saturation: { title: "Saturation", min: 0, max: 2, step: 0.05 },
         diffuseTint: { title: "Tint" },
         directLight: { title: "Direct Light (scene sun)" },
+        directLightAmount: { title: "Direct Light Amount", min: 0, max: 1, step: 0.05 },
         gloss: { title: "Gloss (lit)", min: 0, max: 1, step: 0.01 },
         ambientResponse: { title: "Ambient Response (lit)", min: 0, max: 2, step: 0.05 },
         atmosphere: { title: "Atmosphere" },
@@ -970,7 +1017,13 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
         // HDR render pipeline + on-screen control panel. Capture the room's current
         // HDR state first so destroy() can restore it.
         this._origHdrEnabled = !!(ArrivalSpace.getPostEffects?.()?.hdrEnabled);
-        this._applyHdr();
+        this._origPostEffects = ArrivalSpace.getPostEffects?.() || null;
+        // the look lives in the space's settings (saved from the Welcome popup); older clients
+        // without setRoomSettings get it at runtime
+        if (!this._roomMode()) {
+            this._applyHdr();
+            this._applyLighting();
+        }
         if (this.showPanel) this._openWelcome();
 
         if (this.atmosphere) this._buildSky();
@@ -1098,7 +1151,8 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
                 }
                 break;
             case "hdr":
-                this._applyHdr();
+            case "recommendedLighting":
+                this._applyLook();
                 break;
             case "showPanel":
                 if (this.showPanel) this._openWelcome();
@@ -1113,10 +1167,14 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
                 if (this._colorGradeActive()) this._chunkAllTiles();
                 this._applyColorGradeUniforms();
                 break;
+            case "directLightAmount":
+                for (const mat of this._tunedMaterials) this._setLitAmount(mat);
+                break;
             case "directLight":
                 // master gate for re-lighting only; the colour grade is independent
                 if (this.directLight) this._tuneAllTiles();
                 else this._restoreAllTiles();
+                this._updateSunLight();
                 break;
             case "gloss":
             case "ambientResponse":
@@ -1160,8 +1218,11 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
             if (this._origNearClip !== null) cam.nearClip = this._origNearClip;
             if (this._origFarClip !== null) cam.farClip = this._origFarClip;
         }
-        // Restore the room's HDR pipeline to whatever it was before we enabled it.
-        if (this._hdrApplied && this._origHdrEnabled !== null &&
+        // Restore the room's look: its post effects (before the recommended lighting / HDR)
+        // and its own skybox setting.
+        if (this._lightingApplied) {
+            this._restoreLighting();
+        } else if (this._hdrApplied && this._origHdrEnabled !== null &&
             typeof ArrivalSpace.setPostEffects === "function") {
             ArrivalSpace.setPostEffects({ hdrEnabled: this._origHdrEnabled });
         }
@@ -1658,6 +1719,8 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
             mat.setParameter("uPatchHalf", region.half);
         }
         mat.setParameter("uPatchEnable", region ? 1 : 0);
+        mat.setParameter("uSsaoOnColor", mat.useLighting ? 0 : 1);
+        mat.setParameter("uLitAmount", 1);
         this._setColorGradeOn(mat);
         // Atmosphere seeds — per-frame values (uWorldToTile/uCamTile/uSunDirTile)
         // are refreshed in _updateAtmosphereUniforms.
@@ -1776,6 +1839,40 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
         const z = sE * e[2] + sN * n[2] + sU * u[2];
         const L = len3(x, y, z) || 1;
         this._sunDirTile = [x / L, y / L, z / L];
+        this._sunDirLocal = [sE, sU, -sN];
+        this._updateSunLight();
+    }
+
+    /**
+     * Direct Light needs a sun. The room's own directional light serves if it has one; otherwise
+     * the vibe adds one along the atmosphere's sun (latitude, day of year, time), casting shadows,
+     * and removes it when Direct Light goes off. Below the horizon it's dark.
+     */
+    _updateSunLight() {
+        const own = this._sunEntity;
+        const roomSun = this.directLight && this.app.root.findComponents("light")
+            .some((l) => l.type === "directional" && l.enabled && l.entity.enabled && l.entity !== own);
+        if (!this.directLight || roomSun) {
+            if (own) { own.destroy(); this._sunEntity = null; }
+            return;
+        }
+        if (!own) {
+            this._sunEntity = new pc.Entity("google-tiles-sun");
+            this.entity.addChild(this._sunEntity);
+            this._sunEntity.addComponent("light", {
+                type: "directional", color: new pc.Color(1, 0.97, 0.92), intensity: 1.4,
+                castShadows: true, shadowDistance: 120, numCascades: 3, cascadeDistribution: 0.6,
+                shadowResolution: 2048, shadowBias: 0.2, normalOffsetBias: 0.05,
+            });
+        }
+        // a directional light shines down its entity's -Y: turn +Y onto the sun
+        const [dx, dy, dz] = this._sunDirLocal || [0, 1, 0];
+        const axis = new pc.Vec3(dz, 0, -dx);
+        const q = new pc.Quat();
+        if (axis.length() > 1e-6) q.setFromAxisAngle(axis.normalize(), Math.acos(Math.max(-1, Math.min(1, dy))) * pc.math.RAD_TO_DEG);
+        else if (dy < 0) q.setFromAxisAngle(pc.Vec3.RIGHT, 180);
+        this._sunEntity.setLocalRotation(q);
+        this._sunEntity.light.intensity = dy > 0 ? 1.4 * Math.min(1, dy * 4) : 0;
     }
 
     /**
@@ -1910,6 +2007,7 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
                 metalness: mat.metalness,
                 useMetalness: mat.useMetalness,
                 ambient: mat.ambient.clone(),
+                useSkybox: mat.useSkybox,
             };
             // Google parks the baked aerial photo in emissiveMap (unlit); fall
             // back to diffuseMap for a normally-lit GLB.
@@ -1927,6 +2025,8 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
         mat.metalness = 0;
         mat.gloss = this.gloss;
         mat.ambient.set(this.ambientResponse, this.ambientResponse, this.ambientResponse);
+        mat.useSkybox = true;   // the sky's image lights it too, not only the sun
+        this._setLitAmount(mat);
         mat.emissiveMap = null;
         mat.emissive.set(0, 0, 0);
         mat.emissiveIntensity = 0;
@@ -1934,6 +2034,14 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
 
         this._tunedMaterials.add(mat);
         this._ensureChunks(mat);   // colour grade + atmosphere ride the chunk layer
+    }
+
+    // the blend toward the photo; the photo's share takes the ambient occlusion on its colour (the
+    // engine applies it to the lit share)
+    _setLitAmount(mat) {
+        const value = Number(this.directLightAmount), amount = Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 1;
+        mat.setParameter("uLitAmount", amount);
+        mat.setParameter("uSsaoOnColor", 1 - amount);
     }
 
     _restoreMaterial(mat) {
@@ -1949,6 +2057,9 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
         mat.metalness = o.metalness;
         mat.useMetalness = o.useMetalness;
         mat.ambient.copy(o.ambient);
+        mat.useSkybox = o.useSkybox;
+        mat.setParameter("uSsaoOnColor", mat.useLighting ? 0 : 1);
+        mat.setParameter("uLitAmount", 1);
         mat.update();
         this._tunedMaterials.delete(mat);
         // The colour grade is independent of lighting, so it stays as set —
@@ -2017,6 +2128,12 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
                     `<input class="gt-alt" type="number" step="1" value="${num(this.groundAltitude)}" style="${inputStyle}">` +
                     `<label style="display:flex;align-items:center;gap:8px;margin-top:14px;font-size:13px;cursor:pointer;">` +
                     `<input class="gt-hdr" type="checkbox" ${this.hdr ? "checked" : ""} style="width:16px;height:16px;cursor:pointer;"> HDR lighting</label>` +
+                    `<label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:13px;cursor:pointer;">` +
+                    `<input class="gt-light" type="checkbox" ${this.recommendedLighting ? "checked" : ""} style="width:16px;height:16px;cursor:pointer;"> ` +
+                    `Recommended lighting <span style="opacity:.6;font-size:11px;">(HDR, bloom, sky hidden)</span></label>` +
+                    `<label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:13px;cursor:pointer;">` +
+                    `<input class="gt-direct" type="checkbox" ${this.directLight ? "checked" : ""} style="width:16px;height:16px;cursor:pointer;"> ` +
+                    `Direct light <span style="opacity:.6;font-size:11px;">(the scene's sun lights the tiles)</span></label>` +
 
                     `<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;">` +
                     `<button class="gt-skip" style="padding:9px 16px;border-radius:8px;border:1px solid #2a3850;` +
@@ -2029,7 +2146,7 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
 
             const q = (sel) => overlay.querySelector(sel);
             const keyI = q(".gt-key"), ionI = q(".gt-ion");
-            const latI = q(".gt-lat"), lonI = q(".gt-lon"), altI = q(".gt-alt"), hdrI = q(".gt-hdr");
+            const latI = q(".gt-lat"), lonI = q(".gt-lon"), altI = q(".gt-alt"), hdrI = q(".gt-hdr"), lightI = q(".gt-light"), directI = q(".gt-direct");
             const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
             const ok = () => {
@@ -2043,8 +2160,15 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
                 if (Number.isFinite(lon)) this.longitude = clamp(lon, -180, 180);
                 if (Number.isFinite(alt)) this.groundAltitude = alt;
                 this.hdr = hdrI.checked;
+                this.recommendedLighting = lightI.checked;
+                if (this.directLight !== directI.checked) {
+                    this.directLight = directI.checked;
+                    if (this.directLight) this._tuneAllTiles();
+                    else this._restoreAllTiles();
+                    this._updateSunLight();
+                }
                 this._applyOrigin();   // re-anchor the streamed globe (no re-download)
-                this._applyHdr();
+                this._applyLook();
                 // Don't pop the welcome again once set up; the owner can re-open it from
                 // the "Show Welcome Popup" editor toggle.
                 this.showPanel = false;
@@ -2055,6 +2179,8 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
                     longitude: this.longitude,
                     groundAltitude: this.groundAltitude,
                     hdr: this.hdr,
+                    recommendedLighting: this.recommendedLighting,
+                    directLight: this.directLight,
                     showPanel: false,
                 });
                 this._closeWelcome();
@@ -2096,8 +2222,64 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
      */
     _applyHdr() {
         if (typeof ArrivalSpace.setPostEffects !== "function") return;
-        ArrivalSpace.setPostEffects({ hdrEnabled: !!this.hdr });
+        // (with the recommended lighting on, its whole set again — HDR alone would drop the rest)
+        if (this.recommendedLighting && this._lightingApplied) {
+            ArrivalSpace.setPostEffects({ ...RECOMMENDED_POST_EFFECTS, hdrEnabled: !!this.hdr });
+        } else {
+            ArrivalSpace.setPostEffects({ hdrEnabled: !!this.hdr });
+        }
         this._hdrApplied = true;
+    }
+
+    /** The client saves room settings from plugins (1.27.0): the look goes there, not into a runtime override. */
+    _roomMode() {
+        return typeof ArrivalSpace.setRoomSettings === "function";
+    }
+
+    /**
+     * HDR and the recommended lighting: saved into the space's settings by someone who can edit
+     * it (what the settings panel shows); visitors keep the space's as it is. Older clients:
+     * applied at runtime (_applyHdr / _applyLighting).
+     */
+    _applyLook() {
+        if (!this._roomMode()) {
+            this._applyHdr();
+            this._applyLighting();
+            return;
+        }
+        if (!ArrivalSpace.canEditSpace?.()) return;
+        const post = this.recommendedLighting
+            ? { ...RECOMMENDED_POST_EFFECTS, hdrEnabled: !!this.hdr }
+            : { hdrEnabled: !!this.hdr };
+        ArrivalSpace.setRoomSettings({ framePosteffectParams: post, ...(this.recommendedLighting ? { skyboxHidden: true } : {}) });
+    }
+
+    /**
+     * "Recommended Lighting" on older clients: while on, the room shows RECOMMENDED_POST_EFFECTS and no skybox
+     * backdrop; off (or on unload) the room's own post effects and skybox setting come back.
+     * Runtime only — the room's saved settings are never written.
+     */
+    _applyLighting() {
+        if (!this.recommendedLighting) {
+            if (this._lightingApplied) this._restoreLighting();
+            this._applyHdr();
+            return;
+        }
+        if (typeof ArrivalSpace.setPostEffects === "function") {
+            // the HDR toggle still decides HDR
+            ArrivalSpace.setPostEffects({ ...RECOMMENDED_POST_EFFECTS, hdrEnabled: !!this.hdr });
+            this._hdrApplied = true;
+        }
+        ArrivalSpace.setSkyboxHidden?.(true);
+        this._lightingApplied = true;
+    }
+
+    _restoreLighting() {
+        this._lightingApplied = false;
+        if (typeof ArrivalSpace.setPostEffects === "function" && this._origPostEffects) {
+            ArrivalSpace.setPostEffects({ ...this._origPostEffects });
+        }
+        ArrivalSpace.setSkyboxHidden?.(null);
     }
 
     /** Persist panel edits to the real editor params — owner only (visitors stay local). */
