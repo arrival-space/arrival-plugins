@@ -18,6 +18,7 @@ npm link          # optional: puts `arrival` on your PATH
 ## Usage
 
 ```bash
+arrival guide                    # the guide for coding agents (no login needed; --save writes AGENTS.md)
 arrival login                    # sign in with your browser (OAuth); token saved to ~/.arrival/config.json
 arrival spaces                   # list your spaces
 arrival create "Photo wall"      # create a new space; prints its id

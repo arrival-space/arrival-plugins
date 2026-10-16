@@ -24,10 +24,35 @@ async function request(cfg, method, apiPath, { body, headers, raw } = {}) {
         headers: { Authorization: `Bearer ${token}`, ...(headers || {}) },
         body,
     });
+    // A rejected token is never a per-command problem: say what to do instead of each caller's
+    // generic "<thing> failed" (the server's own message is just "Invalid API key").
+    if (res.status === 401) {
+        let msg = "";
+        try { msg = (await res.json()).message || ""; } catch { /* non-JSON body */ }
+        throw new Error(`${msg || "Not authorized"} — ${config.serverUrl(cfg)} rejected the stored token ` +
+            `(${config.CONFIG_FILE}). Run \`arrival login\` to sign in again.`);
+    }
     if (raw) return { res, buffer: Buffer.from(await res.arrayBuffer()) };
     let json = null;
     try { json = await res.json(); } catch { /* non-JSON body */ }
     return { res, json };
+}
+
+// The public agent guide (no auth). Tries the configured server first so `--server` / a dev login
+// gets the matching guide, then the copy on arrival.space.
+async function fetchGuide(cfg) {
+    const urls = [config.serverUrl(cfg) + "/api/v1/agents.md", "https://arrival.space/agents.md"];
+    let lastErr;
+    for (const url of urls) {
+        try {
+            const res = await fetch(url);
+            const text = await res.text();
+            if (res.ok && text.startsWith("#")) return { text, url };
+            lastErr = new Error(`${url} answered HTTP ${res.status}`);
+        } catch (e) { lastErr = e; }
+    }
+    throw new Error(`Could not fetch the agent guide (${lastErr && lastErr.message}). ` +
+        "Docs: https://codex.arrival.space/api/cli");
 }
 
 async function listSpaces(cfg, { limit = 100, search } = {}) {
@@ -203,4 +228,4 @@ async function createGlbAvatar(cfg, glbUrl, { gender, pollMs = 2000, timeoutMs =
     throw new Error("Timed out waiting for the avatar service");
 }
 
-module.exports = { listSpaces, createSpace, pull, apply, applyChangeset, uploadFile, createSplatAvatar, listAvatars, createGlbAvatar, cleanUrl, avatarThumbnail };
+module.exports = { fetchGuide, listSpaces, createSpace, pull, apply, applyChangeset, uploadFile, createSplatAvatar, listAvatars, createGlbAvatar, cleanUrl, avatarThumbnail };

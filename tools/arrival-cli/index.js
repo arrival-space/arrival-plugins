@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Arrival.Space CLI — manage your spaces as local files.
 //
+//   arrival guide                 print the guide for coding agents (no login needed)
 //   arrival login                 sign in with your browser (OAuth)
 //   arrival spaces                list your spaces
 //   arrival create <title>        create a new space (--pull to check it out at once)
@@ -43,6 +44,7 @@ program
 // (or a coding agent pointed at https://codex.arrival.space/api/cli) to get from install to push.
 program.addHelpText("after", `
 Quick start:
+  arrival guide                    the full guide for coding agents   (no login needed)
   arrival login                    sign in with your browser
   arrival create "My space" --pull create a space and check it out    (or: arrival pull <spaceId>)
   cd <spaceId>                     edit files under space/ with any editor + git
@@ -93,6 +95,19 @@ program.command("logout")
         delete cfg.token;
         config.save(cfg);
         console.log("✓ Logged out locally. (The API key still exists — manage keys in your account.)");
+    });
+
+program.command("guide")
+    .description("Print the guide for coding agents: interfaces, setup, workflow, plugin rules (no login needed)")
+    .option("--save [file]", "write it to a file instead (default: ./AGENTS.md)")
+    .action(async (opts) => {
+        try {
+            const { text, url } = await api.fetchGuide(config.load());
+            if (!opts.save) { process.stdout.write(text); return; }
+            const file = typeof opts.save === "string" ? opts.save : "AGENTS.md";
+            fs.writeFileSync(file, text);
+            console.log(`✓ Wrote ${file} (from ${url})`);
+        } catch (e) { fail(e); }
     });
 
 program.command("spaces")
