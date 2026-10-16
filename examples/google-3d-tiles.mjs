@@ -22,8 +22,13 @@
  *   3. Distance-based LOD: tiles expand into their children while the
  *      camera is within a multiple of their bounding-box size and collapse
  *      again when it leaves (traversal adapted from playcanvas/earthatile, MIT)
- *   4. Tile GLBs load via ArrivalSpace.loadGLB under a rotated/offset anchor,
- *      so re-centering on a new coordinate never re-downloads tiles
+ *   4. Tile GLBs load via ArrivalSpace.loadGLB under a rotated anchor, so
+ *      re-centering on a new coordinate never re-downloads tiles
+ *   5. Precision: a tile's root node sits ~6,000 km out (Earth-centred), and the
+ *      glTF loader rounds that through 32-bit matrices to 0.25–0.5 m — which
+ *      opened slits between neighbouring tiles. Each tile's exact (64-bit)
+ *      position is read from its glTF JSON, and its offset from the origin is
+ *      worked out in 64-bit JavaScript, so only a small number reaches the GPU.
  *
  * Requires a Google Maps Platform API key with the "Map Tiles API" enabled
  * (billing required): https://developers.google.com/maps/documentation/tile/3d-tiles
@@ -65,7 +70,7 @@
  *     Brightness" for a stronger bloom). With no CameraFrame the atmosphere
  *     applies its own display tonemap so it doesn't blow out. "Sky Exposure"
  *     scales either path.
- *   - "Recommended Lighting" (on by default, offered in the Welcome popup) gives the
+ *   - "Recommended Lighting" (offered ticked in the Welcome popup on a first setup) gives the
  *     tiles the look they were tuned for: HDR with ACES tone mapping, a little bloom,
  *     no ambient occlusion, and the room's skybox hidden (the atmosphere is the sky;
  *     the skybox still lights the scene). Pressing OK saves it — and the HDR choice —
@@ -78,6 +83,10 @@
  *   - The room's ambient occlusion reaches the tiles in both modes: "combine" darkens
  *     the final image; "lighting" darkens lit materials' ambient light, so the vibe
  *     applies it to Google's unlit tiles itself (on their colour, before the haze).
+ *   - "Loading Screen" (on by default): a small card with the download's progress while
+ *     the first tiles around the viewer stream in. Until they're in, app.googleTilesLoading
+ *     is true (the "googletiles:loaded" event fires when it turns false), so a vibe can wait
+ *     for the city — e.g. Tiles Collision holds the player until then.
  *   - A centered Welcome popup (shown on load; "Show Welcome Popup" toggles it) asks
  *     for the Google Maps API key (or a Cesium Ion token), a starting longitude /
  *     latitude / height, and an HDR toggle. Pressing OK starts streaming, re-centres
@@ -88,6 +97,25 @@
  */
 
 const TILE_API = "https://tile.googleapis.com/";
+
+/**
+ * The translation of a GLB's first scene root node, exactly (the JSON's 64-bit numbers): its
+ * `translation`, or a `matrix`'s last column. null when the file has neither.
+ */
+function glbRootTranslation(bytes) {
+    try {
+        const view = new DataView(bytes);
+        if (view.getUint32(0, true) !== 0x46546c67) return null;          // "glTF"
+        const length = view.getUint32(12, true);
+        if (view.getUint32(16, true) !== 0x4e4f534a) return null;         // "JSON"
+        const json = JSON.parse(new TextDecoder().decode(new Uint8Array(bytes, 20, length)));
+        const scene = json.scenes?.[json.scene ?? 0];
+        const node = json.nodes?.[scene?.nodes?.[0] ?? 0];
+        if (node?.translation) return node.translation.slice(0, 3);
+        if (node?.matrix) return [node.matrix[12], node.matrix[13], node.matrix[14]];
+    } catch (_) { /* not a parsable glb: use what the loader made */ }
+    return null;
+}
 
 // "Recommended Lighting": the post effects the tiles look best with (HDR + ACES, a little bloom,
 // no ambient occlusion); the room's skybox is hidden as well.
@@ -841,7 +869,7 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
     latitude = 48.20849;
     longitude = 16.37208;
     groundAltitude = 216;
-    detail = 4;
+    detail = 3;
     // Detail used on mobile devices (pc.platform.mobile). Mobile GPUs/CPUs
     // choke on the desktop tile count, so this defaults lower; the active
     // value is chosen once at stream start (see _effectiveDetail).
@@ -856,14 +884,17 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
     cameraFarClip = 30000;
     freeCamMaxSpeed = 1000000;
     showStatus = true;
+    // A small loading card while the first tiles stream in (and app.googleTilesLoading meanwhile).
+    loadingScreen = true;
 
     // Enable the room's HDR render pipeline (a CameraFrame) so the atmosphere's sky
     // and sun disc render as linear HDR and bloom. The atmosphere shaders follow this
     // automatically via _hdrActive(). The room's prior HDR state is restored on unload.
-    hdr = true;
-    // The look the tiles were tuned for (RECOMMENDED_POST_EFFECTS + the skybox hidden), applied
-    // while the vibe runs and undone on unload; the room's saved settings are never changed.
-    recommendedLighting = true;
+    hdr = false;
+    // The look the tiles were tuned for (RECOMMENDED_POST_EFFECTS + the skybox hidden). Off unless
+    // chosen — an install from before it keeps its look; the Welcome popup offers it ticked when a
+    // space is set up (no key yet).
+    recommendedLighting = false;
     // Show the centered welcome popup (initial location + HDR) when the vibe loads.
     // Pressing OK saves the values and turns this off; flip it back on to re-open.
     showPanel = true;
@@ -923,6 +954,7 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
         cameraFarClip: { title: "Far Clip (m)", min: 1000, max: 20000000, step: 1000 },
         freeCamMaxSpeed: { title: "Free Cam Max Speed (m/s)", min: 50, max: 1000000, step: 50 },
         showStatus: { title: "Show Status" },
+        loadingScreen: { title: "Loading Screen (first tiles)" },
         hdr: { title: "HDR" },
         recommendedLighting: { title: "Recommended Lighting (HDR, bloom, sky hidden; saved to the space)" },
         showPanel: { title: "Show Welcome Popup" },
@@ -1005,11 +1037,15 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
     initialize() {
         this._applyCameraClips();
 
-        // this.entity -> _anchor (ENU rotation + scale) -> _tileRoot (-ECEF offset) -> tiles
+        // this.entity -> _anchor (ENU rotation + scale) -> _tileRoot (the tile frame: -ECEF offset, for the
+        // maths and the sky); the tiles hang under _tileHolder (no offset), each placed at its exact offset
+        // from the origin (see _placeTile) — the big ECEF numbers never meet in a 32-bit matrix
         this._anchor = new pc.Entity("google-tiles-anchor");
         this.entity.addChild(this._anchor);
-        this._tileRoot = new pc.Entity("google-tiles-root");
+        this._tileRoot = new pc.Entity("google-tiles-frame");
         this._anchor.addChild(this._tileRoot);
+        this._tileHolder = new pc.Entity("google-tiles-root");
+        this._anchor.addChild(this._tileHolder);
         this._applyOrigin();
 
         this._makeAttribution();
@@ -1021,10 +1057,14 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
         // the look lives in the space's settings (saved from the Welcome popup); older clients
         // without setRoomSettings get it at runtime
         if (!this._roomMode()) {
-            this._applyHdr();
-            this._applyLighting();
+            if (this.hdr) this._applyHdr();
+            if (this.recommendedLighting) this._applyLighting();
+        } else if (this.hdr) {
+            this._keepHdrChoice();
         }
-        if (this.showPanel) this._openWelcome();
+        // the Welcome popup on its own only for a space not set up yet (no key) — "Show Welcome
+        // Popup" in the editor opens it any time
+        if (this.showPanel && !this.apiKey && !this.cesiumIonToken) this._openWelcome();
 
         if (this.atmosphere) this._buildSky();
 
@@ -1099,6 +1139,8 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
         this._tree.update(this._camTile);
 
         if (this.atmosphere) this._updateAtmosphereUniforms(local);
+
+        this._updateInitialLoad();
 
         if (this.showStatus) {
             const queued = this._loadQueue.length;
@@ -1218,6 +1260,7 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
             if (this._origNearClip !== null) cam.nearClip = this._origNearClip;
             if (this._origFarClip !== null) cam.farClip = this._origFarClip;
         }
+        this._endInitialLoad();
         // Restore the room's look: its post effects (before the recommended lighting / HDR)
         // and its own skybox setting.
         if (this._lightingApplied) {
@@ -1277,6 +1320,7 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
         const s = this.tileScale;
         this._anchor.setLocalScale(s, s, s);
         this._tileRoot.setLocalPosition(-ex, -ez, ey);
+        for (const rec of this._records?.values() || []) if (rec.entity) this._placeTile(rec);
 
         // geocentric radius of the ground at the anchor — reference for the
         // altitude-adaptive clip planes
@@ -1490,6 +1534,7 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
         });
         tree.lodFactor = this._effectiveDetail();
         this._tree = tree;
+        this._beginInitialLoad();
 
         try {
             await tree.start();
@@ -1599,11 +1644,24 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
                 // Race the load against a timeout so a stalled request can't pin
                 // this slot forever. loadGLB can't be cancelled, so if a timed-out
                 // load still finishes later, dispose its orphaned entity.
-                const loadPromise = ArrivalSpace.loadGLB(url, {
-                    parent: this._tileRoot,
-                    name: "google-tile",
-                    castShadows: false,
-                });
+                // The bytes are fetched here once: the root node's exact position is read
+                // from them, and the same bytes go to the loader (a blob URL, no 2nd download).
+                const loadPromise = (async () => {
+                    const res = await fetch(url);
+                    if (!res.ok) throw new Error(`tile ${res.status}`);
+                    const bytes = await res.arrayBuffer();
+                    rec.exact = glbRootTranslation(bytes);
+                    const blobUrl = URL.createObjectURL(new Blob([bytes], { type: "model/gltf-binary" }));
+                    try {
+                        return await ArrivalSpace.loadGLB(blobUrl, {
+                            parent: this._tileHolder,
+                            name: "google-tile",
+                            castShadows: false,
+                        });
+                    } finally {
+                        URL.revokeObjectURL(blobUrl);
+                    }
+                })();
                 let timer = null;
                 const timeout = new Promise((_, reject) => {
                     timer = setTimeout(
@@ -1630,6 +1688,7 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
 
                 rec.entity = entity;
                 rec.asset = asset;
+                this._placeTile(rec);
                 if (this._patchActive || this.atmosphere || this._colorGradeActive()) {
                     this._chunkEntity(entity);
                 }
@@ -1643,6 +1702,23 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
                 this._records.delete(node);
             }
         }
+    }
+
+    /**
+     * A tile at its exact place: the frame's offset (-ECEF) plus its root node's ECEF position, added
+     * in 64-bit JS — a small number — on the tile's entity; the root node itself at zero. (Without the
+     * exact position — a glb without a root translation — the loaded one, offset the same way.)
+     */
+    _placeTile(rec) {
+        const root = rec.entity?.children[0];
+        if (!root) return;
+        if (!rec.exact) {
+            const t = root.getLocalPosition();
+            rec.exact = [t.x, t.y, t.z];
+        }
+        const o = this._tileRoot.getLocalPosition();
+        rec.entity.setLocalPosition(o.x + rec.exact[0], o.y + rec.exact[1], o.z + rec.exact[2]);
+        root.setLocalPosition(0, 0, 0);
     }
 
     _unloadTile(node) {
@@ -2127,9 +2203,9 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
                     `<label style="${labelStyle}">Height (m)</label>` +
                     `<input class="gt-alt" type="number" step="1" value="${num(this.groundAltitude)}" style="${inputStyle}">` +
                     `<label style="display:flex;align-items:center;gap:8px;margin-top:14px;font-size:13px;cursor:pointer;">` +
-                    `<input class="gt-hdr" type="checkbox" ${this.hdr ? "checked" : ""} style="width:16px;height:16px;cursor:pointer;"> HDR lighting</label>` +
+                    `<input class="gt-hdr" type="checkbox" ${this.hdr || (!this.apiKey && !this.cesiumIonToken) ? "checked" : ""} style="width:16px;height:16px;cursor:pointer;"> HDR lighting</label>` +
                     `<label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:13px;cursor:pointer;">` +
-                    `<input class="gt-light" type="checkbox" ${this.recommendedLighting ? "checked" : ""} style="width:16px;height:16px;cursor:pointer;"> ` +
+                    `<input class="gt-light" type="checkbox" ${this.recommendedLighting || (!this.apiKey && !this.cesiumIonToken) ? "checked" : ""} style="width:16px;height:16px;cursor:pointer;"> ` +
                     `Recommended lighting <span style="opacity:.6;font-size:11px;">(HDR, bloom, sky hidden)</span></label>` +
                     `<label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:13px;cursor:pointer;">` +
                     `<input class="gt-direct" type="checkbox" ${this.directLight ? "checked" : ""} style="width:16px;height:16px;cursor:pointer;"> ` +
@@ -2231,6 +2307,19 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
         this._hdrApplied = true;
     }
 
+    /**
+     * Before saving room settings, this vibe forced HDR on at runtime (its HDR setting, on by
+     * default). Where the room's own HDR setting differs, an editor's visit saves the vibe's choice
+     * into the room; until one does, visitors get it at runtime as before — an existing space keeps
+     * its look.
+     */
+    _keepHdrChoice() {
+        const want = !!this.hdr;
+        if (!!ArrivalSpace.getPostEffects?.()?.hdrEnabled === want) return;
+        if (ArrivalSpace.canEditSpace?.()) ArrivalSpace.setRoomSettings({ framePosteffectParams: { hdrEnabled: want } });
+        else this._applyHdr();
+    }
+
     /** The client saves room settings from plugins (1.27.0): the look goes there, not into a runtime override. */
     _roomMode() {
         return typeof ArrivalSpace.setRoomSettings === "function";
@@ -2262,7 +2351,7 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
     _applyLighting() {
         if (!this.recommendedLighting) {
             if (this._lightingApplied) this._restoreLighting();
-            this._applyHdr();
+            if (this.hdr) this._applyHdr();
             return;
         }
         if (typeof ArrivalSpace.setPostEffects === "function") {
@@ -2270,7 +2359,7 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
             ArrivalSpace.setPostEffects({ ...RECOMMENDED_POST_EFFECTS, hdrEnabled: !!this.hdr });
             this._hdrApplied = true;
         }
-        ArrivalSpace.setSkyboxHidden?.(true);
+        this._hideSky(true);
         this._lightingApplied = true;
     }
 
@@ -2279,7 +2368,30 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
         if (typeof ArrivalSpace.setPostEffects === "function" && this._origPostEffects) {
             ArrivalSpace.setPostEffects({ ...this._origPostEffects });
         }
-        ArrivalSpace.setSkyboxHidden?.(null);
+        this._hideSky(null);
+    }
+
+    /**
+     * The skybox's backdrop hidden (true) or back to the room's (null). Clients before 1.27.0 have no
+     * setSkyboxHidden: there the sky is hidden as the client hides it (a zero-size box: its image still
+     * lights the scene) and put back as it was.
+     */
+    _hideSky(hidden) {
+        if (typeof ArrivalSpace.setSkyboxHidden === "function") {
+            ArrivalSpace.setSkyboxHidden(hidden);
+            return;
+        }
+        const sky = this.app.scene?.sky;
+        if (!sky?.node) return;
+        if (hidden) {
+            this._skyBefore ??= { type: sky.type, scale: sky.node.getLocalScale().clone() };
+            sky.type = pc.SKYTYPE_BOX;
+            sky.node.setLocalScale(0, 0, 0);
+        } else if (this._skyBefore) {
+            sky.type = this._skyBefore.type;
+            sky.node.setLocalScale(this._skyBefore.scale);
+            this._skyBefore = null;
+        }
     }
 
     /** Persist panel edits to the real editor params — owner only (visitors stay local). */
@@ -2288,6 +2400,59 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
         if (typeof this.setParams === "function") {
             Promise.resolve(this.setParams(values)).catch(() => {});
         }
+    }
+
+    // ── The first load: a small card with its progress; app.googleTilesLoading meanwhile ──
+    static INITIAL_LOAD_TIMEOUT_S = 90;   // a slow connection doesn't keep anyone waiting longer
+
+    _beginInitialLoad() {
+        this._initialLoad = { start: performance.now() / 1000, quietSince: null };
+        this.app.googleTilesLoading = true;
+        if (!this.loadingScreen || this._loadingEl) return;
+        try {
+            this._loadingEl = this.createUI("div", {
+                style: {
+                    position: "fixed", left: "50%", top: "50%", transform: "translate(-50%, -50%)",
+                    width: "260px", padding: "16px 18px 14px", borderRadius: "14px",
+                    background: "rgba(10,16,26,0.88)", color: "#eaf2ff", fontFamily: "sans-serif",
+                    boxShadow: "0 12px 40px rgba(0,0,0,.45)", zIndex: "998", pointerEvents: "none", textAlign: "center",
+                },
+                innerHTML:
+                    `<div style="font-weight:700;font-size:14px;">🌍 Downloading Google 3D Tiles</div>` +
+                    // the total isn't known up front (tiles refine in rounds): a running bar and the count so far
+                    `<style>@keyframes gt-load-run { from { margin-left: -35%; } to { margin-left: 100%; } }</style>` +
+                    `<div style="height:6px;border-radius:3px;background:#1d2a3d;margin:12px 0 8px;overflow:hidden;">` +
+                    `<div style="height:100%;width:35%;background:#5ad1ff;border-radius:3px;animation:gt-load-run 1.2s ease-in-out infinite;"></div></div>` +
+                    `<div class="gt-load-text" style="font-size:12px;opacity:.7;">Connecting…</div>`,
+            });
+        } catch (_) { this._loadingEl = null; }
+    }
+
+    _updateInitialLoad() {
+        const load = this._initialLoad;
+        if (!load) return;
+        const pending = this._loadSlots + this._loadQueue.length, loaded = this._records.size;
+        const now = performance.now() / 1000;
+        // done once nothing has been loading or queued for a second (or on the timeout)
+        load.quietSince = pending === 0 && loaded > 0 ? (load.quietSince ?? now) : null;
+        if ((load.quietSince !== null && now - load.quietSince >= 1) || now - load.start > GoogleTilesAtmosphere.INITIAL_LOAD_TIMEOUT_S) {
+            this._endInitialLoad();
+            return;
+        }
+        if (this._loadingEl) {
+            let ready = 0;
+            for (const rec of this._records.values()) if (rec.entity) ready++;
+            const text = this._loadingEl.querySelector(".gt-load-text");
+            if (text) text.textContent = ready ? `${ready.toLocaleString()} tiles downloaded` : "Connecting…";
+        }
+    }
+
+    _endInitialLoad() {
+        if (this._loadingEl) { this._loadingEl.remove(); this._loadingEl = null; }
+        if (!this._initialLoad) return;
+        this._initialLoad = null;
+        this.app.googleTilesLoading = false;
+        this.app.fire("googletiles:loaded");
     }
 
     _status(msg, html = null) {
