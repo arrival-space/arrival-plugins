@@ -1216,7 +1216,7 @@ Create a controllable NPC with avatar, animation, and optional interaction helpe
 
 Supports:
 - spawn/transform options (`position`, `rotation`, `scale`, `parent`). `scale` is the NPC root's scale, default `1`. The avatar inside is already shown at the space's `worldScale` like the player's, so `1` is a normal-size human; don't multiply by `worldScale` again.
-- avatar setup (`avatarUrl`, `avatarConfig`, `avatarParts`, `avatarGender`)
+- avatar setup (`avatarUrl`, `avatarConfig`, `avatarParts`, `avatarGender`) — `avatarConfig: { type: 'vrm', url }` takes an uploaded VRM avatar or any `.vrm` file URL (VRM 0 or 1); its humanoid rig comes from the file, and a raw `.vrm` idles and walks with the catalog's `idle` / `walking` clips until `animations` or `setAnimation` give it others
 - movement tuning (`speed`, `turnSpeed`, `stopDistance`)
 - optional custom animation refs (`animations.idle`, `animations.walk`, `animations.jump`) — each accepts a catalog/GLB clip **or a raw Mixamo `.fbx` URL**, which the platform converts to a generic clip on the fly and retargets onto the avatar (VRM and modular/RPM); no pre-conversion needed
 - optional interaction callbacks (`onClick`, `onHoverEnter`, `onHoverLeave`)
