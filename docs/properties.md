@@ -287,6 +287,18 @@ onPropertyChanged(name) {
 
 See `examples/visibility-groups.mjs`.
 
+## Grouping
+
+`group` puts a parameter under a collapsible header of that name in the editor. Groups appear in the order they are first used; parameters without a `group` are listed first.
+
+```javascript
+static properties = {
+    chassisScale: { title: 'Scale',  min: 0.1, max: 5, group: 'Chassis' },
+    wheelRadius:  { title: 'Radius', min: 0.05, max: 1, group: 'Wheels' },
+    wheelScale:   { title: 'Scale',  min: 0.1, max: 5, group: 'Wheels' },
+};
+```
+
 ## Reserved Names
 
 Do not use built-in script property names as plugin parameters. In particular, avoid:
