@@ -220,6 +220,12 @@ platform.
 | `maxTextureSizeMobile` | number | `0` | 0–8192 | Hard cap on texture dimension on mobile (0 = unlimited) |
 | `maxTextureSizeDesktop` | number | `0` | 0–8192 | Same, desktop |
 
+Splat count (one budget for the whole space, per device preset):
+
+| key | type | default | range | effect |
+|---|---|---|---|---|
+| `splatBudgets` | object `{ [preset]: number }` | per preset: `desktop-max` 8,000,000 · `desktop` 5,000,000 · `mobile-max` 1,750,000 · `mobile` 1,000,000 · `quest` 800,000 · `vision-pro` 2,000,000 | splat count; `0`/missing = the default | Most splats rendered at once on that device preset (LOD fills up to it). The preset in use is the main asset's `defaultDesktopPreset` / `defaultMobilePreset`, or `quest` / `vision-pro` on a headset when enabled |
+
 ---
 
 ## 12. Rendering backend  *(panel: Pro › Other)*
@@ -329,10 +335,11 @@ records. Setting them on `RoomInfo.data` does nothing.
 - **LOD (streaming & generation)** — `LodSettingsEditor` / `LodGenerateSettingsEditor`
   write to the **main-asset / `UserModelEntity` entity's `data`**, not the room.
   Shape (on the entity): `{ presets: { [name]: { range, lodBaseDistance,
-  lodMultiplier, splatBudget, cullDistance, lodBehindPenalty, enabled,
+  lodMultiplier, cullDistance, lodBehindPenalty, enabled,
   lcc2_quality, lcc2_environment } }, defaultDesktopPreset, defaultMobilePreset,
   enableDebugUI, colorizeLod, … }` (VR presets `quest` / `vision-pro`;
-  `lcc2_quality` 0–100, default 80). Generation params `lodLevels`,
+  `lcc2_quality` 0–100, default 80). A `splatBudget` in an entity's preset is
+  not read: the splat budget is the room's `splatBudgets` (section 11). Generation params `lodLevels`,
   `lodChunkCount`, `lodChunkExtent`, `lodEngine` are entity-level too.
 - **Collision generation** — `collisionDensity`, `collisionTriangles`,
   `collisionVoxel`, `collisionRadius`, `collisionMinOpacity`, `collisionMaxScale`
