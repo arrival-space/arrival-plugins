@@ -4,16 +4,13 @@ Manage your Arrival.Space spaces as **local files** — pull a space into a git-
 workspace, edit it with your own tools, and push it back. It talks to the same
 materialize / validate / sync-back pipeline the in-app space agent uses, minus the AI.
 
-> Replaces the old `arrival-cli` browser REPL. That was a live-debug bridge; this is the
-> space-as-code tool people expected. (A live hot-reload `arrival dev` mode is planned.)
-
 ## Install
 
 ```bash
-cd tools/arrival-cli
-npm install
-npm link          # optional: puts `arrival` on your PATH
+npm install -g arrival-space     # puts `arrival` on your PATH (Node 18+)
 ```
+
+Or without installing: `npx arrival-space <command>`.
 
 ## Usage
 
@@ -73,3 +70,17 @@ the id for a follow-up `arrival pull`.
   those changes. Conflict detection (`status` / 3-way) is coming next.
 - **Assets** ≤ 25 MB each; binary files inside a multi-file plugin directory don't round-trip yet.
 - `arrival push` takes a server-side snapshot first, so a bad push is undoable in-app.
+
+## Releasing
+
+Published to npm as [`arrival-space`](https://www.npmjs.com/package/arrival-space) by
+`.github/workflows/publish-cli.yml` (trusted publishing — no npm token anywhere):
+
+```bash
+cd tools/arrival-cli
+npm version patch --no-git-tag-version     # or minor / major
+git commit -am "arrival CLI <version>"
+git tag cli-v<version> && git push && git push origin cli-v<version>
+```
+
+The workflow refuses a tag that doesn't match `package.json`'s version.
