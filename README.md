@@ -134,9 +134,7 @@ When adding, renaming, or removing example files, also update [docs/plugin-searc
 The [`arrival` CLI](tools/arrival-cli/) (in `tools/arrival-cli/`) lets you manage a space as **local files** — pull it into a git-friendly workspace, edit `room.json` / `entities/*.json` / `plugins/*.mjs` / `assets/*` with your own editor, then push it back.
 
 ```bash
-cd tools/arrival-cli
-npm install
-npm link                        # optional: puts `arrival` on your PATH
+npm install -g @arrival-space/cli   # puts `arrival` on your PATH (or: npx @arrival-space/cli <command>)
 
 arrival login                   # sign in via your browser (OAuth)
 arrival spaces                  # list your spaces

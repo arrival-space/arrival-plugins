@@ -7,10 +7,10 @@ materialize / validate / sync-back pipeline the in-app space agent uses, minus t
 ## Install
 
 ```bash
-npm install -g arrival-space     # puts `arrival` on your PATH (Node 18+)
+npm install -g @arrival-space/cli # puts `arrival` on your PATH (Node 18+)
 ```
 
-Or without installing: `npx arrival-space <command>`.
+Or without installing: `npx @arrival-space/cli <command>`.
 
 ## Usage
 
@@ -73,7 +73,7 @@ the id for a follow-up `arrival pull`.
 
 ## Releasing
 
-Published to npm as [`arrival-space`](https://www.npmjs.com/package/arrival-space) by
+Published to npm as [`@arrival-space/cli`](https://www.npmjs.com/package/@arrival-space/cli) by
 `.github/workflows/publish-cli.yml` (trusted publishing — no npm token anywhere):
 
 ```bash

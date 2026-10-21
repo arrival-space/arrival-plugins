@@ -1,4 +1,4 @@
-# Publishes tools/arrival-cli to npm as `arrival-space` when a `cli-v<version>` tag is pushed.
+# Publishes tools/arrival-cli to npm as `@arrival-space/cli` when a `cli-v<version>` tag is pushed.
 # Auth is npm trusted publishing (GitHub OIDC): no npm token is stored anywhere, and npm attaches
 # a provenance attestation linking the release to this workflow run. The trusted publisher on
 # npmjs.com names this file — renaming it breaks publishing until that setting is updated.
