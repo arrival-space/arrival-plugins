@@ -1763,6 +1763,8 @@ declare namespace ArrivalSpace {
         entity: pc.Entity | null;
         /** Socket ID (internal) */
         socketId: string | null;
+        /** Sending space, on messages sent with net.sendToSpace (set by the server) */
+        fromSpaceId?: string;
     }
 
     /** Send options for net.send() */
@@ -1810,6 +1812,19 @@ declare namespace ArrivalSpace {
          * ArrivalSpace.net.sendTo(player.userID, 'Game:invite', { gameId: '123' });
          */
         function sendTo(targetUserId: string, type: string, data?: object): void;
+
+        /**
+         * Send a message to the players in another space of the same creator as this space ('*': all of them);
+         * any space when the visitor is an admin. Only players there at that moment get it. Receivers use on(type);
+         * their sender has fromSpaceId. At most 20 messages per 10 s leave a visitor's space (shared with sendTo). (1.28.0)
+         *
+         * @param spaceId - Target space id (as in arrival.space/<spaceId>) or '*'
+         * @returns { spaces } - spaces with players that got it - or { error }
+         *
+         * @example
+         * await ArrivalSpace.net.sendToSpace('42485456_1371', 'Door:open', { by: 'lever' });
+         */
+        function sendToSpace(spaceId: string, type: string, data?: object): Promise<{ spaces: number } | { error: string }>;
 
         /**
          * Subscribe to messages of a specific type.

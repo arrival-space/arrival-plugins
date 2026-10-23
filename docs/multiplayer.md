@@ -180,8 +180,29 @@ ArrivalSpace.net.on('MyEvent', (data, sender) => {
     sender.avatar;    // Avatar URL
     sender.isOwner;   // Is room owner?
     sender.entity;    // Their avatar entity (if visible)
+    sender.fromSpaceId; // Sending space, on messages sent with sendToSpace
 });
 ```
+
+### Messages to Other Spaces
+
+`ArrivalSpace.net.sendToSpace(spaceId, type, data)` reaches the players of another space — a button in one space that opens a door in another, a countdown shown in all of a creator's spaces. `spaceId` is the id in the space's URL (`arrival.space/<spaceId>`), or `'*'` for every space it may reach. Requires `ArrivalSpace.VERSION` ≥ `1.28.0`.
+
+```javascript
+// Space A
+const { spaces, error } = await ArrivalSpace.net.sendToSpace('42485456_1371', 'Door:open', { by: 'lever' });
+
+// Space B (same creator)
+ArrivalSpace.net.on('Door:open', (data, sender) => {
+    console.log(`opened from space ${sender.fromSpaceId}`);
+});
+```
+
+- It reaches spaces of the same creator as the space the vibe runs in. When the visitor running it is an arrival.space admin, it reaches any space.
+- Only players in the target space at that moment get it; nothing is stored. The sender doesn't get it back; other players in the sender's own space do when it is the target or `'*'` is.
+- The target space needs a vibe listening with `ArrivalSpace.net.on(type, ...)`. `sender.fromSpaceId` is set by the multiplayer server and can't be faked; `send()` messages don't have it.
+- At most 20 messages per 10 s leave a visitor's space (shared with `sendTo`).
+- Resolves `{ spaces }` — how many spaces with players got it, 0 when nobody is there — or `{ error }`, e.g. for another creator's space.
 
 ---
 
@@ -483,6 +504,7 @@ textureUrl = attribute('', {
 |--------|-------------|
 | `send(type, data)` | Send message to other players |
 | `sendTo(targetUserId, type, data)` | Send message to one specific player |
+| `sendToSpace(spaceId, type, data)` | Send message to the players of another space of the same creator (`'*'`: all of them) |
 | `on(type, callback)` | Subscribe to messages (returns unsub fn) |
 | `once(type, callback)` | One-time subscription |
 | `off(type, callback?)` | Unsubscribe |
