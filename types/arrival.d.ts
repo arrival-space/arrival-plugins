@@ -1763,7 +1763,7 @@ declare namespace ArrivalSpace {
         entity: pc.Entity | null;
         /** Socket ID (internal) */
         socketId: string | null;
-        /** Sending space, on messages sent with net.sendToSpace (set by the server) */
+        /** The space the sender's client is in, on messages sent with net.sendToSpace (set by the server; anyone in that space can send) */
         fromSpaceId?: string;
     }
 

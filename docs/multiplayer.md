@@ -200,9 +200,9 @@ ArrivalSpace.net.on('Door:open', (data, sender) => {
 
 - It reaches spaces of the same creator as the space the vibe runs in. When the visitor running it is an arrival.space admin, it reaches any space.
 - Only players in the target space at that moment get it; nothing is stored. The sender doesn't get it back; other players in the sender's own space do when it is the target or `'*'` is.
-- The target space needs a vibe listening with `ArrivalSpace.net.on(type, ...)`. `sender.fromSpaceId` is set by the multiplayer server and can't be faked; `send()` messages don't have it.
+- The target space needs a vibe listening with `ArrivalSpace.net.on(type, ...)`. `sender.fromSpaceId` is the space the sender's client is in, set by the multiplayer server; `send()` messages don't have it. Anyone can open a space and send from it (from the browser console too), so like every multiplayer message it says where a message came from, not that the creator's vibe sent it.
 - At most 20 messages per 10 s leave a visitor's space (shared with `sendTo`).
-- Resolves `{ spaces }` — how many spaces with players got it, 0 when nobody is there — or `{ error }`, e.g. for another creator's space.
+- Resolves `{ spaces }` — how many spaces with players got it, 0 when nobody is there — or `{ error }`, e.g. for a space of another creator (whether or not anyone is in it).
 
 ---
 
