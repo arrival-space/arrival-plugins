@@ -895,6 +895,9 @@ declare namespace ArrivalSpace {
      */
     function disableXrTurn(): () => void;
 
+    /** VR: hide the controller models drawn at the hands (rays, buttons, tracking keep working). Returns release. VERSION ≥ 1.29.0 */
+    function hideXrControllers(): () => void;
+
     /** Safely dispose an entity and its resources */
     function disposeEntity(entity: pc.Entity, options?: DisposeEntityOptions): void;
 
@@ -2227,6 +2230,12 @@ declare namespace ArrivalSpace {
      */
     function canEditSpace(): boolean;
 
+    /** Whether the space editor is open (any entity selected); always false for visitors. VERSION ≥ 1.29.0 */
+    function isEditingSpace(): boolean;
+
+    /** callback(isEditing) each time the space editor opens or closes. Returns unsubscribe. VERSION ≥ 1.29.0 */
+    function onSpaceEditModeChanged(callback: (isEditing: boolean) => void): () => void;
+
     // ═══════════════════════════════════════════════════════════════════════════
     // PLAYER — movement, physics, body
     // ═══════════════════════════════════════════════════════════════════════════
@@ -2238,6 +2247,12 @@ declare namespace ArrivalSpace {
      * @example
      * ArrivalSpace.teleportPlayer({ x: 0, y: 1, z: 5 }, { forward: { x: 0, y: 0, z: -1 } });
      */
+    /** Where a player lands entering without a gate (default spawn point, else scene start); null before load. VERSION ≥ 1.29.0 */
+    function getDefaultSpawnPoint(): { position: { x: number; y: number; z: number }; forward: { x: number; y: number; z: number } } | null;
+
+    /** Teleport the local player to getDefaultSpawnPoint(), facing its direction. VERSION ≥ 1.29.0 */
+    function teleportToSpawn(): boolean;
+
     function teleportPlayer(
         position: ArrivalVec3Like,
         options?: {

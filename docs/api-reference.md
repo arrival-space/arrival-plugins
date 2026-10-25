@@ -618,6 +618,10 @@ export class ColorCubes extends ArrivalScript {
 }
 ```
 
+In VR the controller ray clicks and hovers the same entities: while the ray is on an entity with
+a click handler, the trigger (or a hand pinch) clicks it and does not teleport the player.
+Requires `ArrivalSpace.VERSION >= 1.29.0`.
+
 #### `ArrivalSpace.onEntityHover(entity, handlers)`
 
 `enter` fires when the pointer moves onto `entity` or a descendant, `leave` when it moves
@@ -757,7 +761,8 @@ if (hit) ball.setPosition(hit.point.x, hit.point.y + radius, hit.point.z);
 #### `ArrivalSpace.disableClickToWalk()`
 
 Clicks and taps on the ground stop walking the player there; the camera still orbits and the
-movement keys still work. Several vibes can hold it at once.
+movement keys still work. In VR it also stops the controller trigger / hand pinch from
+teleporting the player to the floor the ray points at. Several vibes can hold it at once.
 
 **Returns:** `() => void` - gives click-to-walk back (safe to call twice). Call it in `destroy()`.
 
@@ -777,6 +782,14 @@ this._releaseTurn = ArrivalSpace.disableXrTurn();
 // on dismount / in destroy():
 this._releaseTurn?.();
 ```
+
+#### `ArrivalSpace.hideXrControllers()`
+
+In VR, hides the controller models the platform draws at the player's hands, e.g. while the vibe
+shows its own hands or tools, or a seated pose puts them in view. The rays, buttons and tracking
+keep working. Several vibes can hold it at once. Requires `ArrivalSpace.VERSION >= 1.29.0`.
+
+**Returns:** `() => void` - shows the controllers again (safe to call twice). Call it in `destroy()`.
 
 ---
 
@@ -834,6 +847,26 @@ Check whether the current user owns the current space.
 Check whether the current user can edit the current space — the owner, a site admin, a team or per-space editor, or a seat holder. Decided by the server when the space loads. Plugin-code writes (`setParam`/`setParams`/`save`, `createPlugin`/`reloadPlugin`/`removePlugin`) persist only when this is `true`. Requires `ArrivalSpace.VERSION` ≥ `1.16.0`.
 
 **Returns:** `boolean`
+
+#### `ArrivalSpace.isEditingSpace()`
+
+Whether the space editor is open — someone who can edit the space is arranging it, whichever
+entity is selected (`onEditModeChanged` covers only this vibe being selected). Always `false` for
+visitors. Requires `ArrivalSpace.VERSION >= 1.29.0`.
+
+**Returns:** `boolean`
+
+#### `ArrivalSpace.onSpaceEditModeChanged(callback)`
+
+Calls `callback(isEditing)` each time the space editor opens or closes. Requires
+`ArrivalSpace.VERSION >= 1.29.0`.
+
+**Returns:** `() => void` — unsubscribe. Call it in `destroy()`.
+
+```javascript
+this._offEdit = ArrivalSpace.onSpaceEditModeChanged((editing) => { this.marker.enabled = !editing; });
+// in destroy(): this._offEdit();
+```
 
 #### `ArrivalSpace.getEntities(logTable?)`
 
@@ -912,6 +945,22 @@ Same path as the platform's own spawn/teleport — no physics sweep between the 
 Pass one of `azimuth` or `forward`; both set the first/third-person look direction. Without
 either, the player keeps their current heading, which is why a plugin that teleports someone
 to face a painting or down a corridor has to say so explicitly.
+
+#### `ArrivalSpace.getDefaultSpawnPoint()`
+
+Where a player lands entering the space without a gate: the spawn point marked as default,
+else the scene's start position. Read at call time, so it follows the owner moving the spawn
+point. Requires `ArrivalSpace.VERSION >= 1.29.0`.
+
+**Returns:** `{ position: {x,y,z}, forward: {x,y,z} } | null` — `forward` is the horizontal
+direction the player faces there; both fit `teleportPlayer`. `null` before the space has loaded.
+
+#### `ArrivalSpace.teleportToSpawn()`
+
+Teleports the local player to `getDefaultSpawnPoint()`, facing its direction. Requires
+`ArrivalSpace.VERSION >= 1.29.0`.
+
+**Returns:** `boolean` — `false` before the space has loaded or without a local player.
 
 ```javascript
 // Face down −Z at the destination
@@ -1176,7 +1225,7 @@ Set the character movement speed multiplier. Affects both physics movement and w
 
 | Param | Type | Description |
 |-------|------|-------------|
-| `multiplier` | `number` | Speed multiplier (`1.0` = default, `0.5` = half speed) |
+| `multiplier` | `number` | Speed multiplier (`0.8` = default, the room's `moveSpeed` when unset) |
 
 ```javascript
 // Slow everything down (movement + animation) — e.g. mud, slugs

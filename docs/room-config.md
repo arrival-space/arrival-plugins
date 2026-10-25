@@ -344,6 +344,9 @@ records. Setting them on `RoomInfo.data` does nothing.
 - **Collision generation** — `collisionDensity`, `collisionTriangles`,
   `collisionVoxel`, `collisionRadius`, `collisionMinOpacity`, `collisionMaxScale`
   → entity `data`.
+- **Model collision on/off** (the editor's "Enable Collision") — entity `data`:
+  `noCollision: true` turns it off; a GLB above the editor's vertex limit gets no
+  collider unless `allowHighPolyCollision: true` (the toggle sets both).
 - **Per-entity model settings** — brightness/contrast/tone-map/`videoURL`/
   `animationIndex`/`doubleSided`/`autoPlay`/`loop`/etc. → the entity's own `data`
   (`space/entities/<id>.json`).

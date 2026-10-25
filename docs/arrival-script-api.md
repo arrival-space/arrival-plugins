@@ -111,7 +111,10 @@ Distilled reference for the ArrivalScript / ArrivalSpace runtime API (PlayCanvas
   - _gotcha:_ Only applied to the local player when userProfileData.loadCustomAvatarAnimation is set; always broadcasts the override to peers. Passing null for animationRef resets the state and restores the original track.
 - `setPlayerAnimSpeed(state: string, speed: number)` — Set an animation-speed multiplier for a specific state (multiplies the system's computed speed). State names: 'Idle', 'Forward' (walk), 'Jumping'.
   - _gotcha:_ Passing null/undefined for speed deletes the override for that state; no-op if there is no roomData.
-- `setPlayerSpeed(multiplier: number)` — Set the character movement speed multiplier (1.0 = default); affects both physics movement and walk animation speed proportionally via roomData.moveSpeed.
+- `setPlayerSpeed(multiplier: number)` — Set the character movement speed multiplier (0.8 = default, the room's moveSpeed when unset); affects both physics movement and walk animation speed proportionally via roomData.moveSpeed.
+- `getDefaultSpawnPoint()` — Where a player lands entering the space without a gate (the default spawn point, else the scene start): `{ position, forward }` for teleportPlayer, or null before the space has loaded. Read at call time, so it follows a moved spawn point. Requires VERSION ≥ 1.29.0.
+- `teleportToSpawn()` — Teleport the local player to getDefaultSpawnPoint(), facing its direction; false before the space has loaded. Requires VERSION ≥ 1.29.0.
+- `hideXrControllers()` — VR: hide the controller models drawn at the hands (rays, buttons and tracking keep working); returns a release function, several vibes can hold it. Requires VERSION ≥ 1.29.0.
   - _gotcha:_ No-op if customTravelCenter.roomData is unavailable.
 - `createModel(url, options = {})` → `Promise<{entity: pc.Entity, asset: pc.Asset}>` — Instance-method wrapper around `ArrivalSpace.loadGLB(url, options)` that wires the loaded model back to THIS vibe: it parents the model to this plugin's entity, so the editor gizmo moves/rotates/scales it and it unloads with the vibe, and clicking it in edit mode selects this plugin's entity for editing. Prefer this over raw `loadGLB` when a plugin spawns its own GLB. Same options as loadGLB (parent, name, scale, position, rotation, castShadows, etc.); `position`/`rotation` are relative to this vibe's entity.
   - _gotcha:_ Raw `loadGLB` with no `parent` drops the model on the scene root — the gizmo then moves the vibe's entity while the visible mesh stays behind. Pass `parent` explicitly to `createModel` (a bone, a sub-container, `pc.app.root`) only when you want that detachment. It also injects an internal `_selectTarget` (this vibe's UserModelEntity) into options; edit-mode selection only wires up when a host UserModelEntity exists.
@@ -221,6 +224,8 @@ Distilled reference for the ArrivalScript / ArrivalSpace runtime API (PlayCanvas
 - `isOwner()` — Check whether the current user is the owner of the current space.
   - _gotcha:_ Owner comparison is loose (==) to tolerate number/string user-ID mismatch.
 - `canEditSpace()` — Check whether the current user can edit the current space (owner, site admin, team/per-space editor, seat holder; server-computed on space load). Plugin-code writes persist only when true. Requires VERSION ≥ 1.16.0.
+- `isEditingSpace()` — Whether the space editor is open (any entity selected, unlike the per-vibe onEditModeChanged); always false for visitors. Requires VERSION ≥ 1.29.0.
+- `onSpaceEditModeChanged(callback)` — callback(isEditing) each time the space editor opens or closes; returns an unsubscribe for destroy(). Requires VERSION ≥ 1.29.0.
 - `getUser()` — Get the current user's profile summary ({userID, userName, uniqueName, avatar, isRegistered}); isRegistered is false for a guest (API 1.18.0).
 - `getStaticGates()` — Get all static gates of the current space via the GateServer.
   - _gotcha:_ Returns [] (with a warning) when the GateServer is not found.
@@ -257,7 +262,7 @@ Distilled reference for the ArrivalScript / ArrivalSpace runtime API (PlayCanvas
 - `loadUserFile(fileName: string, userId?: string)` — Load a 'plugins/<fileName>' file from the current user's storage (or another user's by id). Returns a fetch Response, or false on failure.
 - `deletePluginFile(fileName: string)` — Delete a 'plugins/<fileName>' file from the current user's storage.
 - `getPluginFileURL(fileName: string, userId?: string)` — Get the public URL for a 'plugins/<fileName>' user file (defaults to the current user). Synchronous; returns string|false.
-- `getVibeLogs()` — Get a copy of the global plugin/vibe log buffer (for remix-agent diagnostics); a slice/copy capped at 200 entries.
+- `getVibeLogs()` — Get a copy of the global plugin/vibe log buffer (for remix-agent diagnostics); a slice/copy capped at 200 entries. A shader that fails to compile is logged here as an error with the GL message (VERSION ≥ 1.29.0).
 - `clearVibeLogs()` — Empty the global plugin/vibe log buffer.
 - `async push(key, value, options = {})  // options: {numval?, mode?='unique'|'min'|'max'|'append', spaceId?}` — ArrivalSpace.pluginStore.push: Push a value to the plugin store. POSTs {spaceId, key, value:String(value), numval, mode} to /pluginstore/push/{userID}/{logonCertificate}.
   - _gotcha:_ Returns false (logs to console.error) if not logged in (needs userProfileData.userServerURL+userID+logonCertificate) or no space loaded (pc.app.loadSceneParameter.room). Scoped per space (spaceId) + per user (userID in URL path) + per key. value is coerced via String(value); numval defaults to null. mode controls write semantics; server-side enforces the mode.
