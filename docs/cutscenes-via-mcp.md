@@ -49,7 +49,12 @@ Each entry under `data.entities["id"]` is a [`SequenceProperty`](sequences.md#se
 |--------------|----------|-----------------------------|------------|
 | `position`   | `vec3`   | `{ x, y, z }`               | local position |
 | `rotation`   | `quat`   | `{ x, y, z, w }`            | local rotation |
-| `scale`      | `number` | `number`                    | uniform scale |
+| `scale`      | `vec3`   | `{ x, y, z }`               | absolute local scale of the entity's `Render` child |
+
+A `number` scale track sets `undefined` axes (NaN transforms, the model vanishes).
+Scale is not applied to vibe plugin entities, gates or annotations: their scale
+tracks are ignored. After playback each target keeps its last keyframe; nothing
+restores the stored transform.
 
 Rotation is a **quaternion**, not Euler. For a rotation of angle θ about an
 axis `(ax, ay, az)`: `{ x: ax·sin(θ/2), y: ay·sin(θ/2), z: az·sin(θ/2), w: cos(θ/2) }`.

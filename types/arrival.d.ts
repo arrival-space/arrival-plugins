@@ -1326,7 +1326,8 @@ declare namespace ArrivalSpace {
     // ═══════════════════════════════════════════════════════════════════════════
 
     /**
-     * Load a space by URL or username
+     * Load a space by URL or username. A full URL's `?gate=<gate entity id>` arrives at that gate (no
+     * intro cutscene); its other query params stay in the destination's URL (location.search).
      * @example
      * await ArrivalSpace.loadSpace('johndoe');
      * await ArrivalSpace.loadSpace('https://live.arrival.space/johndoe/gallery');
@@ -2610,7 +2611,10 @@ declare namespace ArrivalSpace {
      * Attach the local player to an entity for multiplayer riding (vehicles, mounts). Handles
      * collision, camera, animations, mount broadcast and a sideband for the entity quaternion.
      * Only one local attachment at a time — returns null if already attached. Call the returned
-     * `detach()` to restore collision/camera/animations.
+     * `detach()` to restore collision/camera/animations. Every frame (after physics) the local
+     * player is teleported to the seat and its avatar mesh takes the entity's rotation (times
+     * meshEuler, smoothed by meshRotationLag). Remote clients track one rider per entity: a second
+     * rider's mount replaces the first in onEntityAttachChanged, and any rider's dismount reports null.
      */
     function attachPlayerToEntity(
         entity: pc.Entity,
