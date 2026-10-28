@@ -6,7 +6,7 @@
  * Everyone else follows it smoothly in their own free camera, under a banner naming the presenter,
  * and their avatars are kept near yours so voice chat stays in earshot. A viewer can "Stop
  * following" (or just fly or change the camera mode) and "Follow" again at any time.
- * The presenter can "Gather everyone" next to their avatar and "Stop" the presentation.
+ * The presenter can "Gather" everyone next to their avatar and "Stop" the presentation.
  *
  * One presentation at a time. Late joiners pick up the running presentation within a second;
  * if the presenter leaves the space or stops sending, viewers get their own camera back.
@@ -54,12 +54,15 @@ export class PresenterMode extends ArrivalScript {
     initialize() {
         this._bar = this.createUI("div", {
             style: {
-                position: "fixed", top: "64px", left: "50%", transform: "translateX(-50%)",
-                display: "flex", alignItems: "center", gap: "8px", padding: "6px 6px 6px 14px",
+                // Centered and wrapping onto a second row when it is wider than a phone screen.
+                position: "fixed", top: "64px", left: "0", right: "0", margin: "0 auto",
+                width: "fit-content", maxWidth: "calc(100vw - 24px)", boxSizing: "border-box",
+                display: "flex", flexWrap: "wrap", justifyContent: "center", alignItems: "center",
+                gap: "6px", padding: "6px 6px 6px 14px",
                 background: "rgba(15, 18, 24, 0.85)", backdropFilter: "blur(8px)",
-                border: "1px solid rgba(255,255,255,0.14)", borderRadius: "999px",
+                border: "1px solid rgba(255,255,255,0.14)", borderRadius: "24px",
                 color: "#fff", font: "600 14px 'Segoe UI', sans-serif", zIndex: "1000",
-                userSelect: "none", whiteSpace: "nowrap",
+                userSelect: "none",
             },
         });
         this._bar.addEventListener("click", (e) => {
@@ -244,18 +247,18 @@ export class PresenterMode extends ArrivalScript {
     _render() {
         const canPresent = this.whoCanPresent === "Anyone" || ArrivalSpace.canEditSpace();
         const btn = (act, label, primary) => `<button data-act="${act}" style="
-            padding: 9px 16px; border-radius: 999px; border: none; cursor: pointer; font: inherit;
+            padding: 9px 16px; border-radius: 999px; border: none; cursor: pointer; font: inherit; white-space: nowrap;
             color: #fff; background: ${primary ? "#e5484d" : "rgba(255,255,255,0.14)"};">${label}</button>`;
-        const dot = `<span style="width:9px;height:9px;border-radius:50%;background:#e5484d;box-shadow:0 0 8px #e5484d"></span>`;
+        const dot = `<span style="flex:none;width:9px;height:9px;border-radius:50%;background:#e5484d;box-shadow:0 0 8px #e5484d"></span>`;
         const name = (this._remote?.name || "").replace(/[<>&"]/g, "");
         let html = "";
         if (this._presenting) {
             const n = ArrivalSpace.net.getPlayers().length;
             html = `${dot}<span>Presenting to ${n} ${n === 1 ? "viewer" : "viewers"}</span>`
-                + btn("gather", "Gather everyone") + btn("stopPresenting", "Stop", true);
+                + btn("gather", "Gather") + btn("stopPresenting", "Stop", true);
         } else if (this._remote) {
             html = this._following
-                ? `${dot}<span>${name} is presenting — Following</span>` + btn("stopFollowing", "Stop following")
+                ? `${dot}<span>${name} is presenting</span>` + btn("stopFollowing", "Stop following")
                 : `<span>${name} is presenting</span>` + btn("follow", "Follow", true);
         } else if (canPresent) {
             html = `<span>Presenter mode</span>` + btn("startPresenting", "Present", true);

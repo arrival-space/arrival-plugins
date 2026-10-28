@@ -96,9 +96,14 @@ export class AiGuide extends ArrivalScript {
     }
 
     _openPanel() {
+        // On a phone the panel spans the top of the screen, clear of the on-screen keyboard.
+        const phone = window.innerWidth < 500;
         this._panel = this.createUI("div", {
             style: {
-                position: "fixed", bottom: "60px", right: "56px", width: "340px", height: "440px",
+                position: "fixed",
+                ...(phone
+                    ? { top: "12px", left: "12px", right: "12px", height: "min(440px, 45dvh)" }
+                    : { bottom: "60px", right: "56px", width: "340px", height: "min(440px, calc(100dvh - 80px))" }),
                 background: "#80808066", backdropFilter: "blur(50px)", WebkitBackdropFilter: "blur(50px)",
                 borderRadius: "20px", display: "flex", flexDirection: "column", overflow: "hidden",
                 fontFamily: "Inter, system-ui, sans-serif", zIndex: "1001", boxShadow: "0 0 20px 5px rgba(0, 0, 0, 0.15)",
@@ -112,7 +117,7 @@ export class AiGuide extends ArrivalScript {
             <div data-messages style="flex: 1; overflow-y: auto; padding: 10px; color: white; font-size: 13px;"></div>
             <div style="padding: 10px; display: flex; gap: 8px;">
                 <input data-input type="text" placeholder="Ask a question..." maxlength="1000"
-                    style="flex: 1; min-width: 0; padding: 10px 12px; border-radius: 16px; border: none; background: #00000026; color: white; font-size: 13px; outline: none;">
+                    style="flex: 1; min-width: 0; padding: 10px 12px; border-radius: 16px; border: none; background: #00000026; color: white; font-size: ${this.isMobile ? 16 : 13}px; outline: none;">
                 <button data-mic title="Talk out loud" style="width: 38px; border-radius: 16px; border: none; background: #00000026; color: #fff; cursor: pointer; font-size: 16px;">🎤</button>
                 <button data-send style="padding: 10px 14px; border-radius: 16px; border: none; background: #38b4b0; color: #fff; cursor: pointer; font-weight: 600;">Ask</button>
             </div>`;
@@ -132,7 +137,7 @@ export class AiGuide extends ArrivalScript {
         if (this._history.length === 0) this._render(this.greeting, false);
         for (const m of this._history) this._render(m.content, m.role === "user");
         this._updateMic();
-        this._inputEl.focus();
+        if (!this.isMobile) this._inputEl.focus(); // a touch keyboard would cover the space right away
     }
 
     _closePanel() {
