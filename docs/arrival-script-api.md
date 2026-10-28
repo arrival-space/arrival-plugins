@@ -69,6 +69,8 @@ Distilled reference for the ArrivalScript / ArrivalSpace runtime API (PlayCanvas
   - _gotcha:_ Idempotent. Separate from the hover locks of createUI elements: input stays locked while lockInput() is in effect OR any interactive createUI element is hovered/touched, so leaving UI never releases a lockInput() lock.
 - `unlockInput()` — Unlock game input after leaving UI elements; re-enables mouse capture for camera control. Pops this from app.disablePointLock and app.disableSceneTouch.
   - _gotcha:_ Releases only the lockInput() lock; a hovered createUI element keeps input locked until the pointer leaves it or it is removed. removeUI() releases everything.
+- `lockInput({ pointerLock, sceneTouch })` — Lock one half only (both default true): `pointerLock` keeps the platform camera from looking/orbiting with the mouse and its right click from locking the mouse (a view the vibe drives itself); `sceneTouch` keeps clicks and hovers from reaching the scene. Requires VERSION ≥ 1.31.0.
+- `requestPointerLock(handlers?)` — Lock the mouse to this vibe: cursor hidden, moves go to `move(dx, dy, event)`; `release()` when it ends without the vibe asking (Esc, another lock, focus lost, refused). While held the platform camera leaves the mouse alone. Ask from a click or key; one lock page-wide; let go on unload. Requires VERSION ≥ 1.31.0.
 - `lockKeyboard()` — Lock keyboard input (WASD etc.) while an input element has focus. Pushes this onto app.disableKeyboardMovement and zeroes in-progress movement.
   - _gotcha:_ Idempotent (guarded by _isKeyboardLocked). On lock it fires app 'firstperson:forward'/'firstperson:strafe'/'firstperson:boost' with 0 to stop any in-progress movement. Called automatically by createUI for input/textarea/contenteditable focus.
 - `unlockKeyboard()` — Unlock keyboard input after leaving an input element; re-enables keyboard capture for player movement. Pops this from app.disableKeyboardMovement.
@@ -156,6 +158,7 @@ Distilled reference for the ArrivalScript / ArrivalSpace runtime API (PlayCanvas
   - _gotcha:_ Non-finite/non-positive inputs fall back to 60 / 10; maxSubSteps is rounded and floored at 1. Global change affecting all physics.
 - `enableContinuousCollisionDetection(entity: pc.Entity, options = {} /* radius?, motionThreshold? */)` — Enable Bullet/Ammo continuous collision detection on an entity's rigidbody to prevent tunnelling of fast movers (sets swept-sphere radius + motion threshold and activates the body).
   - _gotcha:_ Requires a rigidbody with a backing Ammo body; radius/motionThreshold default from the collision shape (half the min half-extent / radius) when not provided.
+- `ArrivalSpace.onEntityDrag(entity, { start, move, end })` — Drag a 3D entity (levers, sliders, dials): press picked like onEntityClick (mesh-accurate, no collider), `move({x, y, dx, dy, startX, startY})` followed anywhere on the page while held, the camera stays still and the click is consumed. CSS px of the canvas. Returns unsubscribe. Requires VERSION ≥ 1.31.0.
 
 ## Materials
 
@@ -214,6 +217,7 @@ Distilled reference for the ArrivalScript / ArrivalSpace runtime API (PlayCanvas
   - _gotcha:_ Returns null if not in free-cam mode.
 - `getCamera()` — Get the camera entity (the 'Camera' node).
 - `raycastSplats(x, y, options?)` — Where the color seen at a screen point (CSS px, as in mouse events) comes from in the gaussian splats: the point where half the pixel's splat color has built up, composited the way the renderer does. Resolves `{ point, distance, spread, opacity, entity }` or null; `{ ignore: [entities] }`. Steadier on splat surfaces than raycastScreen (first Gaussian above an opacity). Requires VERSION ≥ 1.30.0.
+- `worldToScreen(point)` — Where a world point is on the screen as the camera sees it now: `{ x, y, inFront, onScreen }` in CSS px of the canvas (x/y mean nothing unless inFront), or null without a camera. Use it instead of the engine's camera.worldToScreen, which also projects points behind the camera. Requires VERSION ≥ 1.31.0.
 - `setPostEffects(params: PostEffectsParams)` — Override post-effect parameters (hdrEnabled, toneMapping, saturation, contrast, brightness, sharpness, bloom*, gamma), merging with room defaults so only provided keys change.
 - `getPostEffects()` — Return the current effective post-effect parameters (a copy of room defaults / active overrides).
 - `captureView(width = 1024, height = 768)` — Capture the current camera view via the ScreenshotEntity, upload it, and return the image URL.
