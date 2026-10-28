@@ -311,12 +311,43 @@ declare class ArrivalScript extends pc.Script {
 
     // ── Input: keys, locking, mobile sticks ──
 
-    /** Listen for a keydown for a key code or key string. Returns an unsubscribe function; auto-cleaned on destroy. */
-    onKeyDown(key: number | string, callback: (event?: any) => void): () => void;
-    /** Listen for a keyup for a key code or key string. Returns an unsubscribe function; auto-cleaned on destroy. */
-    onKeyUp(key: number | string, callback: (event?: any) => void): () => void;
-    /** Lock game pointer/scene input (e.g. while hovering plugin UI). createUI does this automatically. */
-    lockInput(): void;
+    /**
+     * Listen for a keydown for a key code or key string. Returns an unsubscribe function; auto-cleaned on destroy.
+     * `{ consume: true }`: the key is this vibe's - the platform and vibes listening without it don't see it,
+     * unless the callback returns `false` for that press (text fields are never taken). VERSION >= 1.31.0.
+     */
+    onKeyDown(key: number | string, callback: (event?: any) => void | boolean, options?: { consume?: boolean }): () => void;
+    /** Listen for a keyup for a key code or key string. Returns an unsubscribe function; auto-cleaned on destroy. `options` as onKeyDown. */
+    onKeyUp(key: number | string, callback: (event?: any) => void | boolean, options?: { consume?: boolean }): () => void;
+    /**
+     * Lock the mouse to this vibe: cursor hidden, each move to `move(dx, dy)`, until Esc or the vibe lets go;
+     * the platform's camera leaves the mouse alone meanwhile. Ask from a click or key. `release` is called
+     * when the lock ends without the vibe asking. Returns let-go. Auto-released on destroy. VERSION >= 1.31.0.
+     */
+    requestPointerLock(handlers?: { move?: (dx: number, dy: number, event: MouseEvent) => void; release?: () => void }): () => void;
+    /** The cursor over the 3D view while this vibe wants one (any CSS cursor; '' / null gives it back). Auto-cleared on destroy. VERSION >= 1.31.0. */
+    setCursor(cursor: string | null): void;
+    /**
+     * `fn(camera)` every frame once the camera is placed (after every update and postUpdate, before the
+     * frame is drawn): place your own camera, or read the final pose. Returns unsubscribe; auto-removed on destroy. VERSION >= 1.31.0.
+     */
+    onCameraPlaced(fn: (camera: pc.Entity) => void): () => void;
+    /**
+     * Debug drawing, shown only with `?debug` (or `?debug=scriptName,...`) on the address; no-ops otherwise.
+     * Draw each frame what should show that frame. VERSION >= 1.31.0.
+     */
+    readonly debug: {
+        readonly enabled: boolean;
+        line(from: pc.Vec3, to: pc.Vec3, color?: string | pc.Color): void;
+        cross(at: pc.Vec3, size?: number, color?: string | pc.Color): void;
+        text(at: pc.Vec3 | { x: number; y: number }, text: string | number, color?: string): void;
+    };
+    /**
+     * Lock game pointer/scene input (e.g. while hovering plugin UI). createUI does this automatically.
+     * Both halves by default; `{ pointerLock: true, sceneTouch: false }` keeps the platform's camera and
+     * right-click lock off the mouse while scene clicks still work (VERSION >= 1.31.0).
+     */
+    lockInput(options?: { pointerLock?: boolean; sceneTouch?: boolean }): void;
     /** Release a previous lockInput(). */
     unlockInput(): void;
     /** Lock keyboard movement (e.g. while typing in a plugin input). createUI does this automatically for inputs. */
@@ -829,6 +860,29 @@ declare namespace ArrivalSpace {
         entity: pc.Entity,
         handlers: { enter?: (event: PointerClaimEvent) => void; leave?: () => void },
     ): () => void;
+
+    /**
+     * Drag a 3D entity: `start` on a press on it (picked like onEntityClick), `move` while it is held
+     * (`dx`/`dy` since the last move, CSS px of the canvas), `end` on release. The camera stays still
+     * for the drag; a press that never moves is still a drag and its click is consumed.
+     * @returns Unsubscribe; called automatically when the entity is destroyed. VERSION >= 1.31.0.
+     */
+    function onEntityDrag(
+        entity: pc.Entity,
+        handlers: {
+            start?: (e: { x: number; y: number }) => void;
+            move?: (e: { x: number; y: number; dx: number; dy: number; startX: number; startY: number }) => void;
+            end?: (e: { x: number; y: number }) => void;
+        },
+    ): () => void;
+
+    /**
+     * Where a world point is on the screen (CSS px of the canvas), as the camera sees it now. `inFront`: ahead
+     * of the camera (x/y mean nothing otherwise); `onScreen`: also inside the canvas. null without a camera.
+     * Safer than the engine's camera.worldToScreen (that projects points behind the camera, and is wrong given
+     * the same vector in and out). VERSION >= 1.31.0.
+     */
+    function worldToScreen(point: pc.Vec3): { x: number; y: number; inFront: boolean; onScreen: boolean } | null;
 
     /**
      * Draw (or clear) the platform's silhouette outline on an entity - the editor's hover

@@ -58,21 +58,112 @@ Remove a standing-object change listener registered with this script as scope.
 
 ### Input Helpers
 
-#### `onKeyDown(key, callback)`
+#### `onKeyDown(key, callback, options?)`
 
 Listen for a keyboard key-down event.
 
 `key` can be a key string such as `"e"` or a PlayCanvas key code.
 
+With `{ consume: true }` the key is this vibe's: the platform (walking, its shortcuts) and vibes
+listening without `consume` don't see it — unless the callback returns `false` for that press.
+Typing into a text field is never taken. Requires `ArrivalSpace.VERSION >= 1.31.0`.
+
+```javascript
+// Esc closes this vibe's panel, and only that while it is open
+this.onKeyDown('ESCAPE', () => {
+    if (!this._panelOpen) return false;   // not ours this time: let it through
+    this.closePanel();
+}, { consume: true });
+```
+
 **Returns:** `Function` unsubscribe function
 
-#### `onKeyUp(key, callback)`
+#### `onKeyUp(key, callback, options?)`
 
-Listen for a keyboard key-up event.
+Listen for a keyboard key-up event. `options.consume` as for `onKeyDown`.
 
 `key` can be a key string such as `"e"` or a PlayCanvas key code.
 
 **Returns:** `Function` unsubscribe function
+
+#### `requestPointerLock(handlers?)`
+
+Lock the mouse to this vibe: the cursor hidden, every move handed to `move(dx, dy, event)`, until
+the player presses **Esc** (the browser's own way out) or the vibe lets go. While the vibe holds it,
+the platform's camera leaves the mouse alone — no look, and its right click neither toggles nor
+steals the lock. Ask from a click or a key (browsers grant a lock only on a user gesture). One lock
+at a time page-wide; a new one ends the last. Let go automatically when the vibe is unloaded.
+Requires `ArrivalSpace.VERSION >= 1.31.0`.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `handlers.move` | `(dx, dy, event) => void` | Each mouse move while locked (pixels) |
+| `handlers.release` | `() => void` | The lock ended without the vibe asking: Esc, another lock, focus lost, or refused |
+
+**Returns:** `() => void` — let go of the lock (`release` is not called for that).
+
+```javascript
+// A control stick taken in hand: the mouse flies it, Esc lets go
+ArrivalSpace.onEntityClick(this.stick, () => {
+    this._letGo = this.requestPointerLock({
+        move: (dx, dy) => {
+            this.x = pc.math.clamp(this.x + dx / 600, -1, 1);
+            this.y = pc.math.clamp(this.y + dy / 600, -1, 1);
+        },
+        release: () => { this.x = this.y = 0; },
+    });
+});
+```
+
+#### `setCursor(cursor)`
+
+The mouse cursor over the 3D view while this vibe wants one — `'pointer'`, `'grab'`, `'grabbing'`,
+`'crosshair'`, any CSS cursor; `''` or `null` gives it back. Shows over the platform's own hover
+cursor; among vibes the last one set shows. Given back automatically when the vibe is unloaded.
+Requires `ArrivalSpace.VERSION >= 1.31.0`.
+
+```javascript
+ArrivalSpace.onEntityHover(this.knob, { enter: () => this.setCursor('grab'), leave: () => this.setCursor(null) });
+```
+
+#### `onCameraPlaced(fn)`
+
+Call `fn(camera)` every frame once the camera is where it will be drawn from: after every
+script's `update` and `postUpdate` (the platform's camera included), right before the frame is
+drawn. Place your own camera there (it then wins over the platform's), or read the final pose for
+anything that has to match the picture — labels over objects, screen-space effects, picking by
+projection. Removed automatically when the vibe is unloaded. Requires `ArrivalSpace.VERSION >= 1.31.0`.
+
+**Returns:** `() => void` — unsubscribe.
+
+```javascript
+this.onCameraPlaced((cam) => {
+    cam.setPosition(this._eye.getPosition());
+    cam.setRotation(this._eye.getRotation());
+});
+```
+
+#### `debug`
+
+Debug drawing that shows only with `?debug` on the address (`?debug=myVibe,other`: only those
+script names); otherwise every call does nothing and costs nothing. Draw each frame what should
+show that frame (from `update`) — nothing has to be cleared. Requires `ArrivalSpace.VERSION >= 1.31.0`.
+
+| Call | Draws |
+|------|-------|
+| `this.debug.line(from, to, color?)` | A line between two world points (`pc.Vec3`), over everything |
+| `this.debug.cross(at, size = 0.1, color?)` | Three axis lines `size` metres long through a world point |
+| `this.debug.text(at, text, color?)` | A label at a world point (`pc.Vec3`) or a screen point (`{x, y}`, CSS px) |
+| `this.debug.enabled` | Whether it draws (skip building debug data when `false`) |
+
+Colours are CSS colour strings (`'#f0f'`, `'lime'`) or a `pc.Color`; the default is magenta.
+
+```javascript
+update() {
+    this.debug.cross(this._target.getPosition(), 0.2, 'lime');
+    this.debug.text(this._target.getPosition(), `hp ${this._hp}`);
+}
+```
 
 ### UI Methods
 
@@ -96,9 +187,21 @@ Remove all 2D UI created by this script.
 
 Show/hide this script's 2D UI container.
 
-#### `lockInput()` / `unlockInput()`
+#### `lockInput(options?)` / `unlockInput()`
 
 Temporarily lock/unlock game pointer input while interacting with UI. Interactive `createUI` elements lock input on their own while hovered; that lock is tracked separately, so leaving UI never releases a `lockInput()` lock. A `createUI` element whose CSS sets `pointer-events: none` is click-through and doesn't lock.
+
+Both halves by default; ask for one alone (`ArrivalSpace.VERSION >= 1.31.0`):
+
+| Option | Default | Locks |
+|--------|---------|-------|
+| `pointerLock` | `true` | The platform's camera doesn't look or orbit with the mouse, and its right click doesn't lock the mouse — for a view the vibe drives itself (a cockpit, a puzzle) |
+| `sceneTouch` | `true` | Clicks and hovers don't reach the scene (NPCs, click-to-walk, `onEntityClick`) |
+
+```javascript
+// Seated in a cockpit: the camera is ours, the cockpit's switches still clickable
+this.lockInput({ pointerLock: true, sceneTouch: false });
+```
 
 #### `lockKeyboard()` / `unlockKeyboard()`
 
@@ -639,6 +742,50 @@ highlight cannot get stuck on.
 **Already interactive without this:** NPCs take `onClick` / `onHoverEnter` / `onHoverLeave`
 in `createNPC`, and `createTexturePanel` takes an `onClick(href)` for anchors in its HTML.
 Use these two calls for everything else — your own meshes, loaded GLBs, procedural geometry.
+
+#### `ArrivalSpace.onEntityDrag(entity, handlers)`
+
+Drag a 3D entity: a press on it, the pointer's moves while it is held, and its release. The press
+is picked like `onEntityClick` (mesh-accurate, no collider). For the length of the drag the
+platform's camera stays still — no orbit or look — and the moves are followed anywhere on the page,
+also past the canvas's edge. The left button and one finger drag. A press that never moves is still
+a drag (`start`, `end`), and its click is consumed, so the player does not walk to the knob.
+Use it for anything taken in hand and moved: levers, sliders, dials, a crank.
+Requires `ArrivalSpace.VERSION >= 1.31.0`.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `entity` | `pc.Entity` | Entity to listen on (descendants included) |
+| `handlers.start` | `({x, y}) => void` | Pressed |
+| `handlers.move` | `({x, y, dx, dy, startX, startY}) => void` | Moved while held; `dx`/`dy` since the last move |
+| `handlers.end` | `({x, y}) => void` | Released (or the subscription ended mid-drag) |
+
+Positions are CSS pixels of the canvas, as in mouse events.
+
+**Returns:** `() => void` — unsubscribe (ends a drag under way). Called automatically if the entity is destroyed.
+
+```javascript
+// A lever along the screen's vertical: up is more
+this._off = ArrivalSpace.onEntityDrag(this._lever, {
+    start: () => this.setCursor('grabbing'),
+    move: ({ dy }) => { this._value = pc.math.clamp(this._value - dy / 200, 0, 1); },
+    end: () => this.setCursor(null),
+});
+```
+
+To make the knob light up first, pair it with `onEntityHover` and `this.setOutline(knob, on)`.
+
+#### `ArrivalSpace.worldToScreen(point)`
+
+Where a world point is on the screen, in CSS pixels of the canvas, as the camera sees it now.
+Returns `{ x, y, inFront, onScreen }` (`inFront`: ahead of the camera — `x`/`y` mean nothing
+otherwise; `onScreen`: also inside the canvas), or `null` without a camera.
+Requires `ArrivalSpace.VERSION >= 1.31.0`.
+
+Prefer it over the engine's `camera.worldToScreen(p, out)`: that one also projects points
+**behind** the camera (mirrored onto the screen), and given the same vector as the point and the
+answer it writes the answer before it has finished reading the point — silently wrong.
+Call it from `onCameraPlaced` for positions that must match the frame being drawn.
 
 #### `this.setOutline(entity?, on?)` / `ArrivalSpace.setOutline(entity, on?)`
 
