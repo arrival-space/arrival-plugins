@@ -20,7 +20,7 @@
  * - areaSize: width / height / depth of the snow volume in meters
  * - followCamera: keep the volume around the camera (otherwise on the entity)
  * - heightOffset: lifts the volume's center above the camera (followCamera)
- * - flakeSize / sizeVariation: flake radius in meters and its random spread
+ * - flakeSize / sizeVariation: visible flake diameter in meters and its random spread
  * - snowColor (#hex → color picker) / opacity
  * - fallSpeed: meters per second, each flake varies +-30%
  * - windDirection (vec3) * windStrength: constant drift in meters per second
@@ -35,7 +35,7 @@ export class Snowfall extends ArrivalScript {
     areaSize = { x: 20, y: 10, z: 20 };
     followCamera = true;
     heightOffset = 2;
-    flakeSize = 0.02;
+    flakeSize = 0.03;
     sizeVariation = 0.5;
     snowColor = "#f2f6ff";
     opacity = 0.9;
@@ -49,7 +49,7 @@ export class Snowfall extends ArrivalScript {
         areaSize: { title: "Area Size", min: 1, max: 100 },
         followCamera: { title: "Follow Camera" },
         heightOffset: { title: "Height Offset", min: -10, max: 20 },
-        flakeSize: { title: "Flake Size", min: 0.002, max: 0.2 },
+        flakeSize: { title: "Flake Size", min: 0.005, max: 0.5 },
         sizeVariation: { title: "Size Variation", min: 0, max: 1 },
         snowColor: { title: "Snow Color" },
         opacity: { title: "Opacity", min: 0, max: 1 },
@@ -210,7 +210,8 @@ export class Snowfall extends ArrivalScript {
         const windZ = wind.z * this.windStrength * t;
         const fall = this.fallSpeed * t;
         const turb = this.turbulence;
-        const baseSize = Math.max(0.0005, this.flakeSize);
+        // A splat stays visible out to ~2 sigma, so sigma is a quarter of the visible diameter.
+        const baseSize = Math.max(0.001, this.flakeSize) * 0.25;
         const variation = this._clamp01(this.sizeVariation);
         const edgeX = W * 0.5;
         const edgeY = H * 0.5;
