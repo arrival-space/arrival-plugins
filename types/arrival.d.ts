@@ -870,6 +870,22 @@ declare namespace ArrivalSpace {
     ): Promise<{ point: pc.Vec3; distance: number; entity: pc.Entity | null; isSplat: boolean } | null>;
 
     /**
+     * Where the COLOR the player sees at a screen point (CSS px) comes from in the gaussian
+     * splats: composites the pixel like the renderer and returns the point where half of it has
+     * built up - the middle of the layer of faint Gaussians a splat surface is, where
+     * raycastScreen lands at its front. spread: ray length of the middle half of that color
+     * (centimeters on a crisp surface, meters on foliage or a grazing view); opacity: how much of
+     * the pixel splats cover. Splats only (SOG, LOD and single-file), no meshes. The first call
+     * reaching a splat reads it back from the GPU (~0.2-0.3 s per million splats), then ~10 ms.
+     * null where no splat covers the pixel. (API 1.30.0)
+     */
+    function raycastSplats(
+        x: number,
+        y: number,
+        options?: { ignore?: pc.Entity[] },
+    ): Promise<{ point: pc.Vec3; distance: number; spread: number; opacity: number; entity: pc.Entity } | null>;
+
+    /**
      * A ray against COLLIDERS (ground boxes, collision meshes, rigidbodies). Synchronous, well
      * under a millisecond. Does not see what is drawn: a mesh without a collider is passed
      * through, and on a splat it hits the collision mesh or ground box. Skips the player's

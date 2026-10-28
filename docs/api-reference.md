@@ -683,7 +683,7 @@ avatar and capsule) unless `includePlayer: true`.
 | Hits | what is **drawn** at a screen point: splats, every mesh, vibe objects - no collider needed | what is **drawn** along any 3D ray | **colliders** only: ground boxes, a space's collision mesh, rigidbodies |
 | On a splat | the splat surface the player sees | the splat surface seen from the ray's origin | the collision mesh, or the flat ground box when the space has none |
 | A mesh without a collider | hit | hit | passed through - the ray returns the floor behind it |
-| Cost | one render into a depth buffer, async (about a frame); calls in the same frame share it | a narrow camera renders from the origin, async (about 30-80 ms); rays run one at a time | synchronous, well under a millisecond |
+| Cost | one render into a depth buffer, async (about a frame); calls in the same frame with the same options share it - 81 pixels cost 20-80 ms | a narrow camera renders from the origin, async (about 30-80 ms); rays run one at a time | synchronous, well under a millisecond |
 | Returns `normal` | no - a splat's depth is too grainy per pixel for a surface direction | no | yes, from the collider |
 
 Measured in a splat space whose only collider is a ground box: through the same screen points,
@@ -696,8 +696,11 @@ every single one fainter than `minSplatOpacity`. Seen from the angles it was cap
 surface stacks many Gaussians per pixel and is hit at the engine default 0.3. From other angles
 (straight down onto a walk-through filmed at eye level) it is often a blend of faint ones: at
 0.3, rays from 0.5 m above the ground missed or landed 0.6 m low at 4 of 9 spots; at 0.1, 8 of
-9 were within -0.03..+0.15 m. Lower values also make faint floaters in the air count. A value
-other than the scene's waits for one more render and applies to splat shadows during it.
+9 were within -0.03..+0.15 m. Dense captures (MCMC training) can be see-through at 0.3 even
+from the capture angles: in a forest walk-through, 9 x 9 pixel windows at 0.3 jumped between
+the bank 3.5 m away and the wall 16.8 m behind it from pixel to pixel; at 0.1 each window was
+one coherent surface. Lower values also make faint floaters in the air count. A value other
+than the scene's waits for one more render and applies to splat shadows during it.
 
 #### `ArrivalSpace.raycastScreen(x, y, options?)`
 
@@ -721,6 +724,41 @@ if (hit) this.marker.setPosition(hit.point);
 ```
 
 Example: [`examples/measure-tool.mjs`](../examples/measure-tool.mjs) - distances, paths, areas and heights.
+
+#### `ArrivalSpace.raycastSplats(x, y, options?)`
+
+Where the color the player sees at a screen position comes from in the gaussian splats (API
+1.30.0). `x`/`y` are CSS pixels relative to the canvas, as in mouse and touch events.
+
+A splat surface is a layer of faint Gaussians - on dense captures most are fainter than 0.2 - and
+along a grazing ray its color builds up over tens of centimeters to meters. `raycastScreen` takes
+the first Gaussian above an opacity, the front of that layer. `raycastSplats` composites the pixel
+the way the renderer does (each Gaussian projected and sorted the same way) and returns the point
+where half of the pixel's splat color has built up. Its weighted depth matches the renderer's own
+within 2% (median). In a forest walk-through, points re-measured from a camera 1.5 m to the side
+moved 35 cm (median) with `raycastSplats` and 212 cm with `raycastScreen` at `minSplatOpacity: 0.1`.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `ignore` | `pc.Entity[]` | `[]` | Splat entities (with children) to see through |
+
+**Returns:** `Promise<{ point: pc.Vec3, distance: number, spread: number, opacity: number, entity: pc.Entity } | null>`
+- `point` where half the color has built up, `distance` from the camera.
+- `spread`: the length of ray over which the middle half of the color builds up - centimeters on
+  a crisp surface, meters on foliage or a grazing view.
+- `opacity` (0..1): how much of the pixel the splats cover; below 1 the rest shows through.
+- `null` where no splat covers the pixel.
+
+Splats only - meshes, avatars and vibe objects are not part of it (`raycastScreen` sees them).
+SOG splats, LOD and single-file; a splat in another format is not seen. The first call that
+reaches a splat, or a LOD level loaded since, reads its data back from the GPU (about 0.2-0.3 s
+per million splats); later calls take about 10 ms. Calls made together (in the same tick, with
+the same options) share one pass: five neighbouring pixels cost about as much as one.
+
+```javascript
+const hit = await ArrivalSpace.raycastSplats(event.x, event.y);
+if (hit) this.marker.setPosition(hit.point);
+```
 
 #### `ArrivalSpace.raycastVisual(origin, direction, maxDistance?, options?)`
 
