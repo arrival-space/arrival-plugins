@@ -213,6 +213,7 @@ Distilled reference for the ArrivalScript / ArrivalSpace runtime API (PlayCanvas
 - `getFreeCamSpeed()` — Get the free camera's current movement speed and maximum (so plugins can detect the user's scroll-wheel adjustments instead of stomping them).
   - _gotcha:_ Returns null if not in free-cam mode.
 - `getCamera()` — Get the camera entity (the 'Camera' node).
+- `raycastSplats(x, y, options?)` — Where the color seen at a screen point (CSS px, as in mouse events) comes from in the gaussian splats: the point where half the pixel's splat color has built up, composited the way the renderer does. Resolves `{ point, distance, spread, opacity, entity }` or null; `{ ignore: [entities] }`. Steadier on splat surfaces than raycastScreen (first Gaussian above an opacity). Requires VERSION ≥ 1.30.0.
 - `setPostEffects(params: PostEffectsParams)` — Override post-effect parameters (hdrEnabled, toneMapping, saturation, contrast, brightness, sharpness, bloom*, gamma), merging with room defaults so only provided keys change.
 - `getPostEffects()` — Return the current effective post-effect parameters (a copy of room defaults / active overrides).
 - `captureView(width = 1024, height = 768)` — Capture the current camera view via the ScreenshotEntity, upload it, and return the image URL.
