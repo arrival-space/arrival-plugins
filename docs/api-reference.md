@@ -2158,17 +2158,19 @@ itself, and a positional voice would hear itself through the speakers and interr
 | `voice` | `string` | `'marin'` | `alloy`, `ash`, `ballad`, `coral`, `echo`, `sage`, `shimmer`, `verse`, `marin`, `cedar` |
 | `quality` | `'standard' | 'high'` | `'standard'` | `'high'`: the larger voice model (`gpt-realtime-2.1`), more natural and quicker-witted, about three times the cost |
 | `greeting` | `string` | - | Said word for word first, before the visitor speaks |
-| `tools` | `Array<{ name, description, parameters?, run(args) }>` | - | Actions it can take while talking. It calls one when the conversation calls for it - the `description` says when; arguments follow `parameters` (JSON Schema). What `run` returns (or resolves to) goes back to it as the result, so it can talk about what happened |
+| `tools` | `Array<{ name, description, parameters?, run(args) }>` | - | Actions it can take while talking. It calls one when the conversation calls for it - the `description` says when; arguments follow `parameters` (JSON Schema). What `run` returns (or resolves to) goes back to it as the result, so it can talk about what happened - unless it is an object with `silent: true`: then the result goes back and no answer is asked for (1.33.0) |
+| `pushToTalk` | `boolean` | `false` | Push to talk (1.33.0): the microphone open only between `talk(true)` and `talk(false)`, and the visitor's turn ends at `talk(false)` - not at a pause - so it never answers into the middle of what they say. A radio's key, a walkie-talkie's button |
 | `entity` | `pc.Entity` | - | The conversation ends when this entity is destroyed; an avatar (an NPC's entity) moves its mouth with the voice |
 | `volume` | `number` | `1` | |
 | `onUserText` | `(text) => void` | - | What the visitor said (transcribed) or typed with `sendText` |
 | `onReply` | `(text) => void` | - | What it answered |
 | `onStateChange` | `(state) => void` | - | `'connecting'`, `'listening'`, `'speaking'`, `'ended'` |
 
-**Returns:** `{ done, stop(), say(text), sendText(text), setMicMuted(muted), hasMicrophone, state, level, error }`
+**Returns:** `{ done, stop(), say(text), sendText(text), setMicMuted(muted), talk(down), hasMicrophone, state, level, error }`
 - `done`: `Promise<void>`, resolves when the conversation ends. Never rejects.
 - `say(text)`: the plugin's own words in the conversation, e.g. what the visitor clicked or an event ("[they walked out]").
 - `sendText(text)`: the visitor typing instead of speaking; counts as their words (`onUserText`, the transcript). 1.26.0.
+- `talk(down)`: push to talk, the key or button pressed (`true`) and let go (`false`); with `pushToTalk` the turn ends when it is let go (a moment later: the last syllable is still on its way), without it the microphone is just opened and shut. 1.33.0.
 - `hasMicrophone`: `false` when there is no microphone or access was refused - it connects all the same and answers typed text aloud; `null` until known. 1.26.0.
 - `level`: its voice's loudness `0..1` while speaking, e.g. for a mouth.
 - `error`: why it ended early (`null` otherwise), in words for the visitor: sign up to talk, the space's plan or its voice minutes, the visitor's conversations today, connection lost. Before 1.26.0 also: no microphone.
@@ -2195,6 +2197,13 @@ ArrivalSpace.ai.voiceChat({
         run: ({ size }) => { this.pourLemonade(size); return `A ${size} lemonade is on the counter.`; },
     }],
 });
+```
+
+```javascript
+// push to talk: a radio, Tab held while speaking (1.33.0)
+const radio = ArrivalSpace.ai.voiceChat({ instructions: "You are the tower controller.", pushToTalk: true });
+this.onKeyDown("Tab", () => radio.talk(true), { consume: true });
+this.onKeyUp("Tab", () => radio.talk(false));
 ```
 
 Example: [`examples/voice-npc.mjs`](../examples/voice-npc.mjs) - click an NPC and talk to it.

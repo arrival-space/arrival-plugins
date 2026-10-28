@@ -1795,8 +1795,10 @@ declare namespace ArrivalSpace {
             /** 'high': the larger voice model, about three times the cost */
             quality?: "standard" | "high";
             greeting?: string;
-            /** Actions it calls while talking; run's return value goes back to it as the result. */
+            /** Actions it calls while talking; run's return value goes back to it as the result (an object with silent: true: no answer asked for, 1.33.0). */
             tools?: Array<{ name: string; description: string; parameters?: object; run: (args: any) => unknown }>;
+            /** Push to talk: the microphone open only between talk(true) and talk(false); the turn ends at talk(false) (1.33.0) */
+            pushToTalk?: boolean;
             entity?: pc.Entity;
             volume?: number;
             /** What the visitor said (transcribed) or typed with sendText */
@@ -1811,6 +1813,8 @@ declare namespace ArrivalSpace {
             /** The visitor typing instead of speaking (1.26.0) */
             sendText(text: string): void;
             setMicMuted(muted: boolean): void;
+            /** Push to talk: pressed (true), let go (false); with pushToTalk the visitor's turn ends at let go (1.33.0) */
+            talk(down: boolean): void;
             /** false without a microphone (none, or access refused); null until known (1.26.0) */
             readonly hasMicrophone: boolean | null;
             readonly state: "connecting" | "listening" | "speaking" | "ended";
