@@ -1547,7 +1547,7 @@ const config = await ArrivalSpace.getAvatarConfig();
 
 #### `ArrivalSpace.setAvatarParts(partsToSet, options?)`
 
-Change one or more avatar parts and re-render. Changes are **temporary** (visual only, not saved to the user's profile). Set a part to `null` to remove it.
+Change one or more avatar parts and re-render. Changes are **temporary** (visual only, not saved to the user's profile) and **local**: other players keep seeing the saved avatar. Set a part to `null` to remove it.
 
 | Param | Type | Description |
 |-------|------|-------------|
@@ -1568,9 +1568,28 @@ await ArrivalSpace.setAvatarParts({ top: 'top-12.glb', bottom: 'bottom-3.glb' })
 await ArrivalSpace.setAvatarParts({ headwear: null });
 ```
 
+#### `ArrivalSpace.setPlayerAvatar(url)`
+
+Show the local player as the avatar file at `url` — to **everyone in the space**, players who join later included — until `resetAvatar()`, a space switch, or a change of the saved avatar. Not saved to the visitor's profile. Requires `ArrivalSpace.VERSION >= 1.32.0`.
+
+The file is a whole avatar, not a part added to the current one:
+
+- a `.glb` with the platform's humanoid rig (modular-avatar bone names; Mixamo `mixamorig:` names are mapped) plays the stock animations; other bone names load but don't animate;
+- a URL ending in `.vrm` loads as a VRM.
+
+`ArrivalSpace.fs.url()` URLs carry no extension, so they always load as `.glb`; a VRM needs its extension (e.g. `getPluginFileURL("knight.vrm")`). If the file doesn't load, the saved avatar comes back.
+
+**Returns:** `Promise<boolean>` — `false` if the file did not load.
+
+```javascript
+// A clickable disguise: wear the rigged GLB this vibe ships in space/assets/
+ArrivalSpace.onEntityClick(this.entity, () =>
+    ArrivalSpace.setPlayerAvatar(ArrivalSpace.fs.url("assets/knight.glb")));
+```
+
 #### `ArrivalSpace.resetAvatar()`
 
-Reset the avatar to the user's saved state. Use this in `destroy()` to cleanly undo all temporary avatar changes (restores hair, original outfit, etc.).
+Reset the avatar to the user's saved state. Use this in `destroy()` to cleanly undo all temporary avatar changes (restores hair, original outfit, etc.). After `setPlayerAvatar` the other players see the saved avatar again too.
 
 **Returns:** `Promise<boolean>`
 

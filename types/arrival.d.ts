@@ -2489,7 +2489,8 @@ declare namespace ArrivalSpace {
 
     /**
      * Change one or more avatar parts and re-render. Temporary (visual only) — does NOT save to
-     * the user's profile. Part ids come from the catalog; set a part to null to remove it.
+     * the user's profile — and local: other players keep seeing the saved avatar. Part ids come
+     * from the catalog; set a part to null to remove it.
      * Call `resetAvatar()` in `destroy()` to undo.
      * @example
      * await ArrivalSpace.setAvatarParts({ headwear: "headwear-5.glb" });
@@ -2499,7 +2500,22 @@ declare namespace ArrivalSpace {
         options?: { tints?: Record<string, any>; gender?: string },
     ): Promise<{ ok: boolean; error?: string }>;
 
-    /** Reset the avatar to the user's saved state. Call in `destroy()` after any temporary change. */
+    /**
+     * Show the local player as the avatar file at `url` to everyone in the space (later joiners
+     * too) until `resetAvatar()`, a space switch or a change of the saved avatar. Not saved to the
+     * profile. A whole avatar: a .glb with the platform's humanoid rig (Mixamo names are mapped)
+     * plays the stock animations, other bone names don't animate; a URL ending in .vrm loads as VRM.
+     * `fs.url()` URLs have no extension, so they load as .glb. Resolves false if the file did not
+     * load (the saved avatar comes back). Requires `ArrivalSpace.VERSION >= 1.32.0`.
+     * @example
+     * ArrivalSpace.onEntityClick(this.entity, () => ArrivalSpace.setPlayerAvatar(ArrivalSpace.fs.url("assets/knight.glb")));
+     */
+    function setPlayerAvatar(url: string): Promise<boolean>;
+
+    /**
+     * Reset the avatar to the user's saved state. Call in `destroy()` after any temporary change.
+     * After `setPlayerAvatar` the other players see the saved avatar again too.
+     */
     function resetAvatar(): Promise<boolean>;
 
     // ═══════════════════════════════════════════════════════════════════════════
