@@ -340,10 +340,10 @@
     {
       "path": "examples/snowfall.mjs",
       "kind": "example",
-      "title": "Snowfall Particle Plugin",
-      "summary": "Configurable snowfall effect built with the PlayCanvas particle system, tunable curves, wind, and custom texture support.",
+      "title": "Snowfall",
+      "summary": "Falling snow made of Gaussian splats that sort with the space's splats; the snow volume follows the camera, with wind and sway.",
       "script_name": "snowfall",
-      "keywords": ["snowfall", "snow", "particle", "particles", "particle system", "playcanvas particles", "weather", "wind"]
+      "keywords": ["snowfall", "snow", "falling snow", "gsplat", "splats", "procedural splats", "weather", "wind", "particles"]
     },
     {
       "path": "examples/splat-snow.mjs",
