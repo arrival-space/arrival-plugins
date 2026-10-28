@@ -52,16 +52,21 @@ export class PresenterMode extends ArrivalScript {
     _lastHop = 0;
 
     initialize() {
+        // Centered, level with the creator badge (top left, 40 px tall). Where the screen is too narrow
+        // for both: under the badge and its Follow button, clear of the dock on the right, in smaller type.
+        this._narrow = window.innerWidth < 1100;
         this._bar = this.createUI("div", {
             style: {
-                // Centered and wrapping onto a second row when it is wider than a phone screen.
-                position: "fixed", top: "64px", left: "0", right: "0", margin: "0 auto",
-                width: "fit-content", maxWidth: "calc(100vw - 24px)", boxSizing: "border-box",
+                position: "fixed",
+                ...(this._narrow
+                    ? { top: "104px", left: "8px", maxWidth: "calc(100vw - 72px)" }
+                    : { top: "8px", left: "0", right: "0", margin: "0 auto", maxWidth: "calc(100vw - 24px)" }),
+                width: "fit-content", minHeight: "40px", boxSizing: "border-box",
                 display: "flex", flexWrap: "wrap", justifyContent: "center", alignItems: "center",
-                gap: "6px", padding: "6px 6px 6px 14px",
+                gap: "6px", padding: "3px 4px 3px 14px",
                 background: "rgba(15, 18, 24, 0.85)", backdropFilter: "blur(8px)",
-                border: "1px solid rgba(255,255,255,0.14)", borderRadius: "24px",
-                color: "#fff", font: "600 14px 'Segoe UI', sans-serif", zIndex: "1000",
+                border: "1px solid rgba(255,255,255,0.14)", borderRadius: "20px",
+                color: "#fff", font: `600 ${this._narrow ? 12 : 14}px 'Segoe UI', sans-serif`, zIndex: "1000",
                 userSelect: "none",
             },
         });
@@ -247,7 +252,7 @@ export class PresenterMode extends ArrivalScript {
     _render() {
         const canPresent = this.whoCanPresent === "Anyone" || ArrivalSpace.canEditSpace();
         const btn = (act, label, primary) => `<button data-act="${act}" style="
-            padding: 9px 16px; border-radius: 999px; border: none; cursor: pointer; font: inherit; white-space: nowrap;
+            padding: 6px ${this._narrow ? 10 : 14}px; border-radius: 999px; border: none; cursor: pointer; font: inherit; white-space: nowrap;
             color: #fff; background: ${primary ? "#e5484d" : "rgba(255,255,255,0.14)"};">${label}</button>`;
         const dot = `<span style="flex:none;width:9px;height:9px;border-radius:50%;background:#e5484d;box-shadow:0 0 8px #e5484d"></span>`;
         const name = (this._remote?.name || "").replace(/[<>&"]/g, "");
