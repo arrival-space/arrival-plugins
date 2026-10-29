@@ -96,13 +96,14 @@ export class AiGuide extends ArrivalScript {
     }
 
     _openPanel() {
-        // On a phone the panel spans the top of the screen, clear of the on-screen keyboard.
+        // On a phone the panel spans the top of the screen, clear of the on-screen keyboard
+        // and of the client's 48px button column on the right edge (Main menu would take the × tap).
         const phone = window.innerWidth < 500;
         this._panel = this.createUI("div", {
             style: {
                 position: "fixed",
                 ...(phone
-                    ? { top: "12px", left: "12px", right: "12px", height: "min(440px, 45dvh)" }
+                    ? { top: "12px", left: "12px", right: "64px", height: "min(440px, 45dvh)" }
                     : { bottom: "60px", right: "56px", width: "340px", height: "min(440px, calc(100dvh - 80px))" }),
                 background: "#80808066", backdropFilter: "blur(50px)", WebkitBackdropFilter: "blur(50px)",
                 borderRadius: "20px", display: "flex", flexDirection: "column", overflow: "hidden",
