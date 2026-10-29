@@ -155,6 +155,8 @@ const KEY_PROMPT_HTML =
     `${statusLink(CESIUM_ION_TOKENS, "Cesium Ion token")} for EEA accounts`;
 
 const len3 = (x, y, z) => Math.sqrt(x * x + y * y + z * z);
+/** The size of a tile (m): the longest axis of its box. */
+const gtNodeSize = (node) => { const b = node.boundingVolume?.box; return b ? Math.max(len3(b[3], b[4], b[5]), len3(b[6], b[7], b[8]), len3(b[9], b[10], b[11]), 1) : 1; };
 
 // Tiles whose bounding-box half-extent exceeds this are the whole-earth faces (a handful
 // of tiny meshes). With keepGlobe they stay resident regardless of camera distance or
@@ -654,6 +656,9 @@ class TileTree {
     halfFov = 0.7;       // half-angle of the view cone (rad), screen-corner-to-centre
 
     expanded = new Set();
+    _jsonAt = new Map();   // a fetched sub-tileset's node -> when last wanted (oldest first)
+    _held = new Set();     // tiles loaded or loading: a sub-tileset holding one stays
+    _pruneAt = 0;
 
     contentHidden = new Map();
 
@@ -697,10 +702,27 @@ class TileTree {
         return url;
     }
 
-    async start() {
-        const json = await this.fetchJson(`${TILE_API}v1/3dtiles/root.json?key=${this.apiKey}`);
+    async start(fresh = false) {
+        const ck = `gt3d-root:${String(this.apiKey).slice(-10)}`;
+        let json = null, cached = false;
+        if (!fresh) {
+            try {
+                const c = JSON.parse(localStorage.getItem(ck) || "null");
+                if (c && Date.now() - c.t < 3600e3 && c.json?.root) { json = c.json; cached = true; }
+            } catch (e) { /* no storage */ }
+        }
+        if (!json) {
+            json = await this.fetchJson(`${TILE_API}v1/3dtiles/root.json?key=${this.apiKey}`);
+            try { localStorage.setItem(ck, JSON.stringify({ t: Date.now(), json })); } catch (e) { /* full, or none */ }
+        }
         this.root = json.root;
         await this.expandNode(this.root);
+        if (cached && this.root.children && !this.expanded.has(this.root)) {
+            // (its session gone: a new one)
+            try { localStorage.removeItem(ck); } catch (e) { /* none */ }
+            this.session = null;
+            return this.start(true);
+        }
     }
 
     /**
@@ -716,7 +738,8 @@ class TileTree {
         const box = node.boundingVolume?.box;
         if (!box) return true;
         const [bx, by, bz, xx, xy, xz, yx, yy, yz, zx, zy, zz] = box;
-        const dist = len3(bx - cam[0], bz - cam[1], -by - cam[2]);
+        const a = cam.ahead;
+        const dist = Math.min(len3(bx - cam[0], bz - cam[1], -by - cam[2]), a ? len3(bx - a[0], bz - a[1], -by - a[2]) : Infinity);
         const lx = len3(xx, xy, xz), ly = len3(yx, yy, yz), lz = len3(zx, zy, zz);
         const size = Math.max(lx, ly, lz, 100);
         if (this.keepGlobe && size > PLANET_TILE_SIZE) return true;
@@ -753,16 +776,19 @@ class TileTree {
         const cosAng = (f[0] * dx + f[1] * dy + f[2] * dz) / dist;
         const ang = Math.acos(Math.max(-1, Math.min(1, cosAng)));
         const alpha = Math.asin(radius / dist);       // tile's angular radius
-        return ang - alpha <= this.halfFov + extra;
+        if (ang - alpha <= this.halfFov + extra) return true;
+        return !!cam.ahead && this.inView(node, cam.ahead, extra);   // or in view from where the camera is going
     }
 
     async loadContent(node) {
         const uri = node.content?.uri;
         if (!uri) return;
         if (uri.includes(".glb")) {
-            await this.handlers.load(node);
+            this._held.add(node);
+            try { await this.handlers.load(node); } catch (err) { this._held.delete(node); throw err; }
             if (this.contentHidden.get(uri)) this.handlers.hide(node);
         } else if (uri.includes(".json")) {
+            this._jsonAt.delete(node); this._jsonAt.set(node, performance.now());   // (wanted now: to the back)
             if (!node.children) {
                 const json = await this.fetchJson(this.buildTileUrl(uri));
                 // The spliced root carries THIS node's LOD-level geometry
@@ -783,6 +809,7 @@ class TileTree {
         if (!uri) return;
         if (uri.includes(".glb")) {
             this.handlers.unload(node);
+            this._held.delete(node);
         } else if (uri.includes(".json") && node.children) {
             this.unloadContent(node.children[0]);
         }
@@ -796,12 +823,13 @@ class TileTree {
     async expandNode(node) {
         if (this.expanded.has(node)) return;
         this.expanded.add(node);
+        const gen = node._gen = (node._gen || 0) + 1;
 
         if (node.children) {
             const results = await Promise.allSettled(node.children.map(c => this.loadContent(c)));
             // Collapsed while the children were loading (player moved on) —
             // they were unloaded, so don't hide this node over a hole.
-            if (!this.expanded.has(node)) return;
+            if (!this.expanded.has(node) || node._gen !== gen) return;
             const failed = results.find(r => r.status === "rejected");
             if (failed) {
                 console.warn("GoogleTiles: expand failed, will retry:", failed.reason?.message);
@@ -810,10 +838,8 @@ class TileTree {
             }
         }
 
-        if (node.content?.uri.includes(".glb")) {
-            this.handlers.hide(node);
-            this.contentHidden.set(node.content.uri, true);
-        }
+        if (node.children && !node.children.every((c) => this.childReady(c))) { node._hideLater = gen; return; }
+        this.finishHide(node);
     }
 
     /**
@@ -822,6 +848,7 @@ class TileTree {
      * cache — descendants that were expanded collapse themselves later.
      */
     collapseNode(node) {
+        if (node.children) for (const child of node.children) if (this.expanded.has(child)) this.collapseNode(child);
         if (node.children) {
             for (const child of node.children) {
                 // A splice root is this node's own LOD level, not the level
@@ -832,25 +859,86 @@ class TileTree {
         }
         if (node.content?.uri.includes(".glb")) {
             this.handlers.show(node);
-            this.contentHidden.set(node.content.uri, false);
+            this.contentHidden.delete(node.content.uri);
         }
         this.expanded.delete(node);
+        node._ready = false;
+        node._gen = (node._gen || 0) + 1;
+    }
+
+    /** A child drawn: its tile loaded and shown its turn (an external tileset: the root it brings). */
+    childReady(c) {
+        const uri = c.content?.uri;
+        if (!uri) return true;
+        if (uri.includes(".glb")) return !!this.handlers.ready?.(c);
+        if (uri.includes(".json")) return !!c.children && this.childReady(c.children[0]);
+        return true;
+    }
+
+    /** Its children all drawn: the node hidden under them. */
+    finishHide(node) {
+        node._hideLater = 0;
+        if (node.content?.uri.includes(".glb")) {
+            this.handlers.hide(node);
+            this.contentHidden.set(node.content.uri, true);
+        }
+        node._ready = true;   // its children all in
+    }
+
+    /**
+     * The sub-tilesets left behind dropped: unused for KEEP ms, nothing in them expanded or held. A sweep walks
+     * at most BUDGET nodes, the oldest first (no hitch); one still in use is looked at again in KEEP.
+     */
+    prune(now) {
+        const KEEP = 30000, BUDGET = 40000;
+        let walked = 0;
+        for (const [node, at] of this._jsonAt) {
+            if (now - at < KEEP || walked > BUDGET) break;
+            this._jsonAt.delete(node);
+            const sub = node.children?.[0];
+            if (!sub) continue;
+            let busy = this.expanded.has(node);
+            const nested = [], uris = [], stack = busy ? [] : [sub];
+            while (stack.length) {
+                const n = stack.pop();
+                walked++;
+                if (this.expanded.has(n) || this._held.has(n)) { busy = true; break; }
+                if (n.content?.uri) uris.push(n.content.uri);
+                if (n !== sub && n.content?.uri?.includes(".json")) nested.push(n);
+                if (n.children) for (const c of n.children) stack.push(c);
+            }
+            if (busy) { this._jsonAt.set(node, now); continue; }
+            node.children = undefined;
+            for (const u of uris) this.contentHidden.delete(u);
+            for (const j of nested) this._jsonAt.delete(j);
+        }
     }
 
     update(cameraPos) {
+        const pruneNow = performance.now();   // (prune: see above)
+        if (pruneNow - this._pruneAt > 2000) { this._pruneAt = pruneNow; this.prune(pruneNow); }
         // Collapse uses a wider view cone than expand (≈20° extra) so a tile
         // that just slid off the screen edge isn't unloaded-then-reloaded on a
         // small turn. Coarse ancestors (continent/earth boxes) subtend a huge
         // angle, so their angular-radius term keeps them "in view" — only fine
         // descendants are ever direction-culled.
         const COLLAPSE_VIEW_SLACK = 0.35;
+        // Out of range: gone, always. Out of view: an expansion still loading is called off (its queued
+        // requests dropped, nothing downloaded for a tile turned away from); a finished one is kept, the
+        // cache (turning back needs no reload). Past the memory budget the ones looked at longest ago go,
+        // a few a tick, the finest first (never a parent over children still drawn).
+        const now = performance.now(), stale = [];
         for (const node of Array.from(this.expanded)) {
             // 1.15 slack = hysteresis so nodes at the boundary don't churn
-            if (!this.inRange(node, cameraPos, 1.15) ||
-                !this.inView(node, cameraPos, COLLAPSE_VIEW_SLACK)) {
-                this.collapseNode(node);
-                continue;
+            if (!this.inRange(node, cameraPos, 1.15)) { this.collapseNode(node); continue; }
+            // (one waiting to hide under children still coming: now, if they are all drawn)
+            if (node._hideLater) {
+                if (node._gen !== node._hideLater) node._hideLater = 0;
+                else if (node.children.every((c) => this.childReady(c))) this.finishHide(node);
             }
+            if (this.inView(node, cameraPos, COLLAPSE_VIEW_SLACK)) node._seen = now;
+            else if (!node._ready || !this.overBudget) { this.collapseNode(node); continue; }
+            else { stale.push(node); continue; }
             if (!node.children) continue;
             for (const child of node.children) {
                 if (child.children && !this.expanded.has(child) &&
@@ -858,6 +946,11 @@ class TileTree {
                     this.expandNode(child).catch(err => console.warn("GoogleTiles:", err.message));
                 }
             }
+        }
+        if (stale.length && this.overBudget()) {
+            const leaves = stale.filter((n) => !n.children?.some((c) => this.expanded.has(c)));
+            leaves.sort((a, b) => (a._seen ?? 0) - (b._seen ?? 0));
+            for (let k = 0; k < Math.min(8, leaves.length) && this.overBudget(); k++) this.collapseNode(leaves[k]);
         }
     }
 }
@@ -955,7 +1048,7 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
         cameraNearClip: { title: "Near Clip (m)", min: 0.01, max: 100, step: 0.01 },
         cameraFarClip: { title: "Far Clip (m)", min: 1000, max: 20000000, step: 1000 },
         freeCamMaxSpeed: { title: "Free Cam Max Speed (m/s)", min: 50, max: 1000000, step: 50 },
-        showStatus: { title: "Show Status" },
+        showStatus: { title: "Show Status (tiles + your lat/lon, click to copy)" },
         loadingScreen: { title: "Loading Screen (first tiles)" },
         hdr: { title: "HDR" },
         recommendedLighting: { title: "Recommended Lighting (HDR, bloom, sky hidden; saved to the space)" },
@@ -1022,7 +1115,7 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
     // Concurrent GLB downloads. Movement triggers expand cascades; without a
     // cap, hundreds of parallel loads choke the main thread and the stream
     // appears to stall.
-    static MAX_CONCURRENT_LOADS = 10;
+    static MAX_CONCURRENT_LOADS = 24;   // HTTP/2: the tiles stream in parallel
 
     // loadGLB never settles if its request stalls (it only resolves on the
     // asset's load/error event), which pins the slot forever — 10 stalled loads
@@ -1090,11 +1183,18 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
             return;
         }
         this._start();
+        // the GPU context lost (a phone under memory pressure): the tiles dropped, streamed again when it is back
+        this._onLost = () => { this._sessionId++; this._tree = null; this._clearTiles(); };
+        this._onRestored = () => { if (this.apiKey || this.cesiumIonToken) this._start(); };
+        this.app.graphicsDevice.on("devicelost", this._onLost, this);
+        this.app.graphicsDevice.on("devicerestored", this._onRestored, this);
     }
 
     update(dt) {
         if (!this._tree) return;
 
+        this._revealTick(dt);   // every frame (the rest of update runs ten times a second)
+        this._parseTick(dt);
         this._updateTimer += dt;
         if (this._updateTimer < 0.1) return;
         this._updateTimer = 0;
@@ -1134,6 +1234,18 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
         }
 
         this._camTile = [local.x, local.y, local.z];
+        // where the camera will be in 1.5 s (a fast vehicle or flight): tiles in range or in view from there count
+        // too, so the ground ahead is loading before it is passed (no more than 3 km ahead)
+        const nowS = performance.now() / 1000, prev = this._camPrev;
+        if (prev && nowS - prev.t > 0.02) {
+            const k = 1 / (nowS - prev.t), v = [(local.x - prev.p[0]) * k, (local.y - prev.p[1]) * k, (local.z - prev.p[2]) * k];
+            // (a jump, the globe moved under the camera: no speed of its own, ignored)
+            const sv = len3(v[0], v[1], v[2]) > 1500 ? (this._camVel = null) || [0, 0, 0]
+                : (this._camVel = this._camVel ? this._camVel.map((c, i) => c + (v[i] - c) * 0.5) : v);
+            const lead = Math.min(1.5, 3000 / Math.max(len3(sv[0], sv[1], sv[2]), 1e-3));
+            if (len3(sv[0], sv[1], sv[2]) > 30) this._camTile.ahead = [local.x + sv[0] * lead, local.y + sv[1] * lead, local.z + sv[2] * lead];
+        }
+        this._camPrev = { t: nowS, p: [local.x, local.y, local.z] };
         this._updateViewCull();
         this._tree.update(this._camTile);
 
@@ -1143,10 +1255,23 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
 
         if (this.showStatus) {
             const queued = this._loadQueue.length;
-            this._status(
-                `${this._records.size} tiles · ${this._loadSlots} loading` +
-                (queued ? ` · ${queued} queued` : "")
-            );
+            const line = `${this._records.size} tiles · ${this._loadSlots} loading` +
+                (queued ? ` · ${queued} queued` : "");
+            // where you are: the player's feet (the camera in free cam)
+            const player = ArrivalSpace.getPlayer?.();
+            const at = this._geodeticAt((mode !== "free" && player) ? player.getPosition() : viewer.getPosition());
+            if (at) {
+                const ll = `${at.lat.toFixed(6)}, ${at.lon.toFixed(6)}`;
+                const h = `${at.height.toFixed(1)} m`;
+                const copied = performance.now() < (this._copiedUntil || 0) ? " · copied" : "";
+                this._status(
+                    `${line}\n${ll} · ${h}${copied}`,
+                    `${line}<br><span data-gt-copy title="Click to copy" style="cursor:pointer;` +
+                    `text-decoration:underline dotted;user-select:text;">${ll}</span> · ${h}${copied}`
+                );
+            } else {
+                this._status(line);
+            }
         }
     }
 
@@ -1244,8 +1369,37 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
         }
     }
 
+    /** The meshes' CPU-side copies let go (their byte size kept: the engine counts it off on destroy). */
+    _dropCpuCopies(entity) {
+        for (const r of entity.findComponents("render")) {
+            for (const mi of r.meshInstances) {
+                const m = mi.mesh;
+                for (const b of [m.vertexBuffer, ...(m.indexBuffer || [])]) {
+                    // (an index buffer keeps a view into the downloaded file: it held the whole file)
+                    const s = b?.storage;
+                    if (s instanceof ArrayBuffer || ArrayBuffer.isView(s)) b.storage = { byteLength: s.byteLength };
+                }
+            }
+        }
+    }
+
+    /**
+     * What the engine's GLB parser leaves on a loaded tile's textures: their "load" and "error" listeners (it
+     * never takes them off), whose closures hold the parse and with it the whole downloaded file (~70 KB a tile,
+     * 86 MB at 1,274 tiles), and each texture's own copy of its image file. Both let go once it is loaded.
+     */
+    _dropParseLeftovers(asset) {
+        for (const ta of asset?.resource?.textures || []) {
+            if (!ta?.loaded) continue;
+            ta.off("load");
+            ta.off("error");
+            if (ta.file?.contents) ta.file.contents = null;
+        }
+    }
+
     destroy() {
         this._sessionId++;
+        if (this._onLost) { this.app.graphicsDevice.off("devicelost", this._onLost, this); this.app.graphicsDevice.off("devicerestored", this._onRestored, this); }
         if (this._onPatchRegion) this.app.off("googletiles:patch-region", this._onPatchRegion, this);
         if (this._onPatchClear) this.app.off("googletiles:patch-region-clear", this._onPatchClear, this);
         this._tree = null;
@@ -1498,6 +1652,13 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
     }
 
     async _start() {
+        try {
+            if (new URLSearchParams(location.search).has("notiles")) {
+                this._clearTiles();
+                this._status("Google 3D Tiles off (?notiles)");
+                return;
+            }
+        } catch (e) { /* no address */ }
         const session = ++this._sessionId;
         this._clearTiles();
 
@@ -1526,12 +1687,21 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
         }
 
         const tree = new TileTree(apiKey, {
-            load: node => this._loadTile(node, tree, session),
+            load: node => {
+                const r = this._records.get(node);
+                if (r && !r.dead && r.done) return r.done;
+                const p = this._loadTile(node, tree, session);
+                const r2 = this._records.get(node);
+                if (r2 && !r2.done) r2.done = p;
+                return p;
+            },
+            ready: node => { const r = this._records.get(node); return !!r && !r.dead && !!r.entity && !!r.revealed; },
             unload: node => this._unloadTile(node),
             show: node => this._setTileVisible(node, true),
             hide: node => this._setTileVisible(node, false),
         });
         tree.lodFactor = this._effectiveDetail();
+        tree.overBudget = () => this._records.size > GoogleTilesAtmosphere.TILE_BUDGET;
         this._tree = tree;
         this._beginInitialLoad();
 
@@ -1575,6 +1745,11 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
         if (this.apiKey) return this.apiKey;
         if (!this.cesiumIonToken) return "";
 
+        const ik = `gt3d-ion:${String(this.cesiumIonToken).slice(-10)}`;
+        try {
+            const c = JSON.parse(localStorage.getItem(ik) || "null");
+            if (c?.key && Date.now() - c.t < 3600e3) return c.key;
+        } catch (e) { /* no storage */ }
         const url = `${CESIUM_ION_API}assets/${CESIUM_GOOGLE_ASSET_ID}/endpoint` +
             `?access_token=${encodeURIComponent(this.cesiumIonToken)}`;
         const res = await fetch(url);
@@ -1590,6 +1765,7 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
         const tilesetUrl = json.options?.url;
         const key = tilesetUrl && new URL(tilesetUrl).searchParams.get("key");
         if (!key) throw new Error("Ion endpoint returned no Google tile key");
+        try { localStorage.setItem(ik, JSON.stringify({ t: Date.now(), key })); } catch (e) { /* full, or none */ }
         return key;
     }
 
@@ -1599,18 +1775,20 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
      * so the tiles around the player stream in ahead of distant ones. Loads that
      * drift out of range while parked get tombstoned before they ever run.
      */
-    _acquireSlot(node) {
+    _acquireSlot(node, rec) {
         if (this._loadSlots < GoogleTilesAtmosphere.MAX_CONCURRENT_LOADS) {
             this._loadSlots++;
             return Promise.resolve();
         }
-        return new Promise(resolve => this._loadQueue.push({ node, resolve }))
+        return new Promise(resolve => this._loadQueue.push({ node, rec, resolve }))
             .then(() => { this._loadSlots++; });
     }
 
     _releaseSlot() {
         this._loadSlots--;
-        const q = this._loadQueue;
+        // requests called off while they waited (their tile collapsed: the camera turned away) go now; left
+        // in, every lap round the same spot parked another copy of the same tiles behind the live ones
+        const q = this._loadQueue = this._loadQueue.filter((e) => !e.rec?.dead);
         if (!q.length) return;
         // Pick the queued tile closest to the camera; fall back to most-recent
         // (LIFO) before the first update() has cached a camera position.
@@ -1619,7 +1797,9 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
         if (cam) {
             let best = Infinity;
             for (let i = 0; i < q.length; i++) {
-                const d = boxCamDistSq(q[i].node, cam);
+                // the biggest error on screen first: a coarse tile a little way off before a fine one under the
+                // camera (its size over its distance), what the camera sees before what it doesn't
+                const d = boxCamDistSq(q[i].node, cam) / gtNodeSize(q[i].node) ** 2 * (this._tree?.inView(q[i].node, cam) ? 1 : 16);
                 if (d < best) { best = d; idx = i; }
             }
         }
@@ -1635,7 +1815,7 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
         const rec = { entity: null, asset: null, dead: false };
         this._records.set(node, rec);
         try {
-            await this._acquireSlot(node);
+            await this._acquireSlot(node, rec);
             try {
                 if (session !== this._sessionId || rec.dead) return;
                 const url = tree.buildTileUrl(node.content.uri);
@@ -1649,6 +1829,10 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
                     const res = await fetch(url);
                     if (!res.ok) throw new Error(`tile ${res.status}`);
                     const bytes = await res.arrayBuffer();
+                    // its turn to be parsed: its buffers made and its photo decoded take the main thread (in
+                    // Firefox the photo's decode too), a burst of tiles landing together a run of slow frames
+                    await this._parseTurn();
+                    if (rec.dead || session !== this._sessionId) throw new Error("tile called off");
                     rec.exact = glbRootTranslation(bytes);
                     const blobUrl = URL.createObjectURL(new Blob([bytes], { type: "model/gltf-binary" }));
                     try {
@@ -1687,13 +1871,26 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
 
                 rec.entity = entity;
                 rec.asset = asset;
+                // (another vibe that reads the tiles' geometry, e.g. lining something up with the ground, sets
+                // keepTileGeometry on this vibe to keep the copies)
+                if (!this.keepTileGeometry) this._dropCpuCopies(entity);
+                this._dropParseLeftovers(asset);
                 this._placeTile(rec);
                 if (this._patchActive || this.atmosphere || this._colorGradeActive()) {
                     this._chunkEntity(entity);
                 }
                 if (this.directLight) this._tuneEntity(entity);
+                // hidden until its turn to be shown (below): its first draw uploads its texture and mesh
+                entity.enabled = false;
             } finally {
                 this._releaseSlot();
+            }
+            // its turn, the download slot already free for the next: a few tiles a frame (_revealTick), so a
+            // burst landing together doesn't stall one frame for 100 ms; its parent stays up meanwhile
+            if (rec.entity && !rec.dead) {
+                await this._revealTurn(node);
+                if (!rec.dead && session === this._sessionId && !tree.contentHidden.get(node.content.uri)) rec.entity.enabled = true;
+                rec.revealed = true;
             }
         } finally {
             // tombstoned or failed loads leave no record behind
@@ -1718,6 +1915,46 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
         const o = this._tileRoot.getLocalPosition();
         rec.entity.setLocalPosition(o.x + rec.exact[0], o.y + rec.exact[1], o.z + rec.exact[2]);
         root.setLocalPosition(0, 0, 0);
+    }
+
+    /** A loaded tile's turn to be shown: resolved by _revealTick, a few a frame. */
+    _revealTurn(node) {
+        return new Promise((resolve) => (this._revealQueue ||= []).push({ node, resolve }));
+    }
+
+    /**
+     * A frame that ran long against the usual (its recent average) lets one tile through; each smooth frame
+     * one more, up to eight (four in Firefox: its WebGL works in a process of its own, and a new tile's
+     * texture upload stretches the frame there while the page's own time stays flat).
+     */
+    _revealTick(dt) {
+        this._frameAvg = this._frameAvg ? this._frameAvg + (Math.min(dt, 0.1) - this._frameAvg) * 0.05 : dt;
+        const q = this._revealQueue;
+        if (!q?.length) return;
+        const most = /Firefox\//.test(navigator.userAgent) ? 4 : 8;
+        this._revealBudget = dt > 1.4 * this._frameAvg || dt > 1 / 40 ? 1 : Math.min(most, (this._revealBudget || 1) + 1);
+        // a backlog (a slow machine): the biggest error on screen first (as the downloads)
+        const cam = this._camTile;
+        if (q.length > this._revealBudget && cam) {
+            const score = (e) => boxCamDistSq(e.node, cam) / gtNodeSize(e.node) ** 2 * (this._tree?.inView(e.node, cam) ? 1 : 16);
+            for (const e of q) e.score = score(e);
+            q.sort((a, b) => a.score - b.score);
+        }
+        for (let k = 0; k < this._revealBudget && q.length; k++) q.shift().resolve();
+    }
+
+    /** A downloaded tile's turn to be parsed: resolved by _parseTick, a few a frame. */
+    _parseTurn() {
+        return new Promise((resolve) => (this._parseQueue ||= []).push(resolve));
+    }
+
+    /** Three tiles a frame (one in Firefox, whose WebGL calls cost more), one after a frame that ran long. */
+    _parseTick(dt) {
+        const q = this._parseQueue;
+        if (!q?.length) return;
+        const most = /Firefox\//.test(navigator.userAgent) ? 1 : 3;
+        const n = dt > 1.4 * (this._frameAvg || dt) || dt > 1 / 40 ? 1 : most;
+        for (let k = 0; k < n && q.length; k++) q.shift()();
     }
 
     _unloadTile(node) {
@@ -1775,8 +2012,38 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
     }
 
     /** Inject the combined chunks once per material and seed its uniforms. */
+    /**
+     * A few tiles come with no photo, only a colour: the engine makes them its default lit material, a white
+     * mirror (metalness and gloss 1, the sky reflected), and a shader of their own for each camera, compiled
+     * the moment the first of them shows (Firefox links it then and there: 40 ms a frame). Made like the
+     * photo tiles instead: the colour as a one-texel photo, unlit, no reflections, so their shaders.
+     */
+    _plainAsPhoto(mat) {
+        if (!(mat instanceof pc.StandardMaterial) || mat.emissiveMap || mat.diffuseMap) return;
+        const c = mat.diffuse, key = [c.r, c.g, c.b].map((v) => Math.round(Math.min(1, Math.max(0, v)) * 255));
+        const id = key.join(",");
+        let tex = (this._plainTextures ||= new Map()).get(id);
+        if (!tex) {
+            tex = new pc.Texture(this.app.graphicsDevice, { name: "gt-plain-" + id, width: 1, height: 1, format: pc.PIXELFORMAT_SRGBA8, mipmaps: true });
+            tex.lock().set([...key, 255]);
+            tex.unlock();
+            this._plainTextures.set(id, tex);
+        }
+        mat.emissiveMap = tex;
+        mat.emissive.set(1, 1, 1);
+        mat.emissiveVertexColor = true;
+        mat.diffuse.set(0, 0, 0);
+        mat.specular.set(0, 0, 0);
+        mat.ambient.set(0, 0, 0);
+        mat.useMetalness = false;
+        mat.gloss = 0;
+        mat.useSkybox = false;
+        mat.update();
+    }
+
     _ensureChunks(mat) {
         if (!mat || this._chunkedMaterials.has(mat)) return;
+        this._plainAsPhoto(mat);
         const lang = this._shaderLang();
         try {
             const chunks = mat.getShaderChunks(lang);
@@ -1896,8 +2163,10 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
         const lat = this.latitude * Math.PI / 180;
         // declination: ±23.44° over the year, peak near the solstices
         const decl = -0.40928 * Math.cos((2 * Math.PI / 365) * (this.dayOfYear + 10));
-        const solarTime = this.timeUTC + this.longitude / 15;   // longitude east → solar time
-        const H = (solarTime - 12) * 15 * Math.PI / 180;        // hour angle (rad)
+        // longitude east → solar time, wrapped to 0..24 (UTC + a far-west longitude goes below 0, e.g. Hawaii's
+        // afternoon at 03:00 UTC: unwrapped, its hour angle read as morning and the sun stood in the east)
+        const solarTime = (((this.timeUTC + this.longitude / 15) % 24) + 24) % 24;
+        const H = (solarTime - 12) * 15 * Math.PI / 180;        // hour angle (rad), −π … π
         const sinEl = Math.sin(lat) * Math.sin(decl) + Math.cos(lat) * Math.cos(decl) * Math.cos(H);
         const el = Math.asin(Math.max(-1, Math.min(1, sinEl)));
         const cosEl = Math.cos(el);
@@ -2030,9 +2299,17 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
         // 0 in HDR (compose tonemaps later, keep radiance linear), 1 otherwise
         const tonemap = this._tonemapMode();
 
+        const camArr = (this._uCamArr ||= new Float32Array(3));
+        camArr[0] = camLocal.x; camArr[1] = camLocal.y; camArr[2] = camLocal.z;
+        const key = `${pr}|${ar}|${this.sunIntensity}|${this.skyExposure}|${tonemap}|${this.airPollution}`;
+        const fresh = key !== this._atmoKey || sun !== this._atmoSun || m !== this._atmoM;
+        this._atmoKey = key; this._atmoSun = sun; this._atmoM = m;
+        const seen = (this._atmoSeen ||= new WeakSet());
         for (const mat of this._chunkedMaterials) {
+            if (!fresh && seen.has(mat)) continue;
+            seen.add(mat);
             mat.setParameter("uWorldToTile", m);
-            mat.setParameter("uCamTile", cam);
+            mat.setParameter("uCamTile", camArr);
             mat.setParameter("uSunDirTile", sun);
             mat.setParameter("uPlanetRadius", pr);
             mat.setParameter("uAtmoRadius", ar);
@@ -2413,6 +2690,11 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
     }
 
     // ── The first load: a small card with its progress; app.googleTilesLoading meanwhile ──
+    /** Tiles kept loaded at most (out of view ones go past it). Firefox and Safari tell no memory: a desktop's then. */
+    static get TILE_BUDGET() {
+        const gb = navigator.deviceMemory ?? (globalThis.matchMedia?.("(pointer: coarse)").matches ? 2 : 8);
+        return gb >= 8 ? 1500 : gb >= 4 ? 900 : 500;
+    }
     static INITIAL_LOAD_TIMEOUT_S = 90;   // a slow connection doesn't keep anyone waiting longer
 
     _beginInitialLoad() {
@@ -2441,7 +2723,7 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
     _updateInitialLoad() {
         const load = this._initialLoad;
         if (!load) return;
-        const pending = this._loadSlots + this._loadQueue.length, loaded = this._records.size;
+        const pending = this._loadSlots + this._loadQueue.length + (this._revealQueue?.length || 0), loaded = this._records.size;
         const now = performance.now() / 1000;
         // done once nothing has been loading or queued for a second (or on the timeout)
         load.quietSince = pending === 0 && loaded > 0 ? (load.quietSince ?? now) : null;
@@ -2463,6 +2745,32 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
         this._initialLoad = null;
         this.app.googleTilesLoading = false;
         this.app.fire("googletiles:loaded");
+    }
+
+    /**
+     * A world position as WGS84 latitude / longitude (degrees) and height above the ellipsoid
+     * (meters — the unit of groundAltitude). Worked out in 64-bit JS from the anchor's (small)
+     * frame, not through the 32-bit matrix of the Earth-centred tile frame.
+     */
+    _geodeticAt(worldPos) {
+        if (!this._anchor || !this._tileRoot) return null;
+        const inv = (this._anchorInv ??= new pc.Mat4()).copy(this._anchor.getWorldTransform()).invert();
+        const pa = inv.transformPoint(worldPos, this._geoTmp ??= new pc.Vec3());
+        // the anchor's frame is the Y-up flipped ECEF one, shifted by the tile frame's offset (-ECEF)
+        const o = this._tileRoot.getLocalPosition();
+        const fx = pa.x - o.x, fy = pa.y - o.y, fz = pa.z - o.z;
+        const X = fx, Y = -fz, Z = fy;
+        const a = 6378137, e2 = 0.00669437999014;
+        const p = Math.hypot(X, Y);
+        if (!(p > 1)) return null;
+        let lat = Math.atan2(Z, p * (1 - e2)), height = 0;
+        for (let i = 0; i < 5; i++) {
+            const sLat = Math.sin(lat);
+            const N = a / Math.sqrt(1 - e2 * sLat * sLat);
+            height = p / Math.cos(lat) - N;
+            lat = Math.atan2(Z, p * (1 - e2 * N / (N + height)));
+        }
+        return { lat: lat * 180 / Math.PI, lon: Math.atan2(Y, X) * 180 / Math.PI, height };
     }
 
     _status(msg, html = null) {
@@ -2493,6 +2801,13 @@ export class GoogleTilesAtmosphere extends ArrivalScript {
                         pointerEvents: "none",
                     });
                     this._statusEl.style.display = this.showStatus ? "block" : "none";
+                    this._statusEl.addEventListener("click", (e) => {
+                        const el = e.target?.closest?.("[data-gt-copy]");
+                        if (!el) return;
+                        navigator.clipboard?.writeText(el.textContent)
+                            .then(() => { this._copiedUntil = performance.now() + 1500; })
+                            .catch(() => {});
+                    });
                 }
             }
             if (this._statusEl) {

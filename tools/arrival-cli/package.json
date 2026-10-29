@@ -1,10 +1,15 @@
 {
-  "name": "arrival-cli",
+  "name": "@arrival-space/cli",
   "version": "1.1.0",
   "description": "Arrival.Space CLI — manage your spaces as local files (pull / push / validate)",
   "bin": {
     "arrival": "index.js"
   },
+  "files": [
+    "index.js",
+    "lib/",
+    "!lib/**/*.test.js"
+  ],
   "type": "commonjs",
   "engines": {
     "node": ">=18"
@@ -17,9 +22,19 @@
     "cli",
     "space-as-code"
   ],
+  "homepage": "https://arrival.space",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/arrival-space/arrival-plugins.git",
+    "directory": "tools/arrival-cli"
+  },
+  "bugs": "https://github.com/arrival-space/arrival-plugins/issues",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
-    "adm-zip": "^0.5.16",
+    "adm-zip": "^0.6.1",
     "commander": "^12.1.0",
     "diff": "^7.0.0"
   }

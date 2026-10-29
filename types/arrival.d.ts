@@ -311,12 +311,43 @@ declare class ArrivalScript extends pc.Script {
 
     // ── Input: keys, locking, mobile sticks ──
 
-    /** Listen for a keydown for a key code or key string. Returns an unsubscribe function; auto-cleaned on destroy. */
-    onKeyDown(key: number | string, callback: (event?: any) => void): () => void;
-    /** Listen for a keyup for a key code or key string. Returns an unsubscribe function; auto-cleaned on destroy. */
-    onKeyUp(key: number | string, callback: (event?: any) => void): () => void;
-    /** Lock game pointer/scene input (e.g. while hovering plugin UI). createUI does this automatically. */
-    lockInput(): void;
+    /**
+     * Listen for a keydown for a key code or key string. Returns an unsubscribe function; auto-cleaned on destroy.
+     * `{ consume: true }`: the key is this vibe's - the platform and vibes listening without it don't see it,
+     * unless the callback returns `false` for that press (text fields are never taken). VERSION >= 1.31.0.
+     */
+    onKeyDown(key: number | string, callback: (event?: any) => void | boolean, options?: { consume?: boolean }): () => void;
+    /** Listen for a keyup for a key code or key string. Returns an unsubscribe function; auto-cleaned on destroy. `options` as onKeyDown. */
+    onKeyUp(key: number | string, callback: (event?: any) => void | boolean, options?: { consume?: boolean }): () => void;
+    /**
+     * Lock the mouse to this vibe: cursor hidden, each move to `move(dx, dy)`, until Esc or the vibe lets go;
+     * the platform's camera leaves the mouse alone meanwhile. Ask from a click or key. `release` is called
+     * when the lock ends without the vibe asking. Returns let-go. Auto-released on destroy. VERSION >= 1.31.0.
+     */
+    requestPointerLock(handlers?: { move?: (dx: number, dy: number, event: MouseEvent) => void; release?: () => void }): () => void;
+    /** The cursor over the 3D view while this vibe wants one (any CSS cursor; '' / null gives it back). Auto-cleared on destroy. VERSION >= 1.31.0. */
+    setCursor(cursor: string | null): void;
+    /**
+     * `fn(camera)` every frame once the camera is placed (after every update and postUpdate, before the
+     * frame is drawn): place your own camera, or read the final pose. Returns unsubscribe; auto-removed on destroy. VERSION >= 1.31.0.
+     */
+    onCameraPlaced(fn: (camera: pc.Entity) => void): () => void;
+    /**
+     * Debug drawing, shown only with `?debug` (or `?debug=scriptName,...`) on the address; no-ops otherwise.
+     * Draw each frame what should show that frame. VERSION >= 1.31.0.
+     */
+    readonly debug: {
+        readonly enabled: boolean;
+        line(from: pc.Vec3, to: pc.Vec3, color?: string | pc.Color): void;
+        cross(at: pc.Vec3, size?: number, color?: string | pc.Color): void;
+        text(at: pc.Vec3 | { x: number; y: number }, text: string | number, color?: string): void;
+    };
+    /**
+     * Lock game pointer/scene input (e.g. while hovering plugin UI). createUI does this automatically.
+     * Both halves by default; `{ pointerLock: true, sceneTouch: false }` keeps the platform's camera and
+     * right-click lock off the mouse while scene clicks still work (VERSION >= 1.31.0).
+     */
+    lockInput(options?: { pointerLock?: boolean; sceneTouch?: boolean }): void;
     /** Release a previous lockInput(). */
     unlockInput(): void;
     /** Lock keyboard movement (e.g. while typing in a plugin input). createUI does this automatically for inputs. */
@@ -831,6 +862,29 @@ declare namespace ArrivalSpace {
     ): () => void;
 
     /**
+     * Drag a 3D entity: `start` on a press on it (picked like onEntityClick), `move` while it is held
+     * (`dx`/`dy` since the last move, CSS px of the canvas), `end` on release. The camera stays still
+     * for the drag; a press that never moves is still a drag and its click is consumed.
+     * @returns Unsubscribe; called automatically when the entity is destroyed. VERSION >= 1.31.0.
+     */
+    function onEntityDrag(
+        entity: pc.Entity,
+        handlers: {
+            start?: (e: { x: number; y: number }) => void;
+            move?: (e: { x: number; y: number; dx: number; dy: number; startX: number; startY: number }) => void;
+            end?: (e: { x: number; y: number }) => void;
+        },
+    ): () => void;
+
+    /**
+     * Where a world point is on the screen (CSS px of the canvas), as the camera sees it now. `inFront`: ahead
+     * of the camera (x/y mean nothing otherwise); `onScreen`: also inside the canvas. null without a camera.
+     * Safer than the engine's camera.worldToScreen (that projects points behind the camera, and is wrong given
+     * the same vector in and out). VERSION >= 1.31.0.
+     */
+    function worldToScreen(point: pc.Vec3): { x: number; y: number; inFront: boolean; onScreen: boolean } | null;
+
+    /**
      * Draw (or clear) the platform's silhouette outline on an entity - the editor's hover
      * highlight, switched on when you decide rather than by the pointer. Covers descendants
      * with a `render` component. Colour and thickness are app-wide, not per-entity.
@@ -870,6 +924,22 @@ declare namespace ArrivalSpace {
     ): Promise<{ point: pc.Vec3; distance: number; entity: pc.Entity | null; isSplat: boolean } | null>;
 
     /**
+     * Where the COLOR the player sees at a screen point (CSS px) comes from in the gaussian
+     * splats: composites the pixel like the renderer and returns the point where half of it has
+     * built up - the middle of the layer of faint Gaussians a splat surface is, where
+     * raycastScreen lands at its front. spread: ray length of the middle half of that color
+     * (centimeters on a crisp surface, meters on foliage or a grazing view); opacity: how much of
+     * the pixel splats cover. Splats only (SOG, LOD and single-file), no meshes. The first call
+     * reaching a splat reads it back from the GPU (~0.2-0.3 s per million splats), then ~10 ms.
+     * null where no splat covers the pixel. (API 1.30.0)
+     */
+    function raycastSplats(
+        x: number,
+        y: number,
+        options?: { ignore?: pc.Entity[] },
+    ): Promise<{ point: pc.Vec3; distance: number; spread: number; opacity: number; entity: pc.Entity } | null>;
+
+    /**
      * A ray against COLLIDERS (ground boxes, collision meshes, rigidbodies). Synchronous, well
      * under a millisecond. Does not see what is drawn: a mesh without a collider is passed
      * through, and on a splat it hits the collision mesh or ground box. Skips the player's
@@ -894,6 +964,9 @@ declare namespace ArrivalSpace {
      * @returns release function.
      */
     function disableXrTurn(): () => void;
+
+    /** VR: hide the controller models drawn at the hands (rays, buttons, tracking keep working). Returns release. VERSION ≥ 1.29.0 */
+    function hideXrControllers(): () => void;
 
     /** Safely dispose an entity and its resources */
     function disposeEntity(entity: pc.Entity, options?: DisposeEntityOptions): void;
@@ -1253,7 +1326,8 @@ declare namespace ArrivalSpace {
     // ═══════════════════════════════════════════════════════════════════════════
 
     /**
-     * Load a space by URL or username
+     * Load a space by URL or username. A full URL's `?gate=<gate entity id>` arrives at that gate (no
+     * intro cutscene); its other query params stay in the destination's URL (location.search).
      * @example
      * await ArrivalSpace.loadSpace('johndoe');
      * await ArrivalSpace.loadSpace('https://live.arrival.space/johndoe/gallery');
@@ -1721,8 +1795,10 @@ declare namespace ArrivalSpace {
             /** 'high': the larger voice model, about three times the cost */
             quality?: "standard" | "high";
             greeting?: string;
-            /** Actions it calls while talking; run's return value goes back to it as the result. */
+            /** Actions it calls while talking; run's return value goes back to it as the result (an object with silent: true: no answer asked for, 1.33.0). */
             tools?: Array<{ name: string; description: string; parameters?: object; run: (args: any) => unknown }>;
+            /** Push to talk: the microphone open only between talk(true) and talk(false); the turn ends at talk(false) (1.33.0) */
+            pushToTalk?: boolean;
             entity?: pc.Entity;
             volume?: number;
             /** What the visitor said (transcribed) or typed with sendText */
@@ -1737,6 +1813,8 @@ declare namespace ArrivalSpace {
             /** The visitor typing instead of speaking (1.26.0) */
             sendText(text: string): void;
             setMicMuted(muted: boolean): void;
+            /** Push to talk: pressed (true), let go (false); with pushToTalk the visitor's turn ends at let go (1.33.0) */
+            talk(down: boolean): void;
             /** false without a microphone (none, or access refused); null until known (1.26.0) */
             readonly hasMicrophone: boolean | null;
             readonly state: "connecting" | "listening" | "speaking" | "ended";
@@ -1763,6 +1841,8 @@ declare namespace ArrivalSpace {
         entity: pc.Entity | null;
         /** Socket ID (internal) */
         socketId: string | null;
+        /** The space the sender's client is in, on messages sent with net.sendToSpace (set by the server; anyone in that space can send) */
+        fromSpaceId?: string;
     }
 
     /** Send options for net.send() */
@@ -1810,6 +1890,19 @@ declare namespace ArrivalSpace {
          * ArrivalSpace.net.sendTo(player.userID, 'Game:invite', { gameId: '123' });
          */
         function sendTo(targetUserId: string, type: string, data?: object): void;
+
+        /**
+         * Send a message to the players in another space of the same creator as this space ('*': all of them);
+         * any space when the visitor is an admin. Only players there at that moment get it. Receivers use on(type);
+         * their sender has fromSpaceId. At most 20 messages per 10 s leave a visitor's space (shared with sendTo). (1.28.0)
+         *
+         * @param spaceId - Target space id (as in arrival.space/<spaceId>) or '*'
+         * @returns { spaces } - spaces with players that got it - or { error }
+         *
+         * @example
+         * await ArrivalSpace.net.sendToSpace('42485456_1371', 'Door:open', { by: 'lever' });
+         */
+        function sendToSpace(spaceId: string, type: string, data?: object): Promise<{ spaces: number } | { error: string }>;
 
         /**
          * Subscribe to messages of a specific type.
@@ -2212,6 +2305,12 @@ declare namespace ArrivalSpace {
      */
     function canEditSpace(): boolean;
 
+    /** Whether the space editor is open (any entity selected); always false for visitors. VERSION ≥ 1.29.0 */
+    function isEditingSpace(): boolean;
+
+    /** callback(isEditing) each time the space editor opens or closes. Returns unsubscribe. VERSION ≥ 1.29.0 */
+    function onSpaceEditModeChanged(callback: (isEditing: boolean) => void): () => void;
+
     // ═══════════════════════════════════════════════════════════════════════════
     // PLAYER — movement, physics, body
     // ═══════════════════════════════════════════════════════════════════════════
@@ -2223,6 +2322,12 @@ declare namespace ArrivalSpace {
      * @example
      * ArrivalSpace.teleportPlayer({ x: 0, y: 1, z: 5 }, { forward: { x: 0, y: 0, z: -1 } });
      */
+    /** Where a player lands entering without a gate (default spawn point, else scene start); null before load. VERSION ≥ 1.29.0 */
+    function getDefaultSpawnPoint(): { position: { x: number; y: number; z: number }; forward: { x: number; y: number; z: number } } | null;
+
+    /** Teleport the local player to getDefaultSpawnPoint(), facing its direction. VERSION ≥ 1.29.0 */
+    function teleportToSpawn(): boolean;
+
     function teleportPlayer(
         position: ArrivalVec3Like,
         options?: {
@@ -2388,7 +2493,8 @@ declare namespace ArrivalSpace {
 
     /**
      * Change one or more avatar parts and re-render. Temporary (visual only) — does NOT save to
-     * the user's profile. Part ids come from the catalog; set a part to null to remove it.
+     * the user's profile — and local: other players keep seeing the saved avatar. Part ids come
+     * from the catalog; set a part to null to remove it.
      * Call `resetAvatar()` in `destroy()` to undo.
      * @example
      * await ArrivalSpace.setAvatarParts({ headwear: "headwear-5.glb" });
@@ -2398,7 +2504,22 @@ declare namespace ArrivalSpace {
         options?: { tints?: Record<string, any>; gender?: string },
     ): Promise<{ ok: boolean; error?: string }>;
 
-    /** Reset the avatar to the user's saved state. Call in `destroy()` after any temporary change. */
+    /**
+     * Show the local player as the avatar file at `url` to everyone in the space (later joiners
+     * too) until `resetAvatar()`, a space switch or a change of the saved avatar. Not saved to the
+     * profile. A whole avatar: a .glb with the platform's humanoid rig (Mixamo names are mapped)
+     * plays the stock animations, other bone names don't animate; a URL ending in .vrm loads as VRM.
+     * `fs.url()` URLs have no extension, so they load as .glb. Resolves false if the file did not
+     * load (the saved avatar comes back). Requires `ArrivalSpace.VERSION >= 1.32.0`.
+     * @example
+     * ArrivalSpace.onEntityClick(this.entity, () => ArrivalSpace.setPlayerAvatar(ArrivalSpace.fs.url("assets/knight.glb")));
+     */
+    function setPlayerAvatar(url: string): Promise<boolean>;
+
+    /**
+     * Reset the avatar to the user's saved state. Call in `destroy()` after any temporary change.
+     * After `setPlayerAvatar` the other players see the saved avatar again too.
+     */
     function resetAvatar(): Promise<boolean>;
 
     // ═══════════════════════════════════════════════════════════════════════════
@@ -2510,7 +2631,10 @@ declare namespace ArrivalSpace {
      * Attach the local player to an entity for multiplayer riding (vehicles, mounts). Handles
      * collision, camera, animations, mount broadcast and a sideband for the entity quaternion.
      * Only one local attachment at a time — returns null if already attached. Call the returned
-     * `detach()` to restore collision/camera/animations.
+     * `detach()` to restore collision/camera/animations. Every frame (after physics) the local
+     * player is teleported to the seat and its avatar mesh takes the entity's rotation (times
+     * meshEuler, smoothed by meshRotationLag). Remote clients track one rider per entity: a second
+     * rider's mount replaces the first in onEntityAttachChanged, and any rider's dismount reports null.
      */
     function attachPlayerToEntity(
         entity: pc.Entity,

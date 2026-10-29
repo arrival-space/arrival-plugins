@@ -37,7 +37,6 @@ change hot-applies to connected viewers without a reload.
   work this way.
 - **`gateTextColor` and `gateTitleColor` are set together** by one control — keep
   them equal unless you deliberately want them to differ.
-- **`dynamicRefraction` is compared as the STRING `"true"`**, not a boolean.
 - **Empty string clears** the geo fields (`geo*`) and most optional URLs.
 - Colors like `wallColor`/`floorColor` have no fixed default — unset means the
   space **theme** value is used.
@@ -234,7 +233,8 @@ Splat count (one budget for the whole space, per device preset):
 |---|---|---|---|
 | `unifiedSplats` | bool | `true` | Merge Gaussian splats into one renderer for correct sort/render *(reload-required)* |
 | `useWebGPU` | bool | `false` | Request the WebGPU backend when supported *(applies on next page load)* |
-| `dynamicRefraction` | string | — | Enable dynamic refraction — **compared as the string `"true"`**, not a boolean *(advanced)* |
+
+Glass (glTF `KHR_materials_transmission`) refracts the scene behind it; that costs one full-frame copy per frame while such a model is loaded.
 
 ---
 
@@ -334,7 +334,7 @@ records. Setting them on `RoomInfo.data` does nothing.
 
 - **LOD (streaming & generation)** — `LodSettingsEditor` / `LodGenerateSettingsEditor`
   write to the **main-asset / `UserModelEntity` entity's `data`**, not the room.
-  Shape (on the entity): `{ presets: { [name]: { range, lodBaseDistance,
+  Shape (the entity's `data.lodSettings`): `{ presets: { [name]: { range, lodBaseDistance,
   lodMultiplier, cullDistance, lodBehindPenalty, enabled,
   lcc2_quality, lcc2_environment } }, defaultDesktopPreset, defaultMobilePreset,
   enableDebugUI, colorizeLod, … }` (VR presets `quest` / `vision-pro`;
@@ -344,6 +344,9 @@ records. Setting them on `RoomInfo.data` does nothing.
 - **Collision generation** — `collisionDensity`, `collisionTriangles`,
   `collisionVoxel`, `collisionRadius`, `collisionMinOpacity`, `collisionMaxScale`
   → entity `data`.
+- **Model collision on/off** (the editor's "Enable Collision") — entity `data`:
+  `noCollision: true` turns it off; a GLB above the editor's vertex limit gets no
+  collider unless `allowHighPolyCollision: true` (the toggle sets both).
 - **Per-entity model settings** — brightness/contrast/tone-map/`videoURL`/
   `animationIndex`/`doubleSided`/`autoPlay`/`loop`/etc. → the entity's own `data`
   (`space/entities/<id>.json`).

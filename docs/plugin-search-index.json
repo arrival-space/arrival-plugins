@@ -16,9 +16,9 @@
       "path": "examples/measure-tool.mjs",
       "kind": "example",
       "title": "Measure Tool",
-      "summary": "Click points on splats, meshes or vibe objects to measure distances, paths, areas and heights with live labels; uses raycastScreen and disableClickToWalk. Requires API 1.20.0.",
+      "summary": "Click points on splats, meshes or vibe objects to measure distances, paths, areas and heights with live labels; drag points to edit them. Places points with raycastSplats (where the color comes from, API 1.30.0) and raycastScreen for meshes; lines are a dynamic mesh hidden by the avatar and faded by splats in front. Requires API 1.20.0.",
       "script_name": "Measure Tool",
-      "keywords": ["raycastScreen", "raycastPhysics", "raycast", "surface picking", "pick point", "splat surface", "measure", "distance", "area", "height", "slope", "disableClickToWalk", "worldToScreen", "click vs drag"]
+      "keywords": ["raycastSplats", "raycastScreen", "raycast", "surface picking", "pick point", "splat surface", "surface normal", "measure", "distance", "area", "height", "slope", "disableClickToWalk", "lockInput", "drag", "dynamic mesh", "lines", "occlusion", "click vs drag"]
     },
     {
       "path": "examples/pin-board.mjs",
@@ -340,10 +340,10 @@
     {
       "path": "examples/snowfall.mjs",
       "kind": "example",
-      "title": "Snowfall Particle Plugin",
-      "summary": "Configurable snowfall effect built with the PlayCanvas particle system, tunable curves, wind, and custom texture support.",
+      "title": "Snowfall",
+      "summary": "Falling snow made of Gaussian splats that sort with the space's splats; the snow volume follows the camera, with wind and sway.",
       "script_name": "snowfall",
-      "keywords": ["snowfall", "snow", "particle", "particles", "particle system", "playcanvas particles", "weather", "wind"]
+      "keywords": ["snowfall", "snow", "falling snow", "gsplat", "splats", "procedural splats", "weather", "wind", "particles"]
     },
     {
       "path": "examples/splat-snow.mjs",

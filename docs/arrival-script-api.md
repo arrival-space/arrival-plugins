@@ -69,6 +69,8 @@ Distilled reference for the ArrivalScript / ArrivalSpace runtime API (PlayCanvas
   - _gotcha:_ Idempotent. Separate from the hover locks of createUI elements: input stays locked while lockInput() is in effect OR any interactive createUI element is hovered/touched, so leaving UI never releases a lockInput() lock.
 - `unlockInput()` — Unlock game input after leaving UI elements; re-enables mouse capture for camera control. Pops this from app.disablePointLock and app.disableSceneTouch.
   - _gotcha:_ Releases only the lockInput() lock; a hovered createUI element keeps input locked until the pointer leaves it or it is removed. removeUI() releases everything.
+- `lockInput({ pointerLock, sceneTouch })` — Lock one half only (both default true): `pointerLock` keeps the platform camera from looking/orbiting with the mouse and its right click from locking the mouse (a view the vibe drives itself); `sceneTouch` keeps clicks and hovers from reaching the scene. Requires VERSION ≥ 1.31.0.
+- `requestPointerLock(handlers?)` — Lock the mouse to this vibe: cursor hidden, moves go to `move(dx, dy, event)`; `release()` when it ends without the vibe asking (Esc, another lock, focus lost, refused). While held the platform camera leaves the mouse alone. Ask from a click or key; one lock page-wide; let go on unload. Requires VERSION ≥ 1.31.0.
 - `lockKeyboard()` — Lock keyboard input (WASD etc.) while an input element has focus. Pushes this onto app.disableKeyboardMovement and zeroes in-progress movement.
   - _gotcha:_ Idempotent (guarded by _isKeyboardLocked). On lock it fires app 'firstperson:forward'/'firstperson:strafe'/'firstperson:boost' with 0 to stop any in-progress movement. Called automatically by createUI for input/textarea/contenteditable focus.
 - `unlockKeyboard()` — Unlock keyboard input after leaving an input element; re-enables keyboard capture for player movement. Pops this from app.disableKeyboardMovement.
@@ -111,7 +113,10 @@ Distilled reference for the ArrivalScript / ArrivalSpace runtime API (PlayCanvas
   - _gotcha:_ Only applied to the local player when userProfileData.loadCustomAvatarAnimation is set; always broadcasts the override to peers. Passing null for animationRef resets the state and restores the original track.
 - `setPlayerAnimSpeed(state: string, speed: number)` — Set an animation-speed multiplier for a specific state (multiplies the system's computed speed). State names: 'Idle', 'Forward' (walk), 'Jumping'.
   - _gotcha:_ Passing null/undefined for speed deletes the override for that state; no-op if there is no roomData.
-- `setPlayerSpeed(multiplier: number)` — Set the character movement speed multiplier (1.0 = default); affects both physics movement and walk animation speed proportionally via roomData.moveSpeed.
+- `setPlayerSpeed(multiplier: number)` — Set the character movement speed multiplier (0.8 = default, the room's moveSpeed when unset); affects both physics movement and walk animation speed proportionally via roomData.moveSpeed.
+- `getDefaultSpawnPoint()` — Where a player lands entering the space without a gate (the default spawn point, else the scene start): `{ position, forward }` for teleportPlayer, or null before the space has loaded. Read at call time, so it follows a moved spawn point. Requires VERSION ≥ 1.29.0.
+- `teleportToSpawn()` — Teleport the local player to getDefaultSpawnPoint(), facing its direction; false before the space has loaded. Requires VERSION ≥ 1.29.0.
+- `hideXrControllers()` — VR: hide the controller models drawn at the hands (rays, buttons and tracking keep working); returns a release function, several vibes can hold it. Requires VERSION ≥ 1.29.0.
   - _gotcha:_ No-op if customTravelCenter.roomData is unavailable.
 - `createModel(url, options = {})` → `Promise<{entity: pc.Entity, asset: pc.Asset}>` — Instance-method wrapper around `ArrivalSpace.loadGLB(url, options)` that wires the loaded model back to THIS vibe: it parents the model to this plugin's entity, so the editor gizmo moves/rotates/scales it and it unloads with the vibe, and clicking it in edit mode selects this plugin's entity for editing. Prefer this over raw `loadGLB` when a plugin spawns its own GLB. Same options as loadGLB (parent, name, scale, position, rotation, castShadows, etc.); `position`/`rotation` are relative to this vibe's entity.
   - _gotcha:_ Raw `loadGLB` with no `parent` drops the model on the scene root — the gizmo then moves the vibe's entity while the visible mesh stays behind. Pass `parent` explicitly to `createModel` (a bone, a sub-container, `pc.app.root`) only when you want that detachment. It also injects an internal `_selectTarget` (this vibe's UserModelEntity) into options; edit-mode selection only wires up when a host UserModelEntity exists.
@@ -124,9 +129,10 @@ Distilled reference for the ArrivalScript / ArrivalSpace runtime API (PlayCanvas
 - `getAvatarConfig()` — Get the current avatar's modular parts config (parts map, tints, gender, type).
   - _gotcha:_ Returns null if the avatar is not a modular/parts-based avatar (e.g. a VRM/uploaded URL avatar).
 - `setAvatarParts(partsToSet: Object, options = {} /* {tints, gender} */)` — Change one or more avatar parts and re-render the avatar; part IDs come from the catalog (e.g. 'headwear-5.glb'), set a part to null to remove it.
-  - _gotcha:_ Temporary (visual only) — does NOT save to the user's profile. If the current avatar has no modular parts (e.g. VRM) it merges onto a default modular base. Empty-string part values are skipped.
+  - _gotcha:_ Temporary (visual only) — does NOT save to the user's profile, and only this visitor sees it. If the current avatar has no modular parts (e.g. VRM) it merges onto a default modular base. Empty-string part values are skipped.
 - `resetAvatar()` — Reset the avatar to the user's saved state; call this in destroy() to undo temporary avatar changes.
-  - _gotcha:_ Busts the loaded-avatar cache (_lastLoadedAvatarUrl = null) and fires 'avatar:ready'.
+  - _gotcha:_ Busts the loaded-avatar cache (_lastLoadedAvatarUrl = null) and fires 'avatar:ready'. After setPlayerAvatar the other players see the saved avatar again too.
+- `setPlayerAvatar(url: string)` — Show the local player as the avatar file at url to everyone in the space (later joiners too) until resetAvatar(), a space switch or a change of the saved avatar; not saved to the profile. A whole avatar: a .glb with the platform's humanoid rig (Mixamo names mapped) plays the stock animations, a URL ending in .vrm loads as VRM; fs.url() URLs have no extension, so they load as .glb. Resolves false if the file did not load (the saved avatar comes back). Requires VERSION ≥ 1.32.0.
 - `attachPlayerToEntity(entity: pc.Entity, options = {} /* offset:{x,y,z}, animations?, disableCollision?, camera?:{heightOffset,distance}, rate=20, extra?:Function, meshEuler?:Function, meshRotationLag? */)` — Attach the local player to an entity for multiplayer riding (vehicles/mounts); handles collision, camera, animations, mount broadcast and a sideband for the entity quaternion + plugin extras.
   - _gotcha:_ Only one local attachment at a time; returns null if already attached (caller must detach first). Player position is synced by the network manager; remotes derive entity position from the player. Call the returned detach() to restore collision/camera/animations.
 - `getLocalPlayerAttachment()` — Get the local player's current attachment state entry (the one flagged _isLocal), if the player is riding an entity.
@@ -153,6 +159,7 @@ Distilled reference for the ArrivalScript / ArrivalSpace runtime API (PlayCanvas
   - _gotcha:_ Non-finite/non-positive inputs fall back to 60 / 10; maxSubSteps is rounded and floored at 1. Global change affecting all physics.
 - `enableContinuousCollisionDetection(entity: pc.Entity, options = {} /* radius?, motionThreshold? */)` — Enable Bullet/Ammo continuous collision detection on an entity's rigidbody to prevent tunnelling of fast movers (sets swept-sphere radius + motion threshold and activates the body).
   - _gotcha:_ Requires a rigidbody with a backing Ammo body; radius/motionThreshold default from the collision shape (half the min half-extent / radius) when not provided.
+- `ArrivalSpace.onEntityDrag(entity, { start, move, end })` — Drag a 3D entity (levers, sliders, dials): press picked like onEntityClick (mesh-accurate, no collider), `move({x, y, dx, dy, startX, startY})` followed anywhere on the page while held, the camera stays still and the click is consumed. CSS px of the canvas. Returns unsubscribe. Requires VERSION ≥ 1.31.0.
 
 ## Materials
 
@@ -210,6 +217,8 @@ Distilled reference for the ArrivalScript / ArrivalSpace runtime API (PlayCanvas
 - `getFreeCamSpeed()` — Get the free camera's current movement speed and maximum (so plugins can detect the user's scroll-wheel adjustments instead of stomping them).
   - _gotcha:_ Returns null if not in free-cam mode.
 - `getCamera()` — Get the camera entity (the 'Camera' node).
+- `raycastSplats(x, y, options?)` — Where the color seen at a screen point (CSS px, as in mouse events) comes from in the gaussian splats: the point where half the pixel's splat color has built up, composited the way the renderer does. Resolves `{ point, distance, spread, opacity, entity }` or null; `{ ignore: [entities] }`. Steadier on splat surfaces than raycastScreen (first Gaussian above an opacity). Requires VERSION ≥ 1.30.0.
+- `worldToScreen(point)` — Where a world point is on the screen as the camera sees it now: `{ x, y, inFront, onScreen }` in CSS px of the canvas (x/y mean nothing unless inFront), or null without a camera. Use it instead of the engine's camera.worldToScreen, which also projects points behind the camera. Requires VERSION ≥ 1.31.0.
 - `setPostEffects(params: PostEffectsParams)` — Override post-effect parameters (hdrEnabled, toneMapping, saturation, contrast, brightness, sharpness, bloom*, gamma), merging with room defaults so only provided keys change.
 - `getPostEffects()` — Return the current effective post-effect parameters (a copy of room defaults / active overrides).
 - `captureView(width = 1024, height = 768)` — Capture the current camera view via the ScreenshotEntity, upload it, and return the image URL.
@@ -221,6 +230,8 @@ Distilled reference for the ArrivalScript / ArrivalSpace runtime API (PlayCanvas
 - `isOwner()` — Check whether the current user is the owner of the current space.
   - _gotcha:_ Owner comparison is loose (==) to tolerate number/string user-ID mismatch.
 - `canEditSpace()` — Check whether the current user can edit the current space (owner, site admin, team/per-space editor, seat holder; server-computed on space load). Plugin-code writes persist only when true. Requires VERSION ≥ 1.16.0.
+- `isEditingSpace()` — Whether the space editor is open (any entity selected, unlike the per-vibe onEditModeChanged); always false for visitors. Requires VERSION ≥ 1.29.0.
+- `onSpaceEditModeChanged(callback)` — callback(isEditing) each time the space editor opens or closes; returns an unsubscribe for destroy(). Requires VERSION ≥ 1.29.0.
 - `getUser()` — Get the current user's profile summary ({userID, userName, uniqueName, avatar, isRegistered}); isRegistered is false for a guest (API 1.18.0).
 - `getStaticGates()` — Get all static gates of the current space via the GateServer.
   - _gotcha:_ Returns [] (with a warning) when the GateServer is not found.
@@ -231,7 +242,7 @@ Distilled reference for the ArrivalScript / ArrivalSpace runtime API (PlayCanvas
 - `getCutsceneScript(entityId: string)` — Get the cutsceneScript instance on a given entity via the GateServer.
   - _events:_ the controller fires `sequence:marker` `{ marker, sequence }` during playback and `sequence:complete` `{ sequence, reverse, skipped }` when a run finishes or is skipped (any trigger; not while looping). Subscribe with `on`, remove with `off` in `destroy()`.
   - _hold/pause:_ `pauseCutscene({ duration?: seconds })` holds the running cutscene on its current frame (auto-resumes after `duration`), `resumeCutscene()` continues; calling pause again while held replaces the hold; both return `false` when there is nothing to pause/resume. Fires `sequence:pause` `{ sequence, frame, duration }` / `sequence:resume` `{ sequence, frame }`. Query with `isCutscenePlaying()` / `isCutscenePaused()`.
-- `loadSpace(urlOrId: string)` — Load a space by full URL or by username/path; bare ids are expanded to https://live.arrival.space/<id>.
+- `loadSpace(urlOrId: string)` — Load a space by full URL or by username/path; bare ids are expanded to https://live.arrival.space/<id>. `?gate=<gate entity id>` arrives at that gate (no intro cutscene); other query params stay in the destination's URL.
 - `loadUserSpace(userId: string)` — Load a user's home space by user ID.
 - `reloadSpace()` — Reload the currently loaded space (custom.travel.center with the current room id).
   - _gotcha:_ Warns and returns undefined if no space is currently loaded.
@@ -257,7 +268,7 @@ Distilled reference for the ArrivalScript / ArrivalSpace runtime API (PlayCanvas
 - `loadUserFile(fileName: string, userId?: string)` — Load a 'plugins/<fileName>' file from the current user's storage (or another user's by id). Returns a fetch Response, or false on failure.
 - `deletePluginFile(fileName: string)` — Delete a 'plugins/<fileName>' file from the current user's storage.
 - `getPluginFileURL(fileName: string, userId?: string)` — Get the public URL for a 'plugins/<fileName>' user file (defaults to the current user). Synchronous; returns string|false.
-- `getVibeLogs()` — Get a copy of the global plugin/vibe log buffer (for remix-agent diagnostics); a slice/copy capped at 200 entries.
+- `getVibeLogs()` — Get a copy of the global plugin/vibe log buffer (for remix-agent diagnostics); a slice/copy capped at 200 entries. A shader that fails to compile is logged here as an error with the GL message (VERSION ≥ 1.29.0).
 - `clearVibeLogs()` — Empty the global plugin/vibe log buffer.
 - `async push(key, value, options = {})  // options: {numval?, mode?='unique'|'min'|'max'|'append', spaceId?}` — ArrivalSpace.pluginStore.push: Push a value to the plugin store. POSTs {spaceId, key, value:String(value), numval, mode} to /pluginstore/push/{userID}/{logonCertificate}.
   - _gotcha:_ Returns false (logs to console.error) if not logged in (needs userProfileData.userServerURL+userID+logonCertificate) or no space loaded (pc.app.loadSceneParameter.room). Scoped per space (spaceId) + per user (userID in URL path) + per key. value is coerced via String(value); numval defaults to null. mode controls write semantics; server-side enforces the mode.
@@ -282,6 +293,8 @@ Distilled reference for the ArrivalScript / ArrivalSpace runtime API (PlayCanvas
   - _gotcha:_ Silently no-ops with a console.warn if not connected. Auto-enriches the payload with senderId (userProfileData.userID), senderName (userProfileData.userName) and senderNetworkId (networkManager.mySocketID) — those keys are reserved/overwritten on every send.
 - `sendTo(targetUserId, type, data = {})` — ArrivalSpace.net.sendTo: Direct-message a single player (resolved by userId) via networkManager.sendDirectMessage.
   - _gotcha:_ No-ops + console.warn if not connected, OR if the target user can't be resolved to a socket (player not found). Resolution is by userId via _findSocketIdByUserId (matches user_id / userID / id). Same senderId/senderName/senderNetworkId auto-enrichment as send().
+- `async sendToSpace(spaceId, type, data = {})` — ArrivalSpace.net.sendToSpace: Send to the players in another space (`spaceId` from its URL, or `'*'` for all reachable spaces) of the same creator as this space; any space when the visitor is an admin. Resolves `{ spaces }` (spaces with players that got it) or `{ error }`. 1.28.0.
+  - _gotcha:_ Receivers use the normal on(type); their sender has fromSpaceId. Nothing is stored for spaces nobody is in. Same sender enrichment as send(); 20 messages per 10 s leave a visitor's space, shared with sendTo().
 - `on(type, callback) — callback receives (data, sender)` — ArrivalSpace.net.on: Subscribe to messages of `type`. Returns an unsubscribe function. The callback gets (data, sender) where sender is derived from the enriched payload.
   - _gotcha:_ The underlying networkManager.onBroadcastMessageCB handler for a type is wired lazily, only the FIRST time on(type) is called AND only if app.networkManager exists at that moment. If you call on() before multiplayer connects, the network-level subscription is never established for that type — subscribe after connect (or in onConnect).
 - `once(type, callback) — callback receives (data, sender)` — ArrivalSpace.net.once: Subscribe to the next single message of `type`, then auto-unsubscribe. Implemented on top of on().

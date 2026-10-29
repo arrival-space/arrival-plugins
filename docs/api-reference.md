@@ -58,21 +58,112 @@ Remove a standing-object change listener registered with this script as scope.
 
 ### Input Helpers
 
-#### `onKeyDown(key, callback)`
+#### `onKeyDown(key, callback, options?)`
 
 Listen for a keyboard key-down event.
 
 `key` can be a key string such as `"e"` or a PlayCanvas key code.
 
+With `{ consume: true }` the key is this vibe's: the platform (walking, its shortcuts) and vibes
+listening without `consume` don't see it — unless the callback returns `false` for that press.
+Typing into a text field is never taken. Requires `ArrivalSpace.VERSION >= 1.31.0`.
+
+```javascript
+// Esc closes this vibe's panel, and only that while it is open
+this.onKeyDown('ESCAPE', () => {
+    if (!this._panelOpen) return false;   // not ours this time: let it through
+    this.closePanel();
+}, { consume: true });
+```
+
 **Returns:** `Function` unsubscribe function
 
-#### `onKeyUp(key, callback)`
+#### `onKeyUp(key, callback, options?)`
 
-Listen for a keyboard key-up event.
+Listen for a keyboard key-up event. `options.consume` as for `onKeyDown`.
 
 `key` can be a key string such as `"e"` or a PlayCanvas key code.
 
 **Returns:** `Function` unsubscribe function
+
+#### `requestPointerLock(handlers?)`
+
+Lock the mouse to this vibe: the cursor hidden, every move handed to `move(dx, dy, event)`, until
+the player presses **Esc** (the browser's own way out) or the vibe lets go. While the vibe holds it,
+the platform's camera leaves the mouse alone — no look, and its right click neither toggles nor
+steals the lock. Ask from a click or a key (browsers grant a lock only on a user gesture). One lock
+at a time page-wide; a new one ends the last. Let go automatically when the vibe is unloaded.
+Requires `ArrivalSpace.VERSION >= 1.31.0`.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `handlers.move` | `(dx, dy, event) => void` | Each mouse move while locked (pixels) |
+| `handlers.release` | `() => void` | The lock ended without the vibe asking: Esc, another lock, focus lost, or refused |
+
+**Returns:** `() => void` — let go of the lock (`release` is not called for that).
+
+```javascript
+// A control stick taken in hand: the mouse flies it, Esc lets go
+ArrivalSpace.onEntityClick(this.stick, () => {
+    this._letGo = this.requestPointerLock({
+        move: (dx, dy) => {
+            this.x = pc.math.clamp(this.x + dx / 600, -1, 1);
+            this.y = pc.math.clamp(this.y + dy / 600, -1, 1);
+        },
+        release: () => { this.x = this.y = 0; },
+    });
+});
+```
+
+#### `setCursor(cursor)`
+
+The mouse cursor over the 3D view while this vibe wants one — `'pointer'`, `'grab'`, `'grabbing'`,
+`'crosshair'`, any CSS cursor; `''` or `null` gives it back. Shows over the platform's own hover
+cursor; among vibes the last one set shows. Given back automatically when the vibe is unloaded.
+Requires `ArrivalSpace.VERSION >= 1.31.0`.
+
+```javascript
+ArrivalSpace.onEntityHover(this.knob, { enter: () => this.setCursor('grab'), leave: () => this.setCursor(null) });
+```
+
+#### `onCameraPlaced(fn)`
+
+Call `fn(camera)` every frame once the camera is where it will be drawn from: after every
+script's `update` and `postUpdate` (the platform's camera included), right before the frame is
+drawn. Place your own camera there (it then wins over the platform's), or read the final pose for
+anything that has to match the picture — labels over objects, screen-space effects, picking by
+projection. Removed automatically when the vibe is unloaded. Requires `ArrivalSpace.VERSION >= 1.31.0`.
+
+**Returns:** `() => void` — unsubscribe.
+
+```javascript
+this.onCameraPlaced((cam) => {
+    cam.setPosition(this._eye.getPosition());
+    cam.setRotation(this._eye.getRotation());
+});
+```
+
+#### `debug`
+
+Debug drawing that shows only with `?debug` on the address (`?debug=myVibe,other`: only those
+script names); otherwise every call does nothing and costs nothing. Draw each frame what should
+show that frame (from `update`) — nothing has to be cleared. Requires `ArrivalSpace.VERSION >= 1.31.0`.
+
+| Call | Draws |
+|------|-------|
+| `this.debug.line(from, to, color?)` | A line between two world points (`pc.Vec3`), over everything |
+| `this.debug.cross(at, size = 0.1, color?)` | Three axis lines `size` metres long through a world point |
+| `this.debug.text(at, text, color?)` | A label at a world point (`pc.Vec3`) or a screen point (`{x, y}`, CSS px) |
+| `this.debug.enabled` | Whether it draws (skip building debug data when `false`) |
+
+Colours are CSS colour strings (`'#f0f'`, `'lime'`) or a `pc.Color`; the default is magenta.
+
+```javascript
+update() {
+    this.debug.cross(this._target.getPosition(), 0.2, 'lime');
+    this.debug.text(this._target.getPosition(), `hp ${this._hp}`);
+}
+```
 
 ### UI Methods
 
@@ -96,9 +187,21 @@ Remove all 2D UI created by this script.
 
 Show/hide this script's 2D UI container.
 
-#### `lockInput()` / `unlockInput()`
+#### `lockInput(options?)` / `unlockInput()`
 
 Temporarily lock/unlock game pointer input while interacting with UI. Interactive `createUI` elements lock input on their own while hovered; that lock is tracked separately, so leaving UI never releases a `lockInput()` lock. A `createUI` element whose CSS sets `pointer-events: none` is click-through and doesn't lock.
+
+Both halves by default; ask for one alone (`ArrivalSpace.VERSION >= 1.31.0`):
+
+| Option | Default | Locks |
+|--------|---------|-------|
+| `pointerLock` | `true` | The platform's camera doesn't look or orbit with the mouse, and its right click doesn't lock the mouse — for a view the vibe drives itself (a cockpit, a puzzle) |
+| `sceneTouch` | `true` | Clicks and hovers don't reach the scene (NPCs, click-to-walk, `onEntityClick`) |
+
+```javascript
+// Seated in a cockpit: the camera is ours, the cockpit's switches still clickable
+this.lockInput({ pointerLock: true, sceneTouch: false });
+```
 
 #### `lockKeyboard()` / `unlockKeyboard()`
 
@@ -290,7 +393,7 @@ Only **declared plugin properties** are valid names. The live `this[name]` is up
 
 Persists only when the current user can edit the space ([`ArrivalSpace.canEditSpace()`](#arrivalspacecaneditspace)). For everyone else only the live value changes, nothing is sent to the server, the promise resolves `false` and a console error names the attempted write. The space agent's inspector browser never persists either. Values equal to the stored ones are not re-uploaded (resolves `true`), unless an earlier `{ persist: false }` change is still unsaved.
 
-Size limit: each save uploads the entity's whole data (all params, JSON-encoded) and is capped at 100 KB; larger saves fail with HTTP 413. A param holding a JSON string counts with its escaping (every `"` becomes `\"`), so ~90 KB of JSON text already exceeds it. Space files ([`ArrivalSpace.fs`](#space-files-arrivalspacefs)) take up to 5 MB per file.
+Size limit: each save uploads the entity's whole data (all params, JSON-encoded) and is capped at 400 KB; larger saves fail with HTTP 413. A param holding a JSON string counts with its escaping (every `"` becomes `\"`), so ~350 KB of JSON text already exceeds it. Space files ([`ArrivalSpace.fs`](#space-files-arrivalspacefs)) take up to 5 MB per file.
 
 ```javascript
 // One value:
@@ -618,6 +721,10 @@ export class ColorCubes extends ArrivalScript {
 }
 ```
 
+In VR the controller ray clicks and hovers the same entities: while the ray is on an entity with
+a click handler, the trigger (or a hand pinch) clicks it and does not teleport the player.
+Requires `ArrivalSpace.VERSION >= 1.29.0`.
+
 #### `ArrivalSpace.onEntityHover(entity, handlers)`
 
 `enter` fires when the pointer moves onto `entity` or a descendant, `leave` when it moves
@@ -635,6 +742,50 @@ highlight cannot get stuck on.
 **Already interactive without this:** NPCs take `onClick` / `onHoverEnter` / `onHoverLeave`
 in `createNPC`, and `createTexturePanel` takes an `onClick(href)` for anchors in its HTML.
 Use these two calls for everything else — your own meshes, loaded GLBs, procedural geometry.
+
+#### `ArrivalSpace.onEntityDrag(entity, handlers)`
+
+Drag a 3D entity: a press on it, the pointer's moves while it is held, and its release. The press
+is picked like `onEntityClick` (mesh-accurate, no collider). For the length of the drag the
+platform's camera stays still — no orbit or look — and the moves are followed anywhere on the page,
+also past the canvas's edge. The left button and one finger drag. A press that never moves is still
+a drag (`start`, `end`), and its click is consumed, so the player does not walk to the knob.
+Use it for anything taken in hand and moved: levers, sliders, dials, a crank.
+Requires `ArrivalSpace.VERSION >= 1.31.0`.
+
+| Param | Type | Description |
+|-------|------|-------------|
+| `entity` | `pc.Entity` | Entity to listen on (descendants included) |
+| `handlers.start` | `({x, y}) => void` | Pressed |
+| `handlers.move` | `({x, y, dx, dy, startX, startY}) => void` | Moved while held; `dx`/`dy` since the last move |
+| `handlers.end` | `({x, y}) => void` | Released (or the subscription ended mid-drag) |
+
+Positions are CSS pixels of the canvas, as in mouse events.
+
+**Returns:** `() => void` — unsubscribe (ends a drag under way). Called automatically if the entity is destroyed.
+
+```javascript
+// A lever along the screen's vertical: up is more
+this._off = ArrivalSpace.onEntityDrag(this._lever, {
+    start: () => this.setCursor('grabbing'),
+    move: ({ dy }) => { this._value = pc.math.clamp(this._value - dy / 200, 0, 1); },
+    end: () => this.setCursor(null),
+});
+```
+
+To make the knob light up first, pair it with `onEntityHover` and `this.setOutline(knob, on)`.
+
+#### `ArrivalSpace.worldToScreen(point)`
+
+Where a world point is on the screen, in CSS pixels of the canvas, as the camera sees it now.
+Returns `{ x, y, inFront, onScreen }` (`inFront`: ahead of the camera — `x`/`y` mean nothing
+otherwise; `onScreen`: also inside the canvas), or `null` without a camera.
+Requires `ArrivalSpace.VERSION >= 1.31.0`.
+
+Prefer it over the engine's `camera.worldToScreen(p, out)`: that one also projects points
+**behind** the camera (mirrored onto the screen), and given the same vector as the point and the
+answer it writes the answer before it has finished reading the point — silently wrong.
+Call it from `onCameraPlaced` for positions that must match the frame being drawn.
 
 #### `this.setOutline(entity?, on?)` / `ArrivalSpace.setOutline(entity, on?)`
 
@@ -679,7 +830,7 @@ avatar and capsule) unless `includePlayer: true`.
 | Hits | what is **drawn** at a screen point: splats, every mesh, vibe objects - no collider needed | what is **drawn** along any 3D ray | **colliders** only: ground boxes, a space's collision mesh, rigidbodies |
 | On a splat | the splat surface the player sees | the splat surface seen from the ray's origin | the collision mesh, or the flat ground box when the space has none |
 | A mesh without a collider | hit | hit | passed through - the ray returns the floor behind it |
-| Cost | one render into a depth buffer, async (about a frame); calls in the same frame share it | a narrow camera renders from the origin, async (about 30-80 ms); rays run one at a time | synchronous, well under a millisecond |
+| Cost | one render into a depth buffer, async (about a frame); calls in the same frame with the same options share it - 81 pixels cost 20-80 ms | a narrow camera renders from the origin, async (about 30-80 ms); rays run one at a time | synchronous, well under a millisecond |
 | Returns `normal` | no - a splat's depth is too grainy per pixel for a surface direction | no | yes, from the collider |
 
 Measured in a splat space whose only collider is a ground box: through the same screen points,
@@ -692,8 +843,11 @@ every single one fainter than `minSplatOpacity`. Seen from the angles it was cap
 surface stacks many Gaussians per pixel and is hit at the engine default 0.3. From other angles
 (straight down onto a walk-through filmed at eye level) it is often a blend of faint ones: at
 0.3, rays from 0.5 m above the ground missed or landed 0.6 m low at 4 of 9 spots; at 0.1, 8 of
-9 were within -0.03..+0.15 m. Lower values also make faint floaters in the air count. A value
-other than the scene's waits for one more render and applies to splat shadows during it.
+9 were within -0.03..+0.15 m. Dense captures (MCMC training) can be see-through at 0.3 even
+from the capture angles: in a forest walk-through, 9 x 9 pixel windows at 0.3 jumped between
+the bank 3.5 m away and the wall 16.8 m behind it from pixel to pixel; at 0.1 each window was
+one coherent surface. Lower values also make faint floaters in the air count. A value other
+than the scene's waits for one more render and applies to splat shadows during it.
 
 #### `ArrivalSpace.raycastScreen(x, y, options?)`
 
@@ -717,6 +871,41 @@ if (hit) this.marker.setPosition(hit.point);
 ```
 
 Example: [`examples/measure-tool.mjs`](../examples/measure-tool.mjs) - distances, paths, areas and heights.
+
+#### `ArrivalSpace.raycastSplats(x, y, options?)`
+
+Where the color the player sees at a screen position comes from in the gaussian splats (API
+1.30.0). `x`/`y` are CSS pixels relative to the canvas, as in mouse and touch events.
+
+A splat surface is a layer of faint Gaussians - on dense captures most are fainter than 0.2 - and
+along a grazing ray its color builds up over tens of centimeters to meters. `raycastScreen` takes
+the first Gaussian above an opacity, the front of that layer. `raycastSplats` composites the pixel
+the way the renderer does (each Gaussian projected and sorted the same way) and returns the point
+where half of the pixel's splat color has built up. Its weighted depth matches the renderer's own
+within 2% (median). In a forest walk-through, points re-measured from a camera 1.5 m to the side
+moved 35 cm (median) with `raycastSplats` and 212 cm with `raycastScreen` at `minSplatOpacity: 0.1`.
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `ignore` | `pc.Entity[]` | `[]` | Splat entities (with children) to see through |
+
+**Returns:** `Promise<{ point: pc.Vec3, distance: number, spread: number, opacity: number, entity: pc.Entity } | null>`
+- `point` where half the color has built up, `distance` from the camera.
+- `spread`: the length of ray over which the middle half of the color builds up - centimeters on
+  a crisp surface, meters on foliage or a grazing view.
+- `opacity` (0..1): how much of the pixel the splats cover; below 1 the rest shows through.
+- `null` where no splat covers the pixel.
+
+Splats only - meshes, avatars and vibe objects are not part of it (`raycastScreen` sees them).
+SOG splats, LOD and single-file; a splat in another format is not seen. The first call that
+reaches a splat, or a LOD level loaded since, reads its data back from the GPU (about 0.2-0.3 s
+per million splats); later calls take about 10 ms. Calls made together (in the same tick, with
+the same options) share one pass: five neighbouring pixels cost about as much as one.
+
+```javascript
+const hit = await ArrivalSpace.raycastSplats(event.x, event.y);
+if (hit) this.marker.setPosition(hit.point);
+```
 
 #### `ArrivalSpace.raycastVisual(origin, direction, maxDistance?, options?)`
 
@@ -757,7 +946,8 @@ if (hit) ball.setPosition(hit.point.x, hit.point.y + radius, hit.point.z);
 #### `ArrivalSpace.disableClickToWalk()`
 
 Clicks and taps on the ground stop walking the player there; the camera still orbits and the
-movement keys still work. Several vibes can hold it at once.
+movement keys still work. In VR it also stops the controller trigger / hand pinch from
+teleporting the player to the floor the ray points at. Several vibes can hold it at once.
 
 **Returns:** `() => void` - gives click-to-walk back (safe to call twice). Call it in `destroy()`.
 
@@ -777,6 +967,14 @@ this._releaseTurn = ArrivalSpace.disableXrTurn();
 // on dismount / in destroy():
 this._releaseTurn?.();
 ```
+
+#### `ArrivalSpace.hideXrControllers()`
+
+In VR, hides the controller models the platform draws at the player's hands, e.g. while the vibe
+shows its own hands or tools, or a seated pose puts them in view. The rays, buttons and tracking
+keep working. Several vibes can hold it at once. Requires `ArrivalSpace.VERSION >= 1.29.0`.
+
+**Returns:** `() => void` - shows the controllers again (safe to call twice). Call it in `destroy()`.
 
 ---
 
@@ -834,6 +1032,26 @@ Check whether the current user owns the current space.
 Check whether the current user can edit the current space — the owner, a site admin, a team or per-space editor, or a seat holder. Decided by the server when the space loads. Plugin-code writes (`setParam`/`setParams`/`save`, `createPlugin`/`reloadPlugin`/`removePlugin`) persist only when this is `true`. Requires `ArrivalSpace.VERSION` ≥ `1.16.0`.
 
 **Returns:** `boolean`
+
+#### `ArrivalSpace.isEditingSpace()`
+
+Whether the space editor is open — someone who can edit the space is arranging it, whichever
+entity is selected (`onEditModeChanged` covers only this vibe being selected). Always `false` for
+visitors. Requires `ArrivalSpace.VERSION >= 1.29.0`.
+
+**Returns:** `boolean`
+
+#### `ArrivalSpace.onSpaceEditModeChanged(callback)`
+
+Calls `callback(isEditing)` each time the space editor opens or closes. Requires
+`ArrivalSpace.VERSION >= 1.29.0`.
+
+**Returns:** `() => void` — unsubscribe. Call it in `destroy()`.
+
+```javascript
+this._offEdit = ArrivalSpace.onSpaceEditModeChanged((editing) => { this.marker.enabled = !editing; });
+// in destroy(): this._offEdit();
+```
 
 #### `ArrivalSpace.getEntities(logTable?)`
 
@@ -912,6 +1130,22 @@ Same path as the platform's own spawn/teleport — no physics sweep between the 
 Pass one of `azimuth` or `forward`; both set the first/third-person look direction. Without
 either, the player keeps their current heading, which is why a plugin that teleports someone
 to face a painting or down a corridor has to say so explicitly.
+
+#### `ArrivalSpace.getDefaultSpawnPoint()`
+
+Where a player lands entering the space without a gate: the spawn point marked as default,
+else the scene's start position. Read at call time, so it follows the owner moving the spawn
+point. Requires `ArrivalSpace.VERSION >= 1.29.0`.
+
+**Returns:** `{ position: {x,y,z}, forward: {x,y,z} } | null` — `forward` is the horizontal
+direction the player faces there; both fit `teleportPlayer`. `null` before the space has loaded.
+
+#### `ArrivalSpace.teleportToSpawn()`
+
+Teleports the local player to `getDefaultSpawnPoint()`, facing its direction. Requires
+`ArrivalSpace.VERSION >= 1.29.0`.
+
+**Returns:** `boolean` — `false` before the space has loaded or without a local player.
 
 ```javascript
 // Face down −Z at the destination
@@ -1176,7 +1410,7 @@ Set the character movement speed multiplier. Affects both physics movement and w
 
 | Param | Type | Description |
 |-------|------|-------------|
-| `multiplier` | `number` | Speed multiplier (`1.0` = default, `0.5` = half speed) |
+| `multiplier` | `number` | Speed multiplier (`0.8` = default, the room's `moveSpeed` when unset) |
 
 ```javascript
 // Slow everything down (movement + animation) — e.g. mud, slugs
@@ -1313,7 +1547,7 @@ const config = await ArrivalSpace.getAvatarConfig();
 
 #### `ArrivalSpace.setAvatarParts(partsToSet, options?)`
 
-Change one or more avatar parts and re-render. Changes are **temporary** (visual only, not saved to the user's profile). Set a part to `null` to remove it.
+Change one or more avatar parts and re-render. Changes are **temporary** (visual only, not saved to the user's profile) and **local**: other players keep seeing the saved avatar. Set a part to `null` to remove it.
 
 | Param | Type | Description |
 |-------|------|-------------|
@@ -1334,9 +1568,28 @@ await ArrivalSpace.setAvatarParts({ top: 'top-12.glb', bottom: 'bottom-3.glb' })
 await ArrivalSpace.setAvatarParts({ headwear: null });
 ```
 
+#### `ArrivalSpace.setPlayerAvatar(url)`
+
+Show the local player as the avatar file at `url` — to **everyone in the space**, players who join later included — until `resetAvatar()`, a space switch, or a change of the saved avatar. Not saved to the visitor's profile. Requires `ArrivalSpace.VERSION >= 1.32.0`.
+
+The file is a whole avatar, not a part added to the current one:
+
+- a `.glb` with the platform's humanoid rig (modular-avatar bone names; Mixamo `mixamorig:` names are mapped) plays the stock animations; other bone names load but don't animate;
+- a URL ending in `.vrm` loads as a VRM.
+
+`ArrivalSpace.fs.url()` URLs carry no extension, so they always load as `.glb`; a VRM needs its extension (e.g. `getPluginFileURL("knight.vrm")`). If the file doesn't load, the saved avatar comes back.
+
+**Returns:** `Promise<boolean>` — `false` if the file did not load.
+
+```javascript
+// A clickable disguise: wear the rigged GLB this vibe ships in space/assets/
+ArrivalSpace.onEntityClick(this.entity, () =>
+    ArrivalSpace.setPlayerAvatar(ArrivalSpace.fs.url("assets/knight.glb")));
+```
+
 #### `ArrivalSpace.resetAvatar()`
 
-Reset the avatar to the user's saved state. Use this in `destroy()` to cleanly undo all temporary avatar changes (restores hair, original outfit, etc.).
+Reset the avatar to the user's saved state. Use this in `destroy()` to cleanly undo all temporary avatar changes (restores hair, original outfit, etc.). After `setPlayerAvatar` the other players see the saved avatar again too.
 
 **Returns:** `Promise<boolean>`
 
@@ -1905,17 +2158,19 @@ itself, and a positional voice would hear itself through the speakers and interr
 | `voice` | `string` | `'marin'` | `alloy`, `ash`, `ballad`, `coral`, `echo`, `sage`, `shimmer`, `verse`, `marin`, `cedar` |
 | `quality` | `'standard' | 'high'` | `'standard'` | `'high'`: the larger voice model (`gpt-realtime-2.1`), more natural and quicker-witted, about three times the cost |
 | `greeting` | `string` | - | Said word for word first, before the visitor speaks |
-| `tools` | `Array<{ name, description, parameters?, run(args) }>` | - | Actions it can take while talking. It calls one when the conversation calls for it - the `description` says when; arguments follow `parameters` (JSON Schema). What `run` returns (or resolves to) goes back to it as the result, so it can talk about what happened |
+| `tools` | `Array<{ name, description, parameters?, run(args) }>` | - | Actions it can take while talking. It calls one when the conversation calls for it - the `description` says when; arguments follow `parameters` (JSON Schema). What `run` returns (or resolves to) goes back to it as the result, so it can talk about what happened - unless it is an object with `silent: true`: then the result goes back and no answer is asked for (1.33.0) |
+| `pushToTalk` | `boolean` | `false` | Push to talk (1.33.0): the microphone open only between `talk(true)` and `talk(false)`, and the visitor's turn ends at `talk(false)` - not at a pause - so it never answers into the middle of what they say. A radio's key, a walkie-talkie's button |
 | `entity` | `pc.Entity` | - | The conversation ends when this entity is destroyed; an avatar (an NPC's entity) moves its mouth with the voice |
 | `volume` | `number` | `1` | |
 | `onUserText` | `(text) => void` | - | What the visitor said (transcribed) or typed with `sendText` |
 | `onReply` | `(text) => void` | - | What it answered |
 | `onStateChange` | `(state) => void` | - | `'connecting'`, `'listening'`, `'speaking'`, `'ended'` |
 
-**Returns:** `{ done, stop(), say(text), sendText(text), setMicMuted(muted), hasMicrophone, state, level, error }`
+**Returns:** `{ done, stop(), say(text), sendText(text), setMicMuted(muted), talk(down), hasMicrophone, state, level, error }`
 - `done`: `Promise<void>`, resolves when the conversation ends. Never rejects.
 - `say(text)`: the plugin's own words in the conversation, e.g. what the visitor clicked or an event ("[they walked out]").
 - `sendText(text)`: the visitor typing instead of speaking; counts as their words (`onUserText`, the transcript). 1.26.0.
+- `talk(down)`: push to talk, the key or button pressed (`true`) and let go (`false`); with `pushToTalk` the turn ends when it is let go (a moment later: the last syllable is still on its way), without it the microphone is just opened and shut. 1.33.0.
 - `hasMicrophone`: `false` when there is no microphone or access was refused - it connects all the same and answers typed text aloud; `null` until known. 1.26.0.
 - `level`: its voice's loudness `0..1` while speaking, e.g. for a mouth.
 - `error`: why it ended early (`null` otherwise), in words for the visitor: sign up to talk, the space's plan or its voice minutes, the visitor's conversations today, connection lost. Before 1.26.0 also: no microphone.
@@ -1942,6 +2197,13 @@ ArrivalSpace.ai.voiceChat({
         run: ({ size }) => { this.pourLemonade(size); return `A ${size} lemonade is on the counter.`; },
     }],
 });
+```
+
+```javascript
+// push to talk: a radio, Tab held while speaking (1.33.0)
+const radio = ArrivalSpace.ai.voiceChat({ instructions: "You are the tower controller.", pushToTalk: true });
+this.onKeyDown("Tab", () => radio.talk(true), { consume: true });
+this.onKeyUp("Tab", () => radio.talk(false));
 ```
 
 Example: [`examples/voice-npc.mjs`](../examples/voice-npc.mjs) - click an NPC and talk to it.
