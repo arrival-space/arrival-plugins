@@ -2328,6 +2328,17 @@ declare namespace ArrivalSpace {
     /** Teleport the local player to getDefaultSpawnPoint(), facing its direction. VERSION ≥ 1.29.0 */
     function teleportToSpawn(): boolean;
 
+    /**
+     * Raise or lower the floor the player walks on where the space has none of its own (a splat or a map
+     * world: the invisible ground at height 0). A world Y, or `(x, z) => y` asked under the player every
+     * frame so the floor follows the plugin's terrain; null: back to 0. A space with its own floor
+     * collision is not changed. Last call wins. Returns release (the floor back at 0 unless replaced
+     * since): call it in destroy(). VERSION ≥ 1.34.0
+     * @example
+     * this._releaseGround = ArrivalSpace.setGroundHeight((x, z) => this.terrainHeight(x, z));
+     */
+    function setGroundHeight(height: number | ((x: number, z: number) => number) | null): () => void;
+
     function teleportPlayer(
         position: ArrivalVec3Like,
         options?: {

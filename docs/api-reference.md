@@ -1131,6 +1131,28 @@ Pass one of `azimuth` or `forward`; both set the first/third-person look directi
 either, the player keeps their current heading, which is why a plugin that teleports someone
 to face a painting or down a corridor has to say so explicitly.
 
+#### `ArrivalSpace.setGroundHeight(height)`
+
+Raises or lowers the floor the player walks on where the space has no floor of its own — a splat
+or map world, where the player stands on an invisible ground at height 0. `height` is a world Y in
+metres, or a function `(x, z) => y` that is asked under the player every frame, so the floor follows
+terrain your plugin knows (a heightmap, the ground of a 3D map) as the player walks. `null` puts it
+back at 0. A space with its own floor collision is not changed. One at a time: the last call wins.
+A function that throws or returns a non-number counts as 0 there. Requires
+`ArrivalSpace.VERSION >= 1.34.0`.
+
+**Returns:** `() => void` — release: the floor back at 0, unless another call has replaced this
+one since. Call it in `destroy()`.
+
+```javascript
+initialize() {
+    this._releaseGround = ArrivalSpace.setGroundHeight?.((x, z) => this.terrainHeight(x, z));
+}
+destroy() {
+    this._releaseGround?.();
+}
+```
+
 #### `ArrivalSpace.getDefaultSpawnPoint()`
 
 Where a player lands entering the space without a gate: the spawn point marked as default,
