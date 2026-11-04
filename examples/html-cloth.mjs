@@ -219,7 +219,7 @@ export class HtmlCloth extends ArrivalScript {
             this._scheduleTextureUpload();
             this._setupInteraction();
         } else {
-            console.warn("[HtmlCloth] texElementImage2D is not supported in this browser; showing error texture.");
+            console.warn("[HtmlCloth] HTML-in-Canvas is not supported in this browser; showing error texture.");
             this._createErrorTexture();
             this._material.diffuseMap = this._texture;
             this._material.update();
@@ -707,12 +707,16 @@ export class HtmlCloth extends ArrivalScript {
     _createSourceElement() {
         const canvas = this.app.graphicsDevice.canvas;
 
+        // Chrome 157+ lays out drawable children of a content="drawable" canvas; up to 156
+        // the canvas attribute was layoutsubtree.
         if (canvas && !canvas.hasAttribute("layoutsubtree")) {
             canvas.setAttribute("layoutsubtree", "true");
+            canvas.setAttribute("content", "drawable");
             this._hadLayoutSubtree = true;
         }
 
         this._sourceEl = document.createElement("div");
+        this._sourceEl.setAttribute("drawable", "");
         this._sourceEl.style.cssText = [
             `width:${this.textureWidth}px`,
             `height:${this.textureHeight}px`,
@@ -1562,6 +1566,7 @@ input[type="range"].hover::-webkit-slider-thumb { transform: scale(1.25); }
             const canvas = this.app.graphicsDevice.canvas;
             if (canvas) {
                 canvas.removeAttribute("layoutsubtree");
+                canvas.removeAttribute("content");
             }
             this._hadLayoutSubtree = false;
         }
