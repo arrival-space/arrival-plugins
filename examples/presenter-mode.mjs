@@ -6,7 +6,8 @@
  * Everyone else follows it smoothly in their own free camera, under a banner naming the presenter,
  * and their avatars are kept near yours so voice chat stays in earshot. A viewer can "Stop
  * following" (or just fly or change the camera mode) and "Follow" again at any time.
- * The presenter can "Gather" everyone next to their avatar and "Stop" the presentation.
+ * The presenter can "Gather" everyone next to their avatar and "Stop" the presentation. A presenter who can edit
+ * the space also gets a small viewer list (collapsed) that shows who has a mic on, with Mute all and Mute / Remove per viewer.
  *
  * One presentation at a time. Late joiners pick up the running presentation within a second;
  * if the presenter leaves the space or stops sending, viewers get their own camera back.
@@ -17,8 +18,10 @@
  * - ArrivalSpace.setFreeCamPose driven every frame, with exponential smoothing between updates
  * - ArrivalSpace.teleportPlayer: keeping avatars together and gathering them
  * - handing the camera back: restoring the camera mode and field of view the viewer had
+ * - ArrivalSpace.net.mutePlayer / kickPlayer and getPlayers()' micOn: host controls, checked by the server
+ * - a bar dragged anywhere by its background
  *
- * Requires ArrivalSpace.VERSION >= 1.19.0.
+ * Requires ArrivalSpace.VERSION >= 1.36.0.
  */
 const POSE = "PresenterMode:pose";
 const STOP = "PresenterMode:stop";
@@ -50,6 +53,9 @@ export class PresenterMode extends ArrivalScript {
     _camFwd = new pc.Vec3();
     _camTaken = false; // the free cam is ours (set after the first pose we drove)
     _lastHop = 0;
+    _viewersOpen = false;
+    _listT = 0;
+    _html = "";
 
     initialize() {
         // Centered, level with the creator badge (top left, 40 px tall). Where the screen is too narrow
@@ -67,13 +73,14 @@ export class PresenterMode extends ArrivalScript {
                 background: "rgba(15, 18, 24, 0.85)", backdropFilter: "blur(8px)",
                 border: "1px solid rgba(255,255,255,0.14)", borderRadius: "20px",
                 color: "#fff", font: `600 ${this._narrow ? 12 : 14}px 'Segoe UI', sans-serif`, zIndex: "1000",
-                userSelect: "none",
+                userSelect: "none", cursor: "grab", touchAction: "none",
             },
         });
         this._bar.addEventListener("click", (e) => {
-            const act = e.target.closest("button")?.dataset.act;
-            if (act) this[act]();
+            const button = e.target.closest("button");
+            if (button?.dataset.act) this[button.dataset.act](button.dataset.user);
         });
+        this._makeDraggable();
 
         this._offs = [
             ArrivalSpace.net.on(POSE, (d) => this._onPose(d)),
@@ -90,6 +97,11 @@ export class PresenterMode extends ArrivalScript {
 
     update(dt) {
         if (this._presenting) this._broadcast(dt);
+        // the viewer list's mic dots: mics switch on and off without an event
+        if (this._viewersOpen && (this._listT += dt) > 1) {
+            this._listT = 0;
+            this._render();
+        }
         if (this._remote && performance.now() - this._remote.lastAt > TIMEOUT_MS) this._release();
         if (this._following) this._follow(dt);
     }
@@ -117,12 +129,42 @@ export class PresenterMode extends ArrivalScript {
 
     stopPresenting() {
         this._presenting = false;
+        this._viewersOpen = false;
         ArrivalSpace.net.send(STOP, {});
         this._render();
     }
 
     gather() {
         ArrivalSpace.net.send(GATHER, { a: this._vec(ArrivalSpace.getPlayer().getPosition()) });
+    }
+
+    // Host controls: the server only carries them out for someone who can edit the space.
+
+    toggleViewers() {
+        this._viewersOpen = !this._viewersOpen;
+        this._render();
+    }
+
+    async muteAll() {
+        this._report(await ArrivalSpace.net.mutePlayer("*"));
+    }
+
+    async mute(userID) {
+        this._report(await ArrivalSpace.net.mutePlayer(this._viewer(userID)?.userID));
+    }
+
+    async kick(userID) {
+        this._report(await ArrivalSpace.net.kickPlayer(this._viewer(userID)?.userID));
+    }
+
+    /** The viewer whose id a button carries (as a string). */
+    _viewer(userID) {
+        return ArrivalSpace.net.getPlayers().find((p) => String(p.userID) === userID);
+    }
+
+    _report(result) {
+        if (result.error) this.warn(result.error);
+        this._render();
     }
 
     /** Poses at up to 10 Hz while the view changes, and a heartbeat every second while it doesn't. */
@@ -249,18 +291,67 @@ export class PresenterMode extends ArrivalScript {
 
     // ── UI ─────────────────────────────────────────────────────
 
+    /** Drag the bar anywhere by its background (buttons still click), for this visit. */
+    _makeDraggable() {
+        this._bar.addEventListener("pointerdown", (e) => {
+            if (e.target.closest("button")) return;
+            e.preventDefault();
+            const r = this._bar.getBoundingClientRect();
+            const dx = e.clientX - r.left, dy = e.clientY - r.top;
+            this._bar.setPointerCapture(e.pointerId);
+            this._bar.style.cursor = "grabbing";
+            const move = (ev) => this._place(ev.clientX - dx, ev.clientY - dy);
+            const up = () => {
+                this._bar.removeEventListener("pointermove", move);
+                this._bar.style.cursor = "grab";
+            };
+            this._bar.addEventListener("pointermove", move);
+            this._bar.addEventListener("pointerup", up, { once: true });
+        });
+    }
+
+    /** Top-left corner at (x, y), kept inside the window. */
+    _place(x, y) {
+        this._dragged = true;
+        // its own width, not what is left right of x: near an edge it moves instead of wrapping
+        this._bar.style.width = "max-content";
+        const r = this._bar.getBoundingClientRect();
+        Object.assign(this._bar.style, {
+            left: `${Math.max(0, Math.min(x, window.innerWidth - r.width))}px`,
+            top: `${Math.max(0, Math.min(y, window.innerHeight - r.height))}px`,
+            right: "auto", margin: "0",
+        });
+    }
+
     _render() {
-        const canPresent = this.whoCanPresent === "Anyone" || ArrivalSpace.canEditSpace();
+        const canEdit = ArrivalSpace.canEditSpace();
+        const canPresent = this.whoCanPresent === "Anyone" || canEdit;
         const btn = (act, label, primary) => `<button data-act="${act}" style="
             padding: 6px ${this._narrow ? 10 : 14}px; border-radius: 999px; border: none; cursor: pointer; font: inherit; white-space: nowrap;
             color: #fff; background: ${primary ? "#e5484d" : "rgba(255,255,255,0.14)"};">${label}</button>`;
+        // the host controls: small, out of the way
+        const mini = (act, label, title, user = "") => `<button data-act="${act}" data-user="${user}" title="${title}" style="
+            padding: 2px 7px; border-radius: 6px; border: none; cursor: pointer; font: 500 11px 'Segoe UI', sans-serif; white-space: nowrap;
+            color: rgba(255,255,255,0.85); background: rgba(255,255,255,0.1);">${label}</button>`;
         const dot = `<span style="flex:none;width:9px;height:9px;border-radius:50%;background:#e5484d;box-shadow:0 0 8px #e5484d"></span>`;
-        const name = (this._remote?.name || "").replace(/[<>&"]/g, "");
+        const esc = (s) => String(s || "").replace(/[<>&"]/g, "");
+        const name = esc(this._remote?.name);
         let html = "";
         if (this._presenting) {
-            const n = ArrivalSpace.net.getPlayers().length;
+            const viewers = ArrivalSpace.net.getPlayers();
+            const n = viewers.length;
             html = `${dot}<span>Presenting to ${n} ${n === 1 ? "viewer" : "viewers"}</span>`
+                + (canEdit ? mini("toggleViewers", this._viewersOpen ? "▴" : "▾", "Viewers: mute or remove") : "")
                 + btn("gather", "Gather") + btn("stopPresenting", "Stop", true);
+            if (canEdit && this._viewersOpen) {
+                const rows = viewers.map((p) => `<div style="display:flex;align-items:center;gap:5px">
+                    <span title="${p.micOn ? "Mic on" : "Mic off"}" style="flex:none;width:6px;height:6px;border-radius:50%;background:${p.micOn ? "#30a46c" : "rgba(255,255,255,0.25)"}"></span>
+                    <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.userName)}</span>
+                    ${p.micOn ? mini("mute", "Mute", "Switch their mic off", esc(p.userID)) : ""}${mini("kick", "Remove", "Remove from this space", esc(p.userID))}</div>`).join("");
+                html += `<div style="flex-basis:100%;display:flex;flex-direction:column;gap:3px;max-height:30vh;overflow:auto;
+                    padding:2px 10px 5px 0;font:400 12px 'Segoe UI', sans-serif">
+                    ${n ? `<div style="display:flex;justify-content:flex-end">${mini("muteAll", "Mute all", "Switch every viewer's mic off")}</div>` + rows : "No viewers yet"}</div>`;
+            }
         } else if (this._remote) {
             html = this._following
                 ? `${dot}<span>${name} is presenting</span>` + btn("stopFollowing", "Stop following")
@@ -268,7 +359,15 @@ export class PresenterMode extends ArrivalScript {
         } else if (canPresent) {
             html = `<span>Presenter mode</span>` + btn("startPresenting", "Present", true);
         }
+        // unchanged: keep the buttons, a click may be under way
+        if (html === this._html) return;
+        this._html = html;
         this._bar.innerHTML = html;
         this._bar.style.display = html ? "flex" : "none";
+        // moved by the user and grown since (the list opened): still inside the window
+        if (this._dragged && html) {
+            const r = this._bar.getBoundingClientRect();
+            this._place(r.left, r.top);
+        }
     }
 }

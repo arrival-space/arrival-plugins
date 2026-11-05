@@ -204,6 +204,25 @@ ArrivalSpace.net.on('Door:open', (data, sender) => {
 - At most 20 messages per 10 s leave a visitor's space (shared with `sendTo`).
 - Resolves `{ spaces }` — how many spaces with players got it, 0 when nobody is there — or `{ error }`, e.g. for a space of another creator (whether or not anyone is in it).
 
+### Muting and Removing Players
+
+Someone who can edit the space (`ArrivalSpace.canEditSpace()`) can switch a visitor's microphone off or remove them from the space — a host's controls in a presentation or event. Requires `ArrivalSpace.VERSION` ≥ `1.36.0`.
+
+```javascript
+const { ok, players, error } = await ArrivalSpace.net.mutePlayer(player.userID);
+await ArrivalSpace.net.mutePlayer('*');          // everyone here who can't edit the space
+await ArrivalSpace.net.kickPlayer(player.userID);
+
+for (const p of ArrivalSpace.net.getPlayers()) console.log(p.userName, p.micOn);
+```
+
+- The multiplayer server checks with the API that the caller can edit the space: it doesn't trust the client, so a visitor calling it from the browser console gets `{ error }`.
+- Mute switches their mic off and tells them "The host muted your microphone"; they may switch it on again.
+- Kick tells them "The host removed you from this space" and sends them to their own space; nothing is stored, they may come back by link. A visitor watching through Explore keeps the space without multiplayer.
+- Players who can edit the space are never a target; `'*'` (mute only) skips them. Every tab of a player is affected.
+- Resolves `{ ok, players }` (how many connections it reached) or `{ error }`. At most 20 per 10 s.
+- `getPlayers()` entries carry `micOn`: the player announced a switched-on mic.
+
 ---
 
 ## Player Awareness
@@ -505,6 +524,8 @@ textureUrl = attribute('', {
 | `send(type, data)` | Send message to other players |
 | `sendTo(targetUserId, type, data)` | Send message to one specific player |
 | `sendToSpace(spaceId, type, data)` | Send message to the players of another space of the same creator (`'*'`: all of them) |
+| `mutePlayer(userId)` | Switch a player's mic off (`'*'`: everyone who can't edit); only for editors of the space |
+| `kickPlayer(userId)` | Remove a player from the space; only for editors of the space |
 | `on(type, callback)` | Subscribe to messages (returns unsub fn) |
 | `once(type, callback)` | One-time subscription |
 | `off(type, callback?)` | Unsubscribe |
