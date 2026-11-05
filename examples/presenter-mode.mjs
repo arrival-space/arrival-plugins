@@ -34,7 +34,7 @@ export class PresenterMode extends ArrivalScript {
 
     static properties = {
         whoCanPresent: { title: "Who can present", options: ["Editors only", "Anyone"] },
-        keepAvatarsNear: { title: "Keep avatars near presenter" },
+        keepAvatarsNear: { title: "Keep viewers near presenter" },
         followSmoothing: { title: "Camera follow smoothing (higher: tighter)", min: 1, max: 20, step: 0.5 },
     };
 
