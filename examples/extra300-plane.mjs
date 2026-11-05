@@ -4067,7 +4067,7 @@ var Extra300Plane = class extends ArrivalScript {
     this._onKeyUp = (e) => this._keys.delete(e.key.length === 1 ? e.key.toLowerCase() : e.key);
     this._onBlur = () => this._keys.clear();
     this._onPointerDown = (e) => {
-      if (this._mouse.dragging && e.pointerId !== this._mouse.id) return;
+      if (!this._isView(e.target) || this._mouse.dragging && e.pointerId !== this._mouse.id) return;
       Object.assign(this._mouse, { dragging: true, id: e.pointerId, lastX: e.clientX, lastY: e.clientY });
     };
     this._onPointerUp = (e) => {
@@ -4080,16 +4080,16 @@ var Extra300Plane = class extends ArrivalScript {
       this._mouse.lastY = e.clientY;
     };
     this._onWheel = (e) => {
-      if (!this._flying) return;
+      if (!this._flying || !this._isView(e.target)) return;
       this.cameraRig.zoom(Math.sign(e.deltaY) * Math.min(3, Math.abs(e.deltaY) / 100 || 1));
       e.preventDefault();
     };
-    const canvas = this.app.graphicsDevice.canvas;
     window.addEventListener("keydown", this._onKeyDown, true);
     window.addEventListener("keyup", this._onKeyUp, true);
     window.addEventListener("blur", this._onBlur);
-    canvas.addEventListener("pointerdown", this._onPointerDown);
-    canvas.addEventListener("wheel", this._onWheel, { passive: false });
+    // on the window, not the canvas: see _isView
+    window.addEventListener("pointerdown", this._onPointerDown);
+    window.addEventListener("wheel", this._onWheel, { passive: false });
     window.addEventListener("pointerup", this._onPointerUp);
     window.addEventListener("pointercancel", this._onPointerUp);
     window.addEventListener("pointermove", this._onPointerMove);
@@ -4098,6 +4098,14 @@ var Extra300Plane = class extends ArrivalScript {
   get _ws() {
     const s = Number(this.app.worldScale);
     return s > 0 ? s : 0.7;
+  }
+  /**
+   * Whether the pointer is on the 3D view: the canvas, or - once a space shows HTML in 3D (a gate's
+   * website, the move gizmo) - the stage of those planes, which takes over the canvas' pointer
+   * events for the rest of the visit. A website inside a plane keeps its own events.
+   */
+  _isView(target) {
+    return target === this.app.graphicsDevice.canvas || !!target?.closest?.("#CSS3-stage");
   }
   // ── the airplane ──────────────────────────────────────────────────────────
   /** Flight model, instruments, 3D model, colliders and sound, parked at the vibe's place. */
@@ -4632,9 +4640,8 @@ var Extra300Plane = class extends ArrivalScript {
     window.removeEventListener("keydown", this._onKeyDown, true);
     window.removeEventListener("keyup", this._onKeyUp, true);
     window.removeEventListener("blur", this._onBlur);
-    const canvas = this.app.graphicsDevice.canvas;
-    canvas.removeEventListener("pointerdown", this._onPointerDown);
-    canvas.removeEventListener("wheel", this._onWheel);
+    window.removeEventListener("pointerdown", this._onPointerDown);
+    window.removeEventListener("wheel", this._onWheel);
     window.removeEventListener("pointerup", this._onPointerUp);
     window.removeEventListener("pointercancel", this._onPointerUp);
     window.removeEventListener("pointermove", this._onPointerMove);
