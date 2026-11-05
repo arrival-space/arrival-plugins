@@ -85,16 +85,19 @@ export class MeasureTool extends ArrivalScript {
         this._buildUI();
         this._buildMesh();
         this._canvas = this.app.graphicsDevice.canvas;
+        this._view = this._canvas;
         this._onDown = (e) => this._onPointerDown(e);
         this._onUp = (e) => this._onPointerUp(e);
         this._onMove = (e) => this._onPointerMove(e);
         this._onLeave = () => { this._pointer = null; this._cursor = null; };
+        this._onOut = (e) => { if (!e.relatedTarget) this._onLeave(); };   // left the window
         this._onKey = (e) => this._onKeyDown(e);
-        this._canvas.addEventListener("pointerdown", this._onDown);
-        this._canvas.addEventListener("pointerup", this._onUp);
-        this._canvas.addEventListener("pointercancel", this._onUp);
-        this._canvas.addEventListener("pointermove", this._onMove);
-        this._canvas.addEventListener("pointerleave", this._onLeave);
+        // on the window, not the canvas: see _viewAt
+        window.addEventListener("pointerdown", this._onDown);
+        window.addEventListener("pointerup", this._onUp);
+        window.addEventListener("pointercancel", this._onUp);
+        window.addEventListener("pointermove", this._onMove);
+        window.addEventListener("pointerout", this._onOut);
         window.addEventListener("keydown", this._onKey);
     }
 
@@ -104,12 +107,21 @@ export class MeasureTool extends ArrivalScript {
 
     destroy() {
         this._setActive(false);
-        this._canvas?.removeEventListener("pointerdown", this._onDown);
-        this._canvas?.removeEventListener("pointerup", this._onUp);
-        this._canvas?.removeEventListener("pointercancel", this._onUp);
-        this._canvas?.removeEventListener("pointermove", this._onMove);
-        this._canvas?.removeEventListener("pointerleave", this._onLeave);
+        window.removeEventListener("pointerdown", this._onDown);
+        window.removeEventListener("pointerup", this._onUp);
+        window.removeEventListener("pointercancel", this._onUp);
+        window.removeEventListener("pointermove", this._onMove);
+        window.removeEventListener("pointerout", this._onOut);
         window.removeEventListener("keydown", this._onKey);
+    }
+
+    /**
+     * The 3D view under the pointer, or null over the UI: the canvas, or - once a space shows HTML
+     * in 3D (a gate's website, the move gizmo) - the stage of those planes, which takes over the
+     * canvas' pointer events for the rest of the visit. A website inside a plane keeps its own events.
+     */
+    _viewAt(target) {
+        return target === this._canvas ? target : target?.closest?.("#CSS3-stage") ?? null;
     }
 
     // -- Input --
@@ -123,7 +135,7 @@ export class MeasureTool extends ArrivalScript {
             this._points = [];
             this._cursor = null;
             this._endDrag();
-            if (this._canvas) this._canvas.style.cursor = "";
+            if (this._view) this._view.style.cursor = "";
         }
         this._renderToolbar();
     }
@@ -141,13 +153,13 @@ export class MeasureTool extends ArrivalScript {
     }
 
     _onPointerDown(e) {
-        this._down = e.button === 0 ? { x: e.clientX, y: e.clientY, t: performance.now() } : null;
+        this._down = e.button === 0 && this._viewAt(e.target) ? { x: e.clientX, y: e.clientY, t: performance.now() } : null;
         if (!this._active || !this._down) return;
         const point = this._pointNear(this._screen(e));
         if (!point) return;
         // pressing a point grabs it: the camera stays still while it is dragged
         this._drag = { point, moved: false };
-        this._canvas.setPointerCapture(e.pointerId);
+        e.target.setPointerCapture(e.pointerId);
         this.lockInput();
     }
 
@@ -184,6 +196,13 @@ export class MeasureTool extends ArrivalScript {
 
     _onPointerMove(e) {
         if (!this._active) return;
+        // over the UI or a gate's website (a dragged point keeps the view: pointer capture)
+        const view = this._viewAt(e.target);
+        if (!view) {
+            this._onLeave();
+            return;
+        }
+        this._view = view;
         this._pointer = this._screen(e);
         const down = this._down;
         if (this._drag && down && Math.hypot(e.clientX - down.x, e.clientY - down.y) > 4) this._drag.moved = true;
@@ -630,7 +649,7 @@ export class MeasureTool extends ArrivalScript {
         if (!camera) return;
         // the disc is the pointer while it is on a surface; over the sky a crosshair stays
         const cursorStyle = !this._active ? "" : this._cursor ? "none" : "crosshair";
-        if (this._canvas.style.cursor !== cursorStyle) this._canvas.style.cursor = cursorStyle;
+        if (this._view.style.cursor !== cursorStyle) this._view.style.cursor = cursorStyle;
 
         // a still pointer over a moving view: the surface under it changed
         const pos = camera.entity.getPosition(), rot = camera.entity.getRotation();
