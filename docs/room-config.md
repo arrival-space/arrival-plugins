@@ -216,8 +216,12 @@ platform.
 |---|---|---|---|---|
 | `textureDividerMobile` | number | `1` | 1–8 | Downscale divisor for all textures on mobile (1 = off, 2 = half-res) |
 | `textureDividerDesktop` | number | `1` | 1–8 | Same, desktop |
+| `textureDividerQuest` | number | `0` | 0–8 | Same, Meta Quest headsets (0 = use `textureDividerMobile`) |
+| `textureDividerVisionPro` | number | `0` | 0–8 | Same, Apple Vision Pro (0 = use `textureDividerMobile`) |
 | `maxTextureSizeMobile` | number | `0` | 0–8192 | Hard cap on texture dimension on mobile (0 = unlimited) |
 | `maxTextureSizeDesktop` | number | `0` | 0–8192 | Same, desktop |
+| `maxTextureSizeQuest` | number | `0` | 0–8192 | Same, Meta Quest headsets (0 = use `maxTextureSizeMobile`) |
+| `maxTextureSizeVisionPro` | number | `0` | 0–8192 | Same, Apple Vision Pro (0 = use `maxTextureSizeMobile`) |
 
 Splat count (one budget for the whole space, per device preset):
 
