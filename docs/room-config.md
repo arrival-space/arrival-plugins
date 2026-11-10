@@ -99,7 +99,7 @@ Colors are hex; textures/logos are image URLs (in a space workspace, an
 
 | key | type | default | values | effect |
 |---|---|---|---|---|
-| `skyboxImage` | url | — | image / `.hdr` | Skybox environment image; empty = default env map |
+| `skyboxImage` | url | — | image / `.hdr` | Skybox environment image, 2:1 equirectangular; its detail is width ÷ 360 px per degree (a 1080p view shows ~18 px per degree); empty = default env map |
 | `skyboxType` | enum | `"infinite"` | `dome` \| `box` \| `infinite` | Projection geometry (`dome`/`box` also use `skyboxScale` + `skyboxTripodY`) |
 | `skyboxHidden` | bool | `false` | | Hide the sky visually but keep it as a light source (good for black-bg splats) |
 | `skyboxShadow` | bool | `false` | | Skybox casts sun/environment shadows |
@@ -335,7 +335,10 @@ automated AI-tagging batch skips the space.
 
 The space's screenshot is its picture on the loading screen, space tiles and shared links
 (1200×630), and in gate previews (1024², the middle square of the same framing). Unless a
-custom one is set, it is captured automatically from the spawn point.
+custom one is set, it is captured automatically, from the first of: `customScreenshotPosition`
+(position only — the view direction is the screenshot camera's fixed default); the first camera
+keyframe of an autoplay cutscene that moves the camera (position, direction, FOV); 1.1 m above the
+default third-person SpawnPoint, facing its yaw. A browser screenshot's URL is a picture too.
 
 | key | type | default | effect |
 |---|---|---|---|
@@ -414,7 +417,7 @@ read-only fallback for spaces that never adopted the entities — never write it
 | `isDefaultFreeCam` | bool | first spawn point: `true` | The spawn used when the space opens in free camera. Same exclusivity rule. Falls back to the third-person spawn if none has it |
 | `alwaysSnapBack` | bool | `false` | Opt-in: teleports the avatar back to this spawn on **every free-cam exit**, not just on space load |
 | `capturedIn` | `"avatar"` \| `"freeCam"` | — | Which rig recorded the position: `"avatar"` = character root on the ground, `"freeCam"` = detached camera at eye level. Set it to match how you derived the coordinates |
-| `hidden` | bool | `false` | `true` deactivates the spawn point (skipped when picking where to spawn) without deleting it |
+| `hidden` | bool | `false` | `true` deactivates the spawn point (skipped when picking where to spawn) without deleting it. Visitors never see a spawn point either way — its marker shows to editors in edit mode only |
 | `displayName` | string | `"Spawn Point"` | Editor-facing label only |
 
 If a space has **no** (visible) SpawnPoint entity and no legacy fallback, the

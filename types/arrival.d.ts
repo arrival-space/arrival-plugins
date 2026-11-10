@@ -1978,6 +1978,12 @@ declare namespace ArrivalSpace {
          * @returns Unsubscribe function
          */
         function onDisconnect(callback: () => void): () => void;
+
+        /**
+         * This client's socket id (one per open tab — two tabs of one user have two),
+         * or null when not connected.
+         */
+        function getNetworkId(): string | null;
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
