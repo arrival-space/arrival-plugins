@@ -331,6 +331,19 @@ automated AI-tagging batch skips the space.
 
 ---
 
+## 18. Screenshot  *(panel: Pro — Set Custom Screenshot)*
+
+The space's screenshot is its picture on the loading screen, space tiles and shared links
+(1200×630), and in gate previews (1024², the middle square of the same framing). Unless a
+custom one is set, it is captured automatically from the spawn point.
+
+| key | type | default | effect |
+|---|---|---|---|
+| `customScreenshot` | bool, or a picture to set | — | `true`: the space shows its own picture, never replaced by an automatic capture. **Set it to a picture** — an `https://` image URL (an image the user attached, a web image) or an `assets/<name>` token — and when `space/room.json` is saved (space agent, arrival CLI) that picture, centre-cropped to fill 1200×630, becomes the screenshot and the stored value is `true`; a picture that can't be downloaded or read leaves room.json unsaved, with the reason. A CLI checkout keeps the URL until the next pull, and pushing room.json with it sets the picture again. `false`: automatic screenshots again; the picture stays until the next capture, taken after an edit in the app or from the Share screen. In the app: Advanced tab › **Set Custom Screenshot** (pick an image and crop it; **Replace** / **Remove Custom Screenshot** once one is set; Remove takes a new screenshot right away) |
+| `customScreenshotPosition` | `{x,y,z}` | spawn point | Camera position automatic screenshots are taken from |
+
+---
+
 ## NOT in room.json — these live on entities or elsewhere
 
 Do not put these in `room.json`; they belong to individual entities or other
