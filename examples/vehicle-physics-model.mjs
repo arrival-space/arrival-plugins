@@ -862,7 +862,11 @@ export class VehiclePhysicsModel extends ArrivalScript {
         const kb = this.app.keyboard;
         const stick = this.getLeftStick();
 
-        if (kb.wasPressed(pc.KEY_ESCAPE)) {
+        // VR: A / X gets out (there is no Escape key in a headset)
+        const xrExit = this.app.xr.active && this.app.xr.input.inputSources.some((s) => s.gamepad?.buttons[4]?.pressed);
+        const xrExitPressed = xrExit && !this._xrExitHeld;
+        this._xrExitHeld = xrExit;
+        if (kb.wasPressed(pc.KEY_ESCAPE) || xrExitPressed) {
             this._dismount();
             return;
         }
