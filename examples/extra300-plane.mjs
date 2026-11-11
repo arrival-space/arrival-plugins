@@ -4037,6 +4037,36 @@ function extraSpec(power) {
   return s;
 }
 
+// A headset's controllers (WebXR, the xr-standard layout a Quest has): axes[2] / [3] the thumbstick,
+// buttons[0] the trigger, [4] A / X, [5] B / Y (the platform's on foot: flying).
+var XrControls = class {
+  constructor(app) {
+    this.app = app;
+    this._down = {};
+  }
+  get active() {
+    return this.app.xr.active;
+  }
+  _hand(side) {
+    return this.app.xr.input.inputSources.find((s) => s.handedness === side && s.gamepad)?.gamepad || null;
+  }
+  /** The two controllers as one standard-mapping pad: the left stick flies, the right stick rudder (x) and throttle (y), the triggers the brakes. */
+  pad() {
+    const l = this._hand("left"), r = this._hand("right");
+    if (!l && !r) return null;
+    const buttons = new Array(16).fill(0);
+    buttons[6] = l?.buttons[0]?.value ?? 0;
+    buttons[7] = r?.buttons[0]?.value ?? 0;
+    return { axes: [l?.axes[2] ?? 0, l?.axes[3] ?? 0, r?.axes[2] ?? 0, r?.axes[3] ?? 0], buttons };
+  }
+  /** A or X (button 4), or B or Y (5), went down since the last call for it (once a frame). */
+  pressed(button) {
+    const down = this.app.xr.input.inputSources.some((s) => s.gamepad?.buttons[button]?.pressed);
+    const pressed = down && !this._down[button];
+    this._down[button] = down;
+    return pressed;
+  }
+};
 var Extra300Plane = class extends ArrivalScript {
   static scriptName = "Extra 300 Plane";
   paint = "#f3f1ec";
@@ -4058,6 +4088,7 @@ var Extra300Plane = class extends ArrivalScript {
     this._root = new pc.Entity("Extra300Root");
     this.entity.addChild(this._root);
     this.mapper = new ControlMapper({ easy: this.easyMode, autoTrim: true });
+    this.xr = new XrControls(this.app);
     this.cameraRig = new CameraRig({ eye: extra300l_default.eye, towerPos: [0, 0, 0] });
     this._buildHud();
     loadExtraModel().then(() => {
@@ -4190,11 +4221,14 @@ var Extra300Plane = class extends ArrivalScript {
     if (this._flying || ArrivalSpace.getLocalAttachedEntity?.()) return;
     this._flying = true;
     this._colliders.enabled = false;
-    this.cameraRig.view = "chase";
+    // a headset boards in the seat (B / Y goes round the views)
+    this.cameraRig.view = this.xr.active ? "cockpit" : "chase";
     this.cameraRig.chasePos = null;
     this.cameraRig.centre();
     this.mapper.easy = this.easyMode;
     this.lockKeyboard();
+    // a headset: the right stick is the rudder, not a snap turn; the triggers the brakes, not a walk to where they point
+    this._xrHolds = [ArrivalSpace.disableXrTurn(), ArrivalSpace.disableClickToWalk()];
     this._prevMode = ArrivalSpace.getCameraMode() || "third";
     const cam0 = sceneCamera();
     this._camLocal = cam0 ? { parent: cam0.parent, p: cam0.getLocalPosition().clone(), r: cam0.getLocalRotation().clone() } : null;
@@ -4206,8 +4240,8 @@ var Extra300Plane = class extends ArrivalScript {
       cam.camera.nearClip = 0.1 * this._ws;
       cam.camera.farClip = Math.max(cam.camera.farClip, 8e3 * this._ws);
     }
-    this._setAvatarVisible(true);
-    this.visual.setCockpitView(false);
+    this._setAvatarVisible(this.cameraRig.view !== "cockpit");
+    this.visual.setCockpitView(this.cameraRig.view === "cockpit");
     this.sound.start();
     ArrivalSpace.setAppUIVisible(false);
     this._pose = this.cameraRig.update(this.ac, 0, this.ac.cg);
@@ -4240,6 +4274,14 @@ var Extra300Plane = class extends ArrivalScript {
     this._keys.clear();
     this._attach?.detach?.();
     this._attach = null;
+    for (const release of this._xrHolds || []) release();
+    this._xrHolds = null;
+    // the camera's parent a headset flew (postUpdate): back where the free camera had it
+    if (this._xrRig) {
+      this._xrRig.node.setLocalPosition(this._xrRig.p);
+      this._xrRig.node.setLocalRotation(this._xrRig.r);
+      this._xrRig = null;
+    }
     ArrivalSpace.setCameraMode(this._prevMode || "third");
     const cam = sceneCamera();
     if (cam && this._camLocal && cam.parent === this._camLocal.parent) {
@@ -4346,7 +4388,30 @@ var Extra300Plane = class extends ArrivalScript {
         break;
     }
   }
+  /**
+   * A headset draws from the camera's parent and the head's tracked pose under it (the camera's own transform is
+   * the head's): the parent goes where the camera would, turned with it, less where the head was when this began,
+   * so the head sits at the eye and moves round it.
+   */
+  _applyXrCamera(cam, x, y, z, rot) {
+    const rig = cam.parent;
+    if (!this._xrRig || this._xrRig.node !== rig) {
+      this._xrRig = { node: rig, p: rig.getLocalPosition().clone(), r: rig.getLocalRotation().clone(), head: cam.getLocalPosition().clone() };
+    }
+    const q = this._xrRot ??= new pc.Quat();
+    q.set(rot[0], rot[1], rot[2], rot[3]);
+    const head = q.transformVector(this._xrRig.head, this._xrHead ??= new pc.Vec3());
+    rig.setPosition(x - head.x, y - head.y, z - head.z);
+    rig.setRotation(q);
+  }
+  /** A or X in a headset, which has no E key: aboard by the airplane, out of it standing still with the throttle closed. */
+  _xrButton() {
+    if (!this._flying) {
+      if (this._near()) this._enter();
+    } else if (this.ac.gear.onGround && this.ac.groundSpeed < 0.5 && this.mapper.throttle < 0.02) this._exit();
+  }
   _readPad() {
+    if (this.xr.active) return this.xr.pad();
     for (const p of navigator.getGamepads?.() || []) {
       if (p && p.connected && p.axes.length >= 4) return { axes: [...p.axes], buttons: p.buttons.map((b) => b.value) };
     }
@@ -4356,6 +4421,8 @@ var Extra300Plane = class extends ArrivalScript {
   update(dt) {
     this._dt = dt;
     if (!this.visual) return;
+    if (this.xr.active && this.xr.pressed(4)) this._xrButton();
+    if (this.xr.active && this.xr.pressed(5) && this._flying) this._action("view");   // (B / Y: the V key)
     this._colliders.tick();
     this._remotesUpdate();
     if (!this._flying) {
@@ -4459,7 +4526,8 @@ var Extra300Plane = class extends ArrivalScript {
   postUpdate() {
     if (this._flying) {
       const cam = sceneCamera(), pose = this._pose, o = this._root.getPosition(), ws = this._ws;
-      if (cam) {
+      if (cam && this.xr.active) this._applyXrCamera(cam, o.x + pose.pos[0] * ws, o.y + pose.pos[1] * ws, o.z + pose.pos[2] * ws, pose.rot);
+      else if (cam) {
         cam.setPosition(o.x + pose.pos[0] * ws, o.y + pose.pos[1] * ws, o.z + pose.pos[2] * ws);
         cam.setRotation(pose.rot[0], pose.rot[1], pose.rot[2], pose.rot[3]);
         if (cam.camera) cam.camera.fov = pose.fov;

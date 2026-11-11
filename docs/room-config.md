@@ -99,7 +99,7 @@ Colors are hex; textures/logos are image URLs (in a space workspace, an
 
 | key | type | default | values | effect |
 |---|---|---|---|---|
-| `skyboxImage` | url | — | image / `.hdr` | Skybox environment image; empty = default env map |
+| `skyboxImage` | url | — | image / `.hdr` | Skybox environment image, 2:1 equirectangular; its detail is width ÷ 360 px per degree (a 1080p view shows ~18 px per degree); empty = default env map |
 | `skyboxType` | enum | `"infinite"` | `dome` \| `box` \| `infinite` | Projection geometry (`dome`/`box` also use `skyboxScale` + `skyboxTripodY`) |
 | `skyboxHidden` | bool | `false` | | Hide the sky visually but keep it as a light source (good for black-bg splats) |
 | `skyboxShadow` | bool | `false` | | Skybox casts sun/environment shadows |
@@ -216,8 +216,12 @@ platform.
 |---|---|---|---|---|
 | `textureDividerMobile` | number | `1` | 1–8 | Downscale divisor for all textures on mobile (1 = off, 2 = half-res) |
 | `textureDividerDesktop` | number | `1` | 1–8 | Same, desktop |
+| `textureDividerQuest` | number | `0` | 0–8 | Same, Meta Quest headsets (0 = use `textureDividerMobile`) |
+| `textureDividerVisionPro` | number | `0` | 0–8 | Same, Apple Vision Pro (0 = use `textureDividerMobile`) |
 | `maxTextureSizeMobile` | number | `0` | 0–8192 | Hard cap on texture dimension on mobile (0 = unlimited) |
 | `maxTextureSizeDesktop` | number | `0` | 0–8192 | Same, desktop |
+| `maxTextureSizeQuest` | number | `0` | 0–8192 | Same, Meta Quest headsets (0 = use `maxTextureSizeMobile`) |
+| `maxTextureSizeVisionPro` | number | `0` | 0–8192 | Same, Apple Vision Pro (0 = use `maxTextureSizeMobile`) |
 
 Splat count (one budget for the whole space, per device preset):
 
@@ -327,6 +331,24 @@ automated AI-tagging batch skips the space.
 
 ---
 
+## 18. Screenshot  *(panel: Pro — Set Custom Screenshot)*
+
+The space's screenshot is its picture on the loading screen, space tiles and shared links
+(1200×630), and a 1024² picture in gate previews. Unless a custom one is set, both are captured
+automatically (the gate preview with a wider, 120° view), from the first of:
+`customScreenshotPosition` (position only — the view direction is the screenshot camera's fixed
+default); the first camera keyframe of an autoplay cutscene that moves the camera (position,
+direction, and its FOV for the 1200×630 shot); 1.1 m above the default third-person SpawnPoint that
+isn't hidden, facing its yaw. A browser screenshot's URL is a picture too; it shows the app's own UI
+unless the page was loaded with `ui: false`.
+
+| key | type | default | effect |
+|---|---|---|---|
+| `customScreenshot` | bool, or a picture to set | — | `true`: the space shows its own picture, never replaced by an automatic capture. **Set it to a picture** — an `https://` image URL (an image the user attached, a web image) or an `assets/<name>` token — and when `space/room.json` is saved (space agent, arrival CLI) that picture, centre-cropped to fill 1200×630, becomes the screenshot (the gate preview is its middle square) and the stored value is `true`; a picture that can't be downloaded or read leaves room.json unsaved, with the reason. It is applied by the save that sets it; another picture value sets a new one. `false`: automatic screenshots again; the picture stays until the next capture, taken after an edit in the app or from the Share screen. In the app: Advanced tab › **Set Custom Screenshot** (pick an image and crop it; **Replace** / **Remove Custom Screenshot** once one is set; Remove takes a new screenshot right away) |
+| `customScreenshotPosition` | `{x,y,z}` | — | Camera position automatic screenshots are taken from (unset: the cutscene keyframe or spawn point above) |
+
+---
+
 ## NOT in room.json — these live on entities or elsewhere
 
 Do not put these in `room.json`; they belong to individual entities or other
@@ -397,7 +419,7 @@ read-only fallback for spaces that never adopted the entities — never write it
 | `isDefaultFreeCam` | bool | first spawn point: `true` | The spawn used when the space opens in free camera. Same exclusivity rule. Falls back to the third-person spawn if none has it |
 | `alwaysSnapBack` | bool | `false` | Opt-in: teleports the avatar back to this spawn on **every free-cam exit**, not just on space load |
 | `capturedIn` | `"avatar"` \| `"freeCam"` | — | Which rig recorded the position: `"avatar"` = character root on the ground, `"freeCam"` = detached camera at eye level. Set it to match how you derived the coordinates |
-| `hidden` | bool | `false` | `true` deactivates the spawn point (skipped when picking where to spawn) without deleting it |
+| `hidden` | bool | `false` | `true` deactivates the spawn point (skipped when picking where to spawn) without deleting it. Visitors never see a spawn point either way — its marker shows only to people who can edit the space |
 | `displayName` | string | `"Spawn Point"` | Editor-facing label only |
 
 If a space has **no** (visible) SpawnPoint entity and no legacy fallback, the
