@@ -1976,7 +1976,7 @@ scores. Any logged-in visitor can write; everyone in the space reads the same en
 | Option | Type | Description |
 |---|---|---|
 | `numval` | `number?` | Sort value (score, time, …) |
-| `mode` | `"unique"` (default) | `"min"` | `"max"` | `"append"` | `unique`: one entry per user, replaced. `min`/`max`: one entry per user, kept only if `numval` is lower/higher. `append`: a new entry every call. |
+| `mode` | `"unique"` (default) | `"min"` | `"max"` | `"append"` | `unique`: one entry per user, replaced. `min`/`max`: one entry per user, kept only if `numval` is lower/higher. `append`: a new entry every call, stored under `<key>_<id>` — read them back with `get(key, { prefix: true })`. |
 | `spaceId` | `string?` | Another space (defaults to the current one) |
 
 **Returns:** `Promise<object | false>`
