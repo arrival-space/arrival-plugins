@@ -2395,7 +2395,7 @@ declare namespace ArrivalSpace {
      * Set the global physics step rate for the whole world (not just this plugin).
      * Latest call wins.
      * @param stepHz Physics tick rate in Hz (e.g. 60, 120, 180). Default 60.
-     * @param maxSubSteps Maximum Bullet substeps per frame. Default 10.
+     * @param maxSubSteps Maximum Bullet substeps per frame; never below stepHz (one second of steps per frame).
      */
     function setPhysicsStepRate(stepHz?: number, maxSubSteps?: number): boolean;
 

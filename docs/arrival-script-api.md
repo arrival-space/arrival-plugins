@@ -156,7 +156,7 @@ Distilled reference for the ArrivalScript / ArrivalSpace runtime API (PlayCanvas
 - `rotateEntity(nameOrEntity: string|pc.Entity, x: number, y: number, z: number)` — Set an entity's world Euler rotation in degrees (setEulerAngles); accepts a name or entity.
 - `scaleEntity(nameOrEntity: string|pc.Entity, s: number)` — Set an entity's uniform local scale (setLocalScale s,s,s); accepts a name or entity.
 - `setPhysicsStepRate(stepHz = 60, maxSubSteps = 10)` — Set the rigidbody simulation rate by writing fixedTimeStep = 1/stepHz and maxSubSteps on the global rigidbody system.
-  - _gotcha:_ Non-finite/non-positive inputs fall back to 60 / 10; maxSubSteps is rounded and floored at 1. Global change affecting all physics.
+  - _gotcha:_ Non-finite/non-positive inputs fall back to 60 / 10; maxSubSteps is rounded and never below stepHz (one second of steps per frame). Global change affecting all physics.
 - `enableContinuousCollisionDetection(entity: pc.Entity, options = {} /* radius?, motionThreshold? */)` — Enable Bullet/Ammo continuous collision detection on an entity's rigidbody to prevent tunnelling of fast movers (sets swept-sphere radius + motion threshold and activates the body).
   - _gotcha:_ Requires a rigidbody with a backing Ammo body; radius/motionThreshold default from the collision shape (half the min half-extent / radius) when not provided.
 - `ArrivalSpace.onEntityDrag(entity, { start, move, end })` — Drag a 3D entity (levers, sliders, dials): press picked like onEntityClick (mesh-accurate, no collider), `move({x, y, dx, dy, startX, startY})` followed anywhere on the page while held, the camera stays still and the click is consumed. CSS px of the canvas. Returns unsubscribe. Requires VERSION ≥ 1.31.0.

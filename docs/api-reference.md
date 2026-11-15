@@ -1253,7 +1253,7 @@ This affects the shared physics world, so if multiple plugins call it, the lates
 | Param | Type | Description |
 |-------|------|-------------|
 | `stepHz` | `number` | Physics tick rate in Hz (for example `60`, `120`, `180`) |
-| `maxSubSteps` | `number` | Maximum Bullet substeps per frame (default: `10`) |
+| `maxSubSteps` | `number` | Maximum Bullet substeps per frame; never below `stepHz` (one second of steps), so physics keeps real time down to 1 fps |
 
 **Returns:** `boolean`
 
