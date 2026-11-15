@@ -1153,6 +1153,25 @@ destroy() {
 }
 ```
 
+#### `ArrivalSpace.onSpaceLoaded(callback)`
+
+Runs `callback` once the space has finished loading - its entities, models and splats are in,
+at full detail, and the loading screen is gone - or on the next tick when it already has. A vibe
+starts while its space is still loading: this is where to raycast the ground, place things on
+loaded models or splats, or hide a loading overlay of its own. A load replaced by a space switch
+never calls it. Requires `ArrivalSpace.VERSION >= 1.37.0`.
+
+**Returns:** `() => void` — cancels the callback if it has not run yet; call it in `destroy()`.
+
+```javascript
+initialize() {
+    this._offLoaded = ArrivalSpace.onSpaceLoaded(() => this._dropOnGround());
+}
+destroy() {
+    this._offLoaded();
+}
+```
+
 #### `ArrivalSpace.getDefaultSpawnPoint()`
 
 Where a player lands entering the space without a gate: the spawn point marked as default,

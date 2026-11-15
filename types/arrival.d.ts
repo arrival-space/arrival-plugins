@@ -2329,6 +2329,9 @@ declare namespace ArrivalSpace {
      * @example
      * ArrivalSpace.teleportPlayer({ x: 0, y: 1, z: 5 }, { forward: { x: 0, y: 0, z: -1 } });
      */
+    /** Run callback once the space has finished loading (models, splats, colliders in, loading screen gone), on the next tick if it already has. Returns a cancel function. VERSION ≥ 1.37.0 */
+    function onSpaceLoaded(callback: () => void): () => void;
+
     /** Where a player lands entering without a gate (default spawn point, else scene start); null before load. VERSION ≥ 1.29.0 */
     function getDefaultSpawnPoint(): { position: { x: number; y: number; z: number }; forward: { x: number; y: number; z: number } } | null;
 
