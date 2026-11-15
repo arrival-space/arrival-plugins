@@ -369,6 +369,11 @@ records. Setting them on `RoomInfo.data` does nothing.
 - **Model collision on/off** (the editor's "Enable Collision") — entity `data`:
   `noCollision: true` turns it off; a GLB above the editor's vertex limit gets no
   collider unless `allowHighPolyCollision: true` (the toggle sets both).
+- **Transparent Depth Prepass** (the editor's toggle of that name) — entity `data`:
+  `transparentDepthPrepass: true` draws a GLB's texture-transparent parts only where
+  they are its front-most layer, so the model doesn't show its own far side or
+  inside through itself (Blender's "Transparency Overlap" off). Parts with one
+  overall opacity and no alpha texture (plain glass) are not affected.
 - **Per-entity model settings** — brightness/contrast/tone-map/`videoURL`/
   `animationIndex`/`doubleSided`/`autoPlay`/`loop`/etc. → the entity's own `data`
   (`space/entities/<id>.json`).
