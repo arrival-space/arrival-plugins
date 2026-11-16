@@ -2338,6 +2338,23 @@ declare namespace ArrivalSpace {
     /** Teleport the local player to getDefaultSpawnPoint(), facing its direction. VERSION ≥ 1.29.0 */
     function teleportToSpawn(): boolean;
 
+    /** A SpawnPoint entity's data (position on the ground; rotation {x: pitch, y: yaw} in degrees, yaw 0 faces -Z). */
+    interface SpawnPointData {
+        position: { x: number; y: number; z: number };
+        rotation?: { x: number; y: number; z: number };
+        isDefaultThirdPerson?: boolean;
+        isDefaultFreeCam?: boolean;
+        alwaysSnapBack?: boolean;
+        hidden?: boolean;
+        displayName?: string;
+    }
+    /** Add a spawn point; a default role set true moves from the others. Saved only when canEditSpace(), else this client until reload. VERSION ≥ 1.37.0 */
+    function createSpawnPoint(options: SpawnPointData): Promise<{ id: string; entity: any; persisted: boolean } | null>;
+    /** Change a spawn point; true once saved. VERSION ≥ 1.37.0 */
+    function updateSpawnPoint(id: string, changes: Partial<SpawnPointData>): Promise<boolean>;
+    /** Remove a spawn point; true once deleted on the server. VERSION ≥ 1.37.0 */
+    function removeSpawnPoint(id: string): Promise<boolean>;
+
     /**
      * Raise or lower the floor the player walks on where the space has none of its own (a splat or a map
      * world: the invisible ground at height 0). A world Y, or `(x, z) => y` asked under the player every

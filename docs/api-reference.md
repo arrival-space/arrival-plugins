@@ -1181,6 +1181,24 @@ point. Requires `ArrivalSpace.VERSION >= 1.29.0`.
 **Returns:** `{ position: {x,y,z}, forward: {x,y,z} } | null` — `forward` is the horizontal
 direction the player faces there; both fit `teleportPlayer`. `null` before the space has loaded.
 
+#### `ArrivalSpace.createSpawnPoint(options)` / `updateSpawnPoint(id, changes)` / `removeSpawnPoint(id)`
+
+Add, change or remove a spawn point, where visitors appear entering the space (`getDefaultSpawnPoint()`
+is the default one). The options are a SpawnPoint entity's data: `position` on the ground (the
+avatar's feet), `rotation` `{ x: pitch, y: yaw, z: 0 }` in degrees (yaw 0 faces -Z),
+`isDefaultThirdPerson` / `isDefaultFreeCam` (one spawn point holds each role: `true` takes it from the
+others; left out, a new one takes a role nobody holds), `alwaysSnapBack`, `hidden` (skipped when
+choosing where to spawn), `displayName`. Saved and used for everyone only when `canEditSpace()`;
+otherwise in this client until reload. Requires `ArrivalSpace.VERSION >= 1.37.0`.
+
+**Returns:** `createSpawnPoint` → `Promise<{ id, entity, persisted } | null>` (null without a position);
+`updateSpawnPoint` / `removeSpawnPoint` → `Promise<boolean>`, true once saved.
+
+```javascript
+const p = ArrivalSpace.getPlayer().getPosition();
+await ArrivalSpace.createSpawnPoint({ position: { x: p.x, y: p.y, z: p.z }, isDefaultThirdPerson: true });
+```
+
 #### `ArrivalSpace.teleportToSpawn()`
 
 Teleports the local player to `getDefaultSpawnPoint()`, facing its direction. Requires
