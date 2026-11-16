@@ -2336,6 +2336,9 @@ declare namespace ArrivalSpace {
     function getSpaceContent(): Array<{ id: string; type: string; name: string; folderId: string | null; data: Record<string, any> }>;
     /** The content folders; a hidden folder hides its contents and sub-folders. VERSION ≥ 1.37.0 */
     function getContentFolders(): Array<{ id: string; name: string; parentId: string | null; hidden: boolean; order?: number }>;
+    /** The annotations (the editor's info markers): text = what the popup shows; open/close in this client only (API 1.37.0). */
+    function getAnnotations(): Array<{ id: string; text: string; position: { x: number; y: number; z: number }; folderId: string | null; entity: pc.Entity; readonly isOpen: boolean; open(): void; close(): void }>;
+
     /** The sound entities: one plays in range unless data.autoplay is false; play/pause/stop end range control for this visit, this client only. VERSION ≥ 1.37.0 */
     function getSounds(): Array<{ id: string; name: string; url: string; folderId: string | null; readonly playing: boolean; play(): Promise<void>; pause(): void; stop(): void; setVolume(volume: number): void }>;
 

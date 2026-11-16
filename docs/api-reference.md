@@ -1174,7 +1174,7 @@ destroy() {
 }
 ```
 
-#### `ArrivalSpace.getSpaceContent()` / `getContentFolders()` / `getSounds()`
+#### `ArrivalSpace.getSpaceContent()` / `getContentFolders()` / `getSounds()` / `getAnnotations()`
 
 `getSpaceContent()` lists the space's content as the editor's Content panel does: every entity as
 `{ id, type, name, folderId, data }` (type `UserModelEntity`, `CustomSoundEntity`, `AnnotationEntity`,
@@ -1193,6 +1193,41 @@ for this visit; they and `setVolume` act in this client only. Requires `ArrivalS
 // every track of one content folder at once
 const folder = ArrivalSpace.getContentFolders().find((f) => f.name === "Soundtrack");
 for (const s of ArrivalSpace.getSounds().filter((s) => s.folderId === folder.id)) s.play();
+```
+
+`getAnnotations()` returns the annotations (the editor's info markers): `{ id, text, position, folderId,
+entity, isOpen, open(), close() }`. `text` is what the popup shows, one line per paragraph; `open` /
+`close` show or hide the popup in this client only, as a visitor's click on the marker does; `entity`
+is the marker, for `onEntityClick` / `onEntityHover`. Requires `ArrivalSpace.VERSION >= 1.37.0`.
+
+```javascript
+// open each annotation while the pointer is over its marker
+for (const a of ArrivalSpace.getAnnotations()) ArrivalSpace.onEntityHover(a.entity, { enter: a.open, leave: a.close });
+```
+
+An annotation is an `AnnotationEntity` entity; its data:
+
+| Key | Value |
+|-----|-------|
+| `position` | `{ x, y, z }` |
+| `editState` | The content: a Lexical editor state as a JSON **string** (below). The popup shows this. |
+| `htmlString` | The same content as HTML; its text is the annotation's name in the Content panel |
+| `alwaysOpen` | `true`: the popup stays open |
+| `openByDistance`, `triggerDistance` | Opens while the player is within `triggerDistance` m (default 5) |
+| `uiAnchor` | Popup side: `"top"`, `"bottom"` (default), `"left"`, `"right"` |
+| `icon`, `iconBackground` | Emoji or text (≤ 8 characters) in place of the 3D marker; a background behind it |
+| `hideButton` | No marker: the content shows through `alwaysOpen` / `openByDistance` only |
+| `fixedScreenSize` | The marker keeps its size on screen at any distance |
+| `backgroundColor`, `textColor` | `"#rrggbb"` |
+| `hidden`, `folderId` | As for any content |
+
+`editState`, one paragraph per line; a text node's `format` is a bit mask: 1 bold, 2 italic, 8 underline:
+
+```json
+{"root":{"type":"root","version":1,"children":[
+  {"type":"paragraph","version":1,"children":[{"type":"text","version":1,"text":"Shelf A","format":1}]},
+  {"type":"paragraph","version":1,"children":[{"type":"text","version":1,"text":"Tools and spare parts"}]}
+]}}
 ```
 
 #### `ArrivalSpace.getDefaultSpawnPoint()`
