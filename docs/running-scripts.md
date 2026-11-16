@@ -48,6 +48,6 @@ Call it with `files: ["assets/floor.png"]` and `save: ["floor_512.png"]`.
 
 ## Limits
 
-Same sandbox as `generate_model`: no network, no GPU, 2 CPUs, 4 GB memory, a few minutes
+Same sandbox as `generate_model`: no network, no GPU, 2 CPUs, 8 GB memory, up to 15 minutes
 per script. A turn has a limited number of script runs (separate from model generations) —
 batch work into one script rather than one call per file.
