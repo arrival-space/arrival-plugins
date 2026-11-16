@@ -803,8 +803,11 @@ declare namespace ArrivalSpace {
     /** Load a texture/image */
     function loadTexture(url: string, options?: LoadTextureOptions): Promise<{ texture: pc.Texture; asset: pc.Asset }>;
 
-    /** Play a 3D positional sound */
-    function playSound(url: string, options?: PlaySoundOptions): Promise<{ entity: pc.Entity; slot: pc.SoundSlot }>;
+    /** Built-in game sounds for playSound("sfx:<name>") (API 1.37.0). */
+    type SoundEffect = "sfx:coin" | "sfx:jump" | "sfx:shoot" | "sfx:hit" | "sfx:explosion" | "sfx:click" | "sfx:pop" | "sfx:ding" | "sfx:success" | "sfx:fail" | "sfx:powerup" | "sfx:whoosh";
+
+    /** Play a 3D positional sound: an audio file's URL, or a built-in "sfx:<name>" game sound */
+    function playSound(url: SoundEffect | (string & {}), options?: PlaySoundOptions): Promise<{ entity: pc.Entity; slot: pc.SoundSlot }>;
 
     /**
      * Speak text with an AI voice, streamed: playback starts while the rest is generated

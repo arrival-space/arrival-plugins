@@ -536,7 +536,9 @@ Load a texture/image.
 
 #### `ArrivalSpace.playSound(url, options?)`
 
-Play positional or non-positional audio.
+Play positional or non-positional audio. `url` is an audio file's URL, or `"sfx:<name>"` for a
+built-in game sound (API 1.37.0): `coin`, `jump`, `shoot`, `hit`, `explosion`, `click`, `pop`, `ding`, `success`, `fail`, `powerup`, `whoosh` -
+chiptune-style, synthesised in the browser on first use, each under 1.2 s; `pitch` varies them.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|

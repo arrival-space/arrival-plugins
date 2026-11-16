@@ -190,7 +190,7 @@ Distilled reference for the ArrivalScript / ArrivalSpace runtime API (PlayCanvas
 
 ## Audio
 
-- `playSound(url, options = {} /* entity=null, position=null, volume=1, loop=false, pitch=1, refDistance=1, maxDistance=100, rollOffFactor=1, positional=true */)` — Play a (3D positional by default) sound, attaching it to a provided entity or a temporary entity created at options.position.
+- `playSound(url, options = {} /* entity=null, position=null, volume=1, loop=false, pitch=1, refDistance=1, maxDistance=100, rollOffFactor=1, positional=true */)` — Play a (3D positional by default) sound, attaching it to a provided entity or a temporary entity created at options.position. `url` may be `"sfx:<name>"`, a built-in game sound (1.37.0): coin, jump, shoot, hit, explosion, click, pop, ding, success, fail, powerup, whoosh.
   - _gotcha:_ Throws if url missing. Has an undocumented autoCleanup option (default true): non-looping sounds on auto-created entities destroy the entity ~100ms after the slot ends. Stop a looping sound via the returned slot.stop().
 
 ## Events
