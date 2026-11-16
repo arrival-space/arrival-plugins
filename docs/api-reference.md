@@ -1172,6 +1172,27 @@ destroy() {
 }
 ```
 
+#### `ArrivalSpace.getSpaceContent()` / `getContentFolders()` / `getSounds()`
+
+`getSpaceContent()` lists the space's content as the editor's Content panel does: every entity as
+`{ id, type, name, folderId, data }` (type `UserModelEntity`, `CustomSoundEntity`, `AnnotationEntity`,
+`SpawnPoint`, `DynamicGate`, ...; `name` as the panel shows it; `data` its saved data, a vibe's params under
+`data.params`); `getEntity(id)` is its scene entity. `getContentFolders()` lists the folders,
+`{ id, name, parentId, hidden, order }`; an entity's `folderId` is its folder, and a hidden folder hides
+everything in it and its sub-folders.
+
+`getSounds()` returns the sound entities to control from a vibe: `{ id, name, url, folderId, playing,
+play(), pause(), stop(), setVolume(volume) }`. A sound plays while the visitor is within its
+`data.distance` and pauses outside, unless its `data.autoplay` is `false` ("Play when in range" off in
+the editor): then only `play()` starts it. `play` / `pause` / `stop` take it out of that range control
+for this visit; they and `setVolume` act in this client only. Requires `ArrivalSpace.VERSION >= 1.37.0`.
+
+```javascript
+// every track of one content folder at once
+const folder = ArrivalSpace.getContentFolders().find((f) => f.name === "Soundtrack");
+for (const s of ArrivalSpace.getSounds().filter((s) => s.folderId === folder.id)) s.play();
+```
+
 #### `ArrivalSpace.getDefaultSpawnPoint()`
 
 Where a player lands entering the space without a gate: the spawn point marked as default,

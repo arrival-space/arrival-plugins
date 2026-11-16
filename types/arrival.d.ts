@@ -2329,6 +2329,13 @@ declare namespace ArrivalSpace {
      * @example
      * ArrivalSpace.teleportPlayer({ x: 0, y: 1, z: 5 }, { forward: { x: 0, y: 0, z: -1 } });
      */
+    /** The space's content as the editor's Content panel lists it; getEntity(id) is the scene entity. VERSION ≥ 1.37.0 */
+    function getSpaceContent(): Array<{ id: string; type: string; name: string; folderId: string | null; data: Record<string, any> }>;
+    /** The content folders; a hidden folder hides its contents and sub-folders. VERSION ≥ 1.37.0 */
+    function getContentFolders(): Array<{ id: string; name: string; parentId: string | null; hidden: boolean; order?: number }>;
+    /** The sound entities: one plays in range unless data.autoplay is false; play/pause/stop end range control for this visit, this client only. VERSION ≥ 1.37.0 */
+    function getSounds(): Array<{ id: string; name: string; url: string; folderId: string | null; readonly playing: boolean; play(): Promise<void>; pause(): void; stop(): void; setVolume(volume: number): void }>;
+
     /** Run callback once the space has finished loading (models, splats, colliders in, loading screen gone), on the next tick if it already has. Returns a cancel function. VERSION ≥ 1.37.0 */
     function onSpaceLoaded(callback: () => void): () => void;
 
