@@ -236,7 +236,7 @@ It's an instance-method wrapper around [`ArrivalSpace.loadGLB(url, options)`](#a
 
 Prefer `this.createModel(...)` over raw `ArrivalSpace.loadGLB(...)` whenever a plugin spawns its own model. Raw `loadGLB` with no `parent` drops the GLB on the scene root: the gizmo then moves the vibe's entity while the visible mesh stays where it was, which looks like a broken editor.
 
-Accepts the same `options` as `loadGLB` (`parent`, `name`, `scale`, `position`, `rotation`, `castShadows`, `onLoad`, …). `position` and `rotation` are **relative to this vibe's entity** and accept `[x, y, z]`, `{ x, y, z }` or a `pc.Vec3`. Pass `parent` explicitly to attach the model somewhere else — a bone, a sub-container, or `pc.app.root` for a world-space object that must not inherit the entity's transform.
+Accepts the same `options` as `loadGLB` (`parent`, `name`, `scale`, `position`, `rotation`, `castShadows`, `transparentDepthPrepass`, `onLoad`, …). `position` and `rotation` are **relative to this vibe's entity** and accept `[x, y, z]`, `{ x, y, z }` or a `pc.Vec3`. Pass `parent` explicitly to attach the model somewhere else — a bone, a sub-container, or `pc.app.root` for a world-space object that must not inherit the entity's transform.
 
 ```javascript
 async initialize() {
@@ -497,6 +497,7 @@ Load a GLB/GLTF 3D model.
 | `scale` | `number` | `1` | Uniform scale |
 | `position` | `{x,y,z}` | - | Local position |
 | `rotation` | `{x,y,z}` | - | Euler rotation |
+| `transparentDepthPrepass` | `boolean` | `false` | Texture-transparent parts draw only where they are the model's front-most layer, so a model whose solid parts use a blended material doesn't show its own far side or inside (the model entity's Transparent Depth Prepass setting; Blender's "Transparency Overlap" off). Plain glass with one overall opacity is not affected. 1.36.1 |
 
 **Returns:** `Promise<{ entity: pc.Entity, asset: pc.Asset }>`
 
