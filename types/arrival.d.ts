@@ -1763,12 +1763,6 @@ declare namespace ArrivalSpace {
             entityId?: string;
         }): Promise<{ answer: string; provider: string; model: string; costUsd: number; inputTokens: number; outputTokens: number } | { error: string } | null>;
 
-        /** Store a provider API key for the current user (server-side, write-only). */
-        function setKey(provider: 'openai' | 'anthropic' | 'glm', apiKey: string): Promise<boolean>;
-
-        /** Remove a stored provider API key. */
-        function clearKey(provider: 'openai' | 'anthropic' | 'glm'): Promise<boolean>;
-
         /** Which providers have a stored key for the current user (never the keys). */
         function keyStatus(): Promise<{ openai: boolean; anthropic: boolean; glm: boolean } | null>;
 

@@ -2241,10 +2241,10 @@ if (code?.code === 'aborted') return;
 // … in destroy() / a Cancel button: this._ai?.abort();
 ```
 
-#### `ArrivalSpace.ai.setKey(provider, apiKey)` / `clearKey(provider)` / `keyStatus()` / `openKeySettings()`
+#### `ArrivalSpace.ai.keyStatus()` / `openKeySettings()`
 
-Key management. `provider` is `'openai' | 'anthropic' | 'glm'`. Keys are a
-**profile/account setting** — creators normally manage them under
+Key status. Providers are `'openai' | 'anthropic' | 'glm'`. Keys are a
+**profile/account setting** that only the user sets, under
 Settings → Profile → AI Keys; `openKeySettings()` navigates there (use it when
 a paid provider is selected but `keyStatus()` shows no key). `keyStatus()`
 returns `{openai, anthropic, glm}` booleans — keys themselves are never
