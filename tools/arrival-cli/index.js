@@ -296,9 +296,9 @@ program.command("push")
             if (!total) { console.log("✓ Nothing to push — workspace matches your last pull."); return; }
 
             // Deletions are confirmed on the client before they're sent.
-            if (st.deleted.length && !opts.force && !opts.dryRun) {
-                console.error(`✗ This push would DELETE ${st.deleted.length} file${st.deleted.length === 1 ? "" : "s"}:`);
-                for (const p of st.deleted) console.error(`    - ${p}`);
+            if (cs.deleted.length && !opts.force && !opts.dryRun) {
+                console.error(`✗ This push would DELETE ${cs.deleted.length} file${cs.deleted.length === 1 ? "" : "s"}:`);
+                for (const p of cs.deleted) console.error(`    - ${p}`);
                 console.error("  If that's intended, re-run with --force.");
                 process.exitCode = 1;
                 return;

@@ -151,6 +151,35 @@ test("buildChangeset emits puts for modified/added + deletes; commitBase resets 
     fs.rmSync(dir, { recursive: true, force: true });
 });
 
+test("buildChangeset sends entity files under their id, whatever they are called here", () => {
+    const src = new AdmZip();
+    src.addFile("space/entities/user-model-a.json", Buffer.from('{"id":"user-model-a"}'));
+    src.addFile("space/entities/user-model-b.json", Buffer.from('{"id":"user-model-b"}'));
+    src.addFile(".materialize-manifest.json", Buffer.from(JSON.stringify({ spaceId: "x", entities: [], plugins: [], assets: [] })));
+    const dir = tmp();
+    ws.extractPull(src.toBuffer(), dir);
+    const entities = path.join(dir, "space", "entities");
+    // a new entity in a file named by hand, pushed: its later edit goes to the server's file
+    fs.writeFileSync(path.join(entities, "red-box.json"), '{"id":"user-model-red box"}');
+    ws.commitBase(dir);
+    fs.writeFileSync(path.join(entities, "red-box.json"), '{"id":"user-model-red box","x":1}');
+    // a pulled file renamed (not a delete), another deleted
+    fs.renameSync(path.join(entities, "user-model-a.json"), path.join(entities, "sofa.json"));
+    fs.rmSync(path.join(entities, "user-model-b.json"));
+
+    const cs = ws.buildChangeset(dir);
+    assert.deepEqual(cs.puts.map((p) => p.path).sort(), ["space/entities/user-model-a.json", "space/entities/user-model-red_box.json"]);
+    assert.deepEqual(cs.deletes, ["space/entities/user-model-b.json"]);
+    assert.deepEqual(cs.deleted, ["space/entities/user-model-b.json"]);
+
+    // deleting the hand-named file deletes its entity
+    ws.commitBase(dir);
+    fs.rmSync(path.join(entities, "red-box.json"));
+    const del = ws.buildChangeset(dir);
+    assert.deepEqual([del.deletes, del.deleted], [["space/entities/user-model-red_box.json"], ["space/entities/red-box.json"]]);
+    fs.rmSync(dir, { recursive: true, force: true });
+});
+
 test("normalizeToLF leaves binary extensions untouched", () => {
     const buf = Buffer.from([0x00, 0x0d, 0x0a, 0xff]);
     assert.equal(ws.normalizeToLF(buf, ".glb"), buf);

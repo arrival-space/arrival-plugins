@@ -231,16 +231,48 @@ function computeStatusFromManifest(dir) {
 // Build a per-file changeset from the workspace: puts (modified + added; text LF-normalized,
 // binary base64) + explicit deletes. Reuses computeStatus, so it's precise for every file
 // (including files inside multi-file plugin directories).
+//
+// The server keeps an entity as space/entities/<its id>.json, whatever its file is called here (a file
+// named by hand, e.g. red-box.json): an entity file is sent, and deleted, under the server's name, and a
+// file renamed here (its id still in another file) is not a delete. `deleted`: the files here whose
+// entities the push deletes.
 function buildChangeset(dir) {
     const st = computeStatus(dir);
+    const ids = new Set(listFilesRec(path.join(dir, "space")).map((rel) => entityIdOf(dir, "space/" + rel)));
     const puts = [];
     for (const rel of [...st.modified, ...st.added]) {
         const ext = path.extname(rel).toLowerCase();
         const raw = fs.readFileSync(path.join(dir, rel));
-        if (TEXT_EXT.has(ext)) puts.push({ path: rel, content: normalizeToLF(raw, ext).toString("utf8") });
-        else puts.push({ path: rel, encoding: "base64", content: raw.toString("base64") });
+        const sent = serverPathOf(rel, entityIdOf(dir, rel));
+        if (TEXT_EXT.has(ext)) puts.push({ path: sent, content: normalizeToLF(raw, ext).toString("utf8") });
+        else puts.push({ path: sent, encoding: "base64", content: raw.toString("base64") });
     }
-    return { puts, deletes: st.deleted, status: st };
+    const deletes = [], deleted = [];
+    for (const rel of st.deleted) {
+        const id = entityIdOf(path.join(dir, ".arrival", "base"), rel) ??
+            (readManifest(dir).entities || []).find((e) => e.file === rel)?.id ?? null;
+        if (id && ids.has(id)) continue;
+        deletes.push(serverPathOf(rel, id));
+        deleted.push(rel);
+    }
+    return { puts, deletes, deleted, status: st };
+}
+
+const ENTITY_FILE = /^space\/entities\/[^/]+\.json$/;
+// the id in an entity file (null for any other file, or one that isn't JSON)
+function entityIdOf(root, rel) {
+    if (!ENTITY_FILE.test(rel)) return null;
+    try {
+        const id = JSON.parse(fs.readFileSync(path.join(root, rel), "utf8")).id;
+        return typeof id === "string" && id ? id : null;
+    } catch {
+        return null;
+    }
+}
+// where the server has a file: an entity under its id, as the server names it (user_server
+// space_code_agent/materialize.js safeFileName)
+function serverPathOf(rel, id) {
+    return id ? `space/entities/${id.replace(/[^a-zA-Z0-9._-]+/g, "_")}.json` : rel;
 }
 
 // After a successful push the working tree IS the new server state — refresh the .arrival/base
