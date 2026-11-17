@@ -114,7 +114,13 @@ Distilled reference for the ArrivalScript / ArrivalSpace runtime API (PlayCanvas
 - `setPlayerAnimSpeed(state: string, speed: number)` — Set an animation-speed multiplier for a specific state (multiplies the system's computed speed). State names: 'Idle', 'Forward' (walk), 'Jumping'.
   - _gotcha:_ Passing null/undefined for speed deletes the override for that state; no-op if there is no roomData.
 - `setPlayerSpeed(multiplier: number)` — Set the character movement speed multiplier (0.8 = default, the room's moveSpeed when unset); affects both physics movement and walk animation speed proportionally via roomData.moveSpeed.
+- `getSpaceContent()` — The space's content as the editor's Content panel lists it: [{ id, type, name, folderId, data }]; getEntity(id) is the scene entity. Requires VERSION ≥ 1.37.0.
+- `getContentFolders()` — The content folders: [{ id, name, parentId, hidden, order }]; a hidden folder hides its contents and sub-folders. Requires VERSION ≥ 1.37.0.
+- `getAnnotations()` — The annotations: [{ id, text, position, folderId, entity, isOpen, open(), close() }]; text = what the popup shows; open/close in this client only. Requires VERSION ≥ 1.37.0.
+- `getSounds()` — The sound entities: [{ id, name, url, folderId, playing, play(), pause(), stop(), setVolume(v) }]; one plays in range unless data.autoplay is false; play/pause/stop end range control for this visit, this client only. Requires VERSION ≥ 1.37.0.
+- `onSpaceLoaded(callback)` — Run callback once the space has finished loading (models, splats, colliders in, loading screen gone), or on the next tick when it already has; returns a cancel function (call it in destroy()). A vibe starts while its space is still loading. Requires VERSION ≥ 1.37.0.
 - `getDefaultSpawnPoint()` — Where a player lands entering the space without a gate (the default spawn point, else the scene start): `{ position, forward }` for teleportPlayer, or null before the space has loaded. Read at call time, so it follows a moved spawn point. Requires VERSION ≥ 1.29.0.
+- `createSpawnPoint(options)` / `updateSpawnPoint(id, changes)` / `removeSpawnPoint(id)` — Add, change or remove a spawn point; options are a SpawnPoint entity's data (position, rotation {x: pitch, y: yaw}, isDefaultThirdPerson, isDefaultFreeCam, alwaysSnapBack, hidden, displayName); a default role set true moves from the other spawn points. create → { id, entity, persisted }, the others → true once saved. Saved only when canEditSpace(), else this client until reload. Requires VERSION ≥ 1.37.0.
 - `teleportToSpawn()` — Teleport the local player to getDefaultSpawnPoint(), facing its direction; false before the space has loaded. Requires VERSION ≥ 1.29.0.
 - `hideXrControllers()` — VR: hide the controller models drawn at the hands (rays, buttons and tracking keep working); returns a release function, several vibes can hold it. Requires VERSION ≥ 1.29.0.
   - _gotcha:_ No-op if customTravelCenter.roomData is unavailable.
@@ -156,7 +162,7 @@ Distilled reference for the ArrivalScript / ArrivalSpace runtime API (PlayCanvas
 - `rotateEntity(nameOrEntity: string|pc.Entity, x: number, y: number, z: number)` — Set an entity's world Euler rotation in degrees (setEulerAngles); accepts a name or entity.
 - `scaleEntity(nameOrEntity: string|pc.Entity, s: number)` — Set an entity's uniform local scale (setLocalScale s,s,s); accepts a name or entity.
 - `setPhysicsStepRate(stepHz = 60, maxSubSteps = 10)` — Set the rigidbody simulation rate by writing fixedTimeStep = 1/stepHz and maxSubSteps on the global rigidbody system.
-  - _gotcha:_ Non-finite/non-positive inputs fall back to 60 / 10; maxSubSteps is rounded and floored at 1. Global change affecting all physics.
+  - _gotcha:_ Non-finite/non-positive inputs fall back to 60 / 10; maxSubSteps is rounded and never below stepHz (one second of steps per frame). Global change affecting all physics.
 - `enableContinuousCollisionDetection(entity: pc.Entity, options = {} /* radius?, motionThreshold? */)` — Enable Bullet/Ammo continuous collision detection on an entity's rigidbody to prevent tunnelling of fast movers (sets swept-sphere radius + motion threshold and activates the body).
   - _gotcha:_ Requires a rigidbody with a backing Ammo body; radius/motionThreshold default from the collision shape (half the min half-extent / radius) when not provided.
 - `ArrivalSpace.onEntityDrag(entity, { start, move, end })` — Drag a 3D entity (levers, sliders, dials): press picked like onEntityClick (mesh-accurate, no collider), `move({x, y, dx, dy, startX, startY})` followed anywhere on the page while held, the camera stays still and the click is consumed. CSS px of the canvas. Returns unsubscribe. Requires VERSION ≥ 1.31.0.
@@ -185,7 +191,7 @@ Distilled reference for the ArrivalScript / ArrivalSpace runtime API (PlayCanvas
 
 ## Audio
 
-- `playSound(url, options = {} /* entity=null, position=null, volume=1, loop=false, pitch=1, refDistance=1, maxDistance=100, rollOffFactor=1, positional=true */)` — Play a (3D positional by default) sound, attaching it to a provided entity or a temporary entity created at options.position.
+- `playSound(url, options = {} /* entity=null, position=null, volume=1, loop=false, pitch=1, refDistance=1, maxDistance=100, rollOffFactor=1, positional=true */)` — Play a (3D positional by default) sound, attaching it to a provided entity or a temporary entity created at options.position. `url` may be `"sfx:<name>"`, a built-in game sound (1.37.0): coin, jump, shoot, hit, explosion, click, pop, ding, success, fail, powerup, whoosh.
   - _gotcha:_ Throws if url missing. Has an undocumented autoCleanup option (default true): non-looping sounds on auto-created entities destroy the entity ~100ms after the slot ends. Stop a looping sound via the returned slot.stop().
 
 ## Events
@@ -273,7 +279,7 @@ Distilled reference for the ArrivalScript / ArrivalSpace runtime API (PlayCanvas
 - `async push(key, value, options = {})  // options: {numval?, mode?='unique'|'min'|'max'|'append', spaceId?}` — ArrivalSpace.pluginStore.push: Push a value to the plugin store. POSTs {spaceId, key, value:String(value), numval, mode} to /pluginstore/push/{userID}/{logonCertificate}.
   - _gotcha:_ Returns false (logs to console.error) if not logged in (needs userProfileData.userServerURL+userID+logonCertificate) or no space loaded (pc.app.loadSceneParameter.room). Scoped per space (spaceId) + per user (userID in URL path) + per key. value is coerced via String(value); numval defaults to null. mode controls write semantics; server-side enforces the mode.
 - `async get(key, options = {})  // options: {sort?='asc'|'desc', limit?=10, spaceId?}` — ArrivalSpace.pluginStore.get: Get entries from the plugin store via GET /pluginstore/get/{userID}/{logonCertificate}?spaceId&key&sort&limit[&prefix=1].
-  - _gotcha:_ limit defaults to 10, sort defaults to 'asc'. Undocumented options.prefix — if truthy, sets query param prefix=1 (prefix match on key). Returns false (not []) on not-logged-in / no-space / error.
+  - _gotcha:_ limit defaults to 10, sort defaults to 'asc'. options.prefix — if truthy, sets query param prefix=1 (prefix match on key); rows pushed with mode 'append' are stored as `<key>_<id>`, so only a prefix get reads them back. Returns false (not []) on not-logged-in / no-space / error.
 - `async delete(key, options = {})  // options: {spaceId?}` — ArrivalSpace.pluginStore.delete: Delete OWN entry for a key. POSTs {spaceId, key} to /pluginstore/delete/{userID}/{logonCertificate}.
   - _gotcha:_ Deletes only the calling user's own entry for the key, not other users' rows. Returns false if not logged in / no space loaded / request error.
 - `async set(namespace, key, value)` — ArrivalSpace.userData.set: Store a per-user value. POSTs {namespace, key, value} to /pluginstore/user/set/{userID}/{logonCertificate}; value auto-JSON.stringify'd unless already a string.

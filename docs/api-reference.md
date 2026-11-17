@@ -497,7 +497,7 @@ Load a GLB/GLTF 3D model.
 | `scale` | `number` | `1` | Uniform scale |
 | `position` | `{x,y,z}` | - | Local position |
 | `rotation` | `{x,y,z}` | - | Euler rotation |
-| `transparentDepthPrepass` | `boolean` | `false` | Texture-transparent parts draw only where they are the model's front-most layer, so a model whose solid parts use a blended material doesn't show its own far side or inside (the model entity's Transparent Depth Prepass setting; Blender's "Transparency Overlap" off). Plain glass with one overall opacity is not affected. 1.36.1 |
+| `transparentDepthPrepass` | `boolean` | `false` | Texture-transparent parts draw only where they are the model's front-most layer, so a model whose solid parts use a blended material doesn't show its own far side or inside (the model entity's Transparent Depth Prepass setting; Blender's "Transparency Overlap" off). Plain glass with one overall opacity is not affected. 1.38.0 |
 
 **Returns:** `Promise<{ entity: pc.Entity, asset: pc.Asset }>`
 
@@ -537,7 +537,9 @@ Load a texture/image.
 
 #### `ArrivalSpace.playSound(url, options?)`
 
-Play positional or non-positional audio.
+Play positional or non-positional audio. `url` is an audio file's URL, or `"sfx:<name>"` for a
+built-in game sound (API 1.37.0): `coin`, `jump`, `shoot`, `hit`, `explosion`, `click`, `pop`, `ding`, `success`, `fail`, `powerup`, `whoosh` -
+chiptune-style, synthesised in the browser on first use, each under 1.2 s; `pitch` varies them.
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
@@ -1154,6 +1156,81 @@ destroy() {
 }
 ```
 
+#### `ArrivalSpace.onSpaceLoaded(callback)`
+
+Runs `callback` once the space has finished loading - its entities, models and splats are in,
+at full detail, and the loading screen is gone - or on the next tick when it already has. A vibe
+starts while its space is still loading: this is where to raycast the ground, place things on
+loaded models or splats, or hide a loading overlay of its own. A load replaced by a space switch
+never calls it. Requires `ArrivalSpace.VERSION >= 1.37.0`.
+
+**Returns:** `() => void` — cancels the callback if it has not run yet; call it in `destroy()`.
+
+```javascript
+initialize() {
+    this._offLoaded = ArrivalSpace.onSpaceLoaded(() => this._dropOnGround());
+}
+destroy() {
+    this._offLoaded();
+}
+```
+
+#### `ArrivalSpace.getSpaceContent()` / `getContentFolders()` / `getSounds()` / `getAnnotations()`
+
+`getSpaceContent()` lists the space's content as the editor's Content panel does: every entity as
+`{ id, type, name, folderId, data }` (type `UserModelEntity`, `CustomSoundEntity`, `AnnotationEntity`,
+`SpawnPoint`, `DynamicGate`, ...; `name` as the panel shows it; `data` its saved data, a vibe's params under
+`data.params`); `getEntity(id)` is its scene entity. `getContentFolders()` lists the folders,
+`{ id, name, parentId, hidden, order }`; an entity's `folderId` is its folder, and a hidden folder hides
+everything in it and its sub-folders.
+
+`getSounds()` returns the sound entities to control from a vibe: `{ id, name, url, folderId, playing,
+play(), pause(), stop(), setVolume(volume) }`. A sound plays while the visitor is within its
+`data.distance` and pauses outside, unless its `data.autoplay` is `false` ("Play when in range" off in
+the editor): then only `play()` starts it. `play` / `pause` / `stop` take it out of that range control
+for this visit; they and `setVolume` act in this client only. Requires `ArrivalSpace.VERSION >= 1.37.0`.
+
+```javascript
+// every track of one content folder at once
+const folder = ArrivalSpace.getContentFolders().find((f) => f.name === "Soundtrack");
+for (const s of ArrivalSpace.getSounds().filter((s) => s.folderId === folder.id)) s.play();
+```
+
+`getAnnotations()` returns the annotations (the editor's info markers): `{ id, text, position, folderId,
+entity, isOpen, open(), close() }`. `text` is what the popup shows, one line per paragraph; `open` /
+`close` show or hide the popup in this client only, as a visitor's click on the marker does; `entity`
+is the marker, for `onEntityClick` / `onEntityHover`. Requires `ArrivalSpace.VERSION >= 1.37.0`.
+
+```javascript
+// open each annotation while the pointer is over its marker
+for (const a of ArrivalSpace.getAnnotations()) ArrivalSpace.onEntityHover(a.entity, { enter: a.open, leave: a.close });
+```
+
+An annotation is an `AnnotationEntity` entity; its data:
+
+| Key | Value |
+|-----|-------|
+| `position` | `{ x, y, z }` |
+| `editState` | The content: a Lexical editor state as a JSON **string** (below). The popup shows this. |
+| `htmlString` | The same content as HTML; its text is the annotation's name in the Content panel |
+| `alwaysOpen` | `true`: the popup stays open |
+| `openByDistance`, `triggerDistance` | Opens while the player is within `triggerDistance` m (default 5) |
+| `uiAnchor` | Popup side: `"top"`, `"bottom"` (default), `"left"`, `"right"` |
+| `icon`, `iconBackground` | Emoji or text (≤ 8 characters) in place of the 3D marker; a background behind it |
+| `hideButton` | No marker: the content shows through `alwaysOpen` / `openByDistance` only |
+| `fixedScreenSize` | The marker keeps its size on screen at any distance |
+| `backgroundColor`, `textColor` | `"#rrggbb"` |
+| `hidden`, `folderId` | As for any content |
+
+`editState`, one paragraph per line; a text node's `format` is a bit mask: 1 bold, 2 italic, 8 underline:
+
+```json
+{"root":{"type":"root","version":1,"children":[
+  {"type":"paragraph","version":1,"children":[{"type":"text","version":1,"text":"Shelf A","format":1}]},
+  {"type":"paragraph","version":1,"children":[{"type":"text","version":1,"text":"Tools and spare parts"}]}
+]}}
+```
+
 #### `ArrivalSpace.getDefaultSpawnPoint()`
 
 Where a player lands entering the space without a gate: the spawn point marked as default,
@@ -1162,6 +1239,24 @@ point. Requires `ArrivalSpace.VERSION >= 1.29.0`.
 
 **Returns:** `{ position: {x,y,z}, forward: {x,y,z} } | null` — `forward` is the horizontal
 direction the player faces there; both fit `teleportPlayer`. `null` before the space has loaded.
+
+#### `ArrivalSpace.createSpawnPoint(options)` / `updateSpawnPoint(id, changes)` / `removeSpawnPoint(id)`
+
+Add, change or remove a spawn point, where visitors appear entering the space (`getDefaultSpawnPoint()`
+is the default one). The options are a SpawnPoint entity's data: `position` on the ground (the
+avatar's feet), `rotation` `{ x: pitch, y: yaw, z: 0 }` in degrees (yaw 0 faces -Z),
+`isDefaultThirdPerson` / `isDefaultFreeCam` (one spawn point holds each role: `true` takes it from the
+others; left out, a new one takes a role nobody holds), `alwaysSnapBack`, `hidden` (skipped when
+choosing where to spawn), `displayName`. Saved and used for everyone only when `canEditSpace()`;
+otherwise in this client until reload. Requires `ArrivalSpace.VERSION >= 1.37.0`.
+
+**Returns:** `createSpawnPoint` → `Promise<{ id, entity, persisted } | null>` (null without a position);
+`updateSpawnPoint` / `removeSpawnPoint` → `Promise<boolean>`, true once saved.
+
+```javascript
+const p = ArrivalSpace.getPlayer().getPosition();
+await ArrivalSpace.createSpawnPoint({ position: { x: p.x, y: p.y, z: p.z }, isDefaultThirdPerson: true });
+```
 
 #### `ArrivalSpace.teleportToSpawn()`
 
@@ -1254,7 +1349,7 @@ This affects the shared physics world, so if multiple plugins call it, the lates
 | Param | Type | Description |
 |-------|------|-------------|
 | `stepHz` | `number` | Physics tick rate in Hz (for example `60`, `120`, `180`) |
-| `maxSubSteps` | `number` | Maximum Bullet substeps per frame (default: `10`) |
+| `maxSubSteps` | `number` | Maximum Bullet substeps per frame; never below `stepHz` (one second of steps), so physics keeps real time down to 1 fps |
 
 **Returns:** `boolean`
 
@@ -1958,7 +2053,7 @@ scores. Any logged-in visitor can write; everyone in the space reads the same en
 | Option | Type | Description |
 |---|---|---|
 | `numval` | `number?` | Sort value (score, time, …) |
-| `mode` | `"unique"` (default) | `"min"` | `"max"` | `"append"` | `unique`: one entry per user, replaced. `min`/`max`: one entry per user, kept only if `numval` is lower/higher. `append`: a new entry every call. |
+| `mode` | `"unique"` (default) | `"min"` | `"max"` | `"append"` | `unique`: one entry per user, replaced. `min`/`max`: one entry per user, kept only if `numval` is lower/higher. `append`: a new entry every call, stored under `<key>_<id>` — read them back with `get(key, { prefix: true })`. |
 | `spaceId` | `string?` | Another space (defaults to the current one) |
 
 **Returns:** `Promise<object | false>`
@@ -2146,10 +2241,10 @@ if (code?.code === 'aborted') return;
 // … in destroy() / a Cancel button: this._ai?.abort();
 ```
 
-#### `ArrivalSpace.ai.setKey(provider, apiKey)` / `clearKey(provider)` / `keyStatus()` / `openKeySettings()`
+#### `ArrivalSpace.ai.keyStatus()` / `openKeySettings()`
 
-Key management. `provider` is `'openai' | 'anthropic' | 'glm'`. Keys are a
-**profile/account setting** — creators normally manage them under
+Key status. Providers are `'openai' | 'anthropic' | 'glm'`. Keys are a
+**profile/account setting** that only the user sets, under
 Settings → Profile → AI Keys; `openKeySettings()` navigates there (use it when
 a paid provider is selected but `keyStatus()` shows no key). `keyStatus()`
 returns `{openai, anthropic, glm}` booleans — keys themselves are never

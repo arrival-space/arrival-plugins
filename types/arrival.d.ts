@@ -803,8 +803,11 @@ declare namespace ArrivalSpace {
     /** Load a texture/image */
     function loadTexture(url: string, options?: LoadTextureOptions): Promise<{ texture: pc.Texture; asset: pc.Asset }>;
 
-    /** Play a 3D positional sound */
-    function playSound(url: string, options?: PlaySoundOptions): Promise<{ entity: pc.Entity; slot: pc.SoundSlot }>;
+    /** Built-in game sounds for playSound("sfx:<name>") (API 1.37.0). */
+    type SoundEffect = "sfx:coin" | "sfx:jump" | "sfx:shoot" | "sfx:hit" | "sfx:explosion" | "sfx:click" | "sfx:pop" | "sfx:ding" | "sfx:success" | "sfx:fail" | "sfx:powerup" | "sfx:whoosh";
+
+    /** Play a 3D positional sound: an audio file's URL, or a built-in "sfx:<name>" game sound */
+    function playSound(url: SoundEffect | (string & {}), options?: PlaySoundOptions): Promise<{ entity: pc.Entity; slot: pc.SoundSlot }>;
 
     /**
      * Speak text with an AI voice, streamed: playback starts while the rest is generated
@@ -1760,12 +1763,6 @@ declare namespace ArrivalSpace {
             entityId?: string;
         }): Promise<{ answer: string; provider: string; model: string; costUsd: number; inputTokens: number; outputTokens: number } | { error: string } | null>;
 
-        /** Store a provider API key for the current user (server-side, write-only). */
-        function setKey(provider: 'openai' | 'anthropic' | 'glm', apiKey: string): Promise<boolean>;
-
-        /** Remove a stored provider API key. */
-        function clearKey(provider: 'openai' | 'anthropic' | 'glm'): Promise<boolean>;
-
         /** Which providers have a stored key for the current user (never the keys). */
         function keyStatus(): Promise<{ openai: boolean; anthropic: boolean; glm: boolean } | null>;
 
@@ -2329,11 +2326,41 @@ declare namespace ArrivalSpace {
      * @example
      * ArrivalSpace.teleportPlayer({ x: 0, y: 1, z: 5 }, { forward: { x: 0, y: 0, z: -1 } });
      */
+    /** The space's content as the editor's Content panel lists it; getEntity(id) is the scene entity. VERSION ≥ 1.37.0 */
+    function getSpaceContent(): Array<{ id: string; type: string; name: string; folderId: string | null; data: Record<string, any> }>;
+    /** The content folders; a hidden folder hides its contents and sub-folders. VERSION ≥ 1.37.0 */
+    function getContentFolders(): Array<{ id: string; name: string; parentId: string | null; hidden: boolean; order?: number }>;
+    /** The annotations (the editor's info markers): text = what the popup shows; open/close in this client only (API 1.37.0). */
+    function getAnnotations(): Array<{ id: string; text: string; position: { x: number; y: number; z: number }; folderId: string | null; entity: pc.Entity; readonly isOpen: boolean; open(): void; close(): void }>;
+
+    /** The sound entities: one plays in range unless data.autoplay is false; play/pause/stop end range control for this visit, this client only. VERSION ≥ 1.37.0 */
+    function getSounds(): Array<{ id: string; name: string; url: string; folderId: string | null; readonly playing: boolean; play(): Promise<void>; pause(): void; stop(): void; setVolume(volume: number): void }>;
+
+    /** Run callback once the space has finished loading (models, splats, colliders in, loading screen gone), on the next tick if it already has. Returns a cancel function. VERSION ≥ 1.37.0 */
+    function onSpaceLoaded(callback: () => void): () => void;
+
     /** Where a player lands entering without a gate (default spawn point, else scene start); null before load. VERSION ≥ 1.29.0 */
     function getDefaultSpawnPoint(): { position: { x: number; y: number; z: number }; forward: { x: number; y: number; z: number } } | null;
 
     /** Teleport the local player to getDefaultSpawnPoint(), facing its direction. VERSION ≥ 1.29.0 */
     function teleportToSpawn(): boolean;
+
+    /** A SpawnPoint entity's data (position on the ground; rotation {x: pitch, y: yaw} in degrees, yaw 0 faces -Z). */
+    interface SpawnPointData {
+        position: { x: number; y: number; z: number };
+        rotation?: { x: number; y: number; z: number };
+        isDefaultThirdPerson?: boolean;
+        isDefaultFreeCam?: boolean;
+        alwaysSnapBack?: boolean;
+        hidden?: boolean;
+        displayName?: string;
+    }
+    /** Add a spawn point; a default role set true moves from the others. Saved only when canEditSpace(), else this client until reload. VERSION ≥ 1.37.0 */
+    function createSpawnPoint(options: SpawnPointData): Promise<{ id: string; entity: any; persisted: boolean } | null>;
+    /** Change a spawn point; true once saved. VERSION ≥ 1.37.0 */
+    function updateSpawnPoint(id: string, changes: Partial<SpawnPointData>): Promise<boolean>;
+    /** Remove a spawn point; true once deleted on the server. VERSION ≥ 1.37.0 */
+    function removeSpawnPoint(id: string): Promise<boolean>;
 
     /**
      * Raise or lower the floor the player walks on where the space has none of its own (a splat or a map
@@ -2395,7 +2422,7 @@ declare namespace ArrivalSpace {
      * Set the global physics step rate for the whole world (not just this plugin).
      * Latest call wins.
      * @param stepHz Physics tick rate in Hz (e.g. 60, 120, 180). Default 60.
-     * @param maxSubSteps Maximum Bullet substeps per frame. Default 10.
+     * @param maxSubSteps Maximum Bullet substeps per frame; never below stepHz (one second of steps per frame).
      */
     function setPhysicsStepRate(stepHz?: number, maxSubSteps?: number): boolean;
 

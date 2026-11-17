@@ -67,7 +67,7 @@ change hot-applies to connected viewers without a reload.
 | `hideHomePortal` | bool | `false` | Hide the home portal |
 | `hideNavigationPortals` | bool | `false` | Hide the whole NavigationPortals group |
 | `showGrid` | bool | `false` | Show the reference floor grid (auto-forced ON when the scene has no real entities) |
-| `hideUI` | bool | `false` | Hide the entire client UI overlay for visitors *(Enterprise; reload-required)* |
+| `hideUI` | bool | `false` | Hide the entire client UI overlay for visitors *(reload-required)* |
 
 ---
 
