@@ -1,7 +1,7 @@
 {
   "name": "@arrival-space/cli",
   "version": "1.1.1",
-  "description": "Arrival.Space CLI — manage your spaces as local files (pull / push / validate)",
+  "description": "Arrival.Space CLI — build and share 3D spaces (Gaussian splats, 3D models, plugins) as local files: pull / push / validate",
   "bin": {
     "arrival": "index.js"
   },
@@ -20,7 +20,15 @@
   "keywords": [
     "arrival.space",
     "cli",
-    "space-as-code"
+    "space-as-code",
+    "gaussian-splatting",
+    "3dgs",
+    "splat",
+    "3d",
+    "webxr",
+    "playcanvas",
+    "mcp",
+    "ai-agent"
   ],
   "homepage": "https://arrival.space",
   "repository": {
