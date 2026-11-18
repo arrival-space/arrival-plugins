@@ -970,6 +970,8 @@ declare namespace ArrivalSpace {
 
     /** VR: hide the controller models drawn at the hands (rays, buttons, tracking keep working). Returns release. VERSION ≥ 1.29.0 */
     function hideXrControllers(): () => void;
+    /** Hide avatar name tags on this screen only: no entity = every tag (players, NPCs, later joiners), else that avatar's. Returns the release. VERSION ≥ 1.35.0 */
+    function hideNameTags(entity?: pc.Entity): () => void;
 
     /** Safely dispose an entity and its resources */
     function disposeEntity(entity: pc.Entity, options?: DisposeEntityOptions): void;
@@ -999,6 +1001,12 @@ declare namespace ArrivalSpace {
      * }
      */
     function getStaticGate(index: number): StaticGate | null;
+    /** Place a new gate to another space (link = space id; front faces local +Z). Saved for everyone only when canEditSpace(), else this client until reload. null without a link. VERSION ≥ 1.35.0 */
+    function createGate(options: { link: string; title?: string; position?: { x: number; y: number; z: number }; rotation?: { x: number; y: number; z: number } }): Promise<{ id: string; entity: pc.Entity; persisted: boolean } | null>;
+    /** Relink, retitle or move a gate (static gates: link/title only). True once saved (canEditSpace()). VERSION ≥ 1.35.0 */
+    function updateGate(id: string, changes: { link?: string; title?: string; position?: { x: number; y: number; z: number }; rotation?: { x: number; y: number; z: number } }): Promise<boolean>;
+    /** Delete a placed gate. True once deleted on the server (canEditSpace()), else removed in this client only. VERSION ≥ 1.35.0 */
+    function removeGate(id: string): Promise<boolean>;
 
     /**
      * Get the center asset entity of the current space.
@@ -1901,6 +1909,11 @@ declare namespace ArrivalSpace {
          */
         function sendToSpace(spaceId: string, type: string, data?: object): Promise<{ spaces: number } | { error: string }>;
 
+        /** Switch a player's mic off ('*': everyone here who can't edit the space); only when canEditSpace() (checked by the server). At most 20 per 10 s. (1.36.0) */
+        function mutePlayer(userId: string): Promise<{ ok: true; players: number } | { error: string }>;
+        /** Send a player to their own space with a message; they may come back by link. Only when canEditSpace(); editors are never a target. (1.36.0) */
+        function kickPlayer(userId: string): Promise<{ ok: true; players: number } | { error: string }>;
+
         /**
          * Subscribe to messages of a specific type.
          * 
@@ -2335,6 +2348,16 @@ declare namespace ArrivalSpace {
 
     /** The sound entities: one plays in range unless data.autoplay is false; play/pause/stop end range control for this visit, this client only. VERSION ≥ 1.37.0 */
     function getSounds(): Array<{ id: string; name: string; url: string; folderId: string | null; readonly playing: boolean; play(): Promise<void>; pause(): void; stop(): void; setVolume(volume: number): void }>;
+
+    interface ScreenShare { gateId: string | null; kind: "screen" | "camera"; userName: string; socketId: string; isLocal: boolean; stream: MediaStream }
+    /** The screen and camera shares live on the space's screen-share gates (DynamicGate, data.dynamicGate.screenShare); stream for the vibe's own muted <video> - the gate keeps showing it and playing its sound. VERSION ≥ 1.39.0 */
+    function getScreenShares(): ScreenShare[];
+    /** callback(getScreenShares()) whenever a share starts, ends, moves gate or gets a new stream (also possibly without a change). Returns the unsubscribe. VERSION ≥ 1.39.0 */
+    function onScreenSharesChanged(callback: (shares: ScreenShare[]) => void): () => void;
+    /** Share the local player's screen or camera to a screen-share gate, as clicking it does (call from a click: the browser asks). True once live; false when refused, cancelled or gateId is no screen-share gate. VERSION ≥ 1.39.0 */
+    function startScreenShare(gateId: string, kind?: "screen" | "camera"): Promise<boolean>;
+    /** End the local player's share of one kind, or all of them without a kind. VERSION ≥ 1.39.0 */
+    function stopScreenShare(kind?: "screen" | "camera"): Promise<void>;
 
     /** Run callback once the space has finished loading (models, splats, colliders in, loading screen gone), on the next tick if it already has. Returns a cancel function. VERSION ≥ 1.37.0 */
     function onSpaceLoaded(callback: () => void): () => void;

@@ -624,6 +624,19 @@ Create a `pc.StandardMaterial`.
 
 **Returns:** `pc.StandardMaterial`
 
+#### StandardMaterial notes
+
+- Call `mat.update()` after changing any property or map, or nothing changes on screen.
+- A StandardMaterial's own `transparent` is read-only: assigning it throws. Set `blendType`
+  (`pc.BLEND_NORMAL` | `pc.BLEND_ADDITIVE` | `pc.BLEND_PREMULTIPLIED`, default `pc.BLEND_NONE`) and
+  `opacity`; `createMaterial`'s `transparent` option does exactly that. Overlapping glass or backdrops
+  also need `mat.depthWrite = false`.
+- A StandardMaterial reads vertex normals whenever the space has a skybox, `useLighting: false`
+  included. On WebGPU a mesh without normals turns the whole frame black: build them with
+  `mesh.setNormals(pc.calculateNormals(positions, indices))` (lines: any constant normal).
+- A custom shader that fails to compile is logged as an error with the GL message (console and
+  `getVibeLogs()`); meshes drawn with it are not rendered.
+
 ---
 
 ### UI Panels
@@ -727,6 +740,18 @@ export class ColorCubes extends ArrivalScript {
 In VR the controller ray clicks and hovers the same entities: while the ray is on an entity with
 a click handler, the trigger (or a hand pinch) clicks it and does not teleport the player.
 Requires `ArrivalSpace.VERSION >= 1.29.0`.
+
+**`event.stopPropagation()` makes the mesh solid.** Called in the click handler it consumes the
+click: it stops reaching the entity's ancestors and the rest of the platform does not react - no NPC
+or gate behind the mesh is clicked through it, and the player does not walk to where you clicked.
+Without it the handler runs and everything else still happens too (the mesh has no collider, so the
+platform's physics side cannot see it). Called in `onEntityHover`'s `enter` it claims the hover:
+nothing behind highlights or shows a pointer cursor. Leave it out only for a pass-through overlay.
+
+```javascript
+ArrivalSpace.onEntityClick(this._button, (e) => { e.stopPropagation(); this.press(); });
+ArrivalSpace.onEntityHover(this._button, { enter: (e) => { e.stopPropagation(); this.glow(true); }, leave: () => this.glow(false) });
+```
 
 #### `ArrivalSpace.onEntityHover(entity, handlers)`
 
@@ -979,6 +1004,20 @@ keep working. Several vibes can hold it at once. Requires `ArrivalSpace.VERSION 
 
 **Returns:** `() => void` - shows the controllers again (safe to call twice). Call it in `destroy()`.
 
+#### `ArrivalSpace.hideNameTags(entity?)`
+
+Hides avatar name tags on this screen only (everyone else still sees theirs). Without an argument:
+every name tag - players, NPCs, also ones that join later. With an avatar entity (a player's `entity`
+from `ArrivalSpace.net.getPlayers()`, an NPC's `npc.entity`): that avatar's. Several vibes can hold it
+at once; a tag comes back when all have released it. Requires `ArrivalSpace.VERSION >= 1.35.0`.
+
+**Returns:** `() => void` - shows the tags again (safe to call twice). Call it in `destroy()`.
+
+```javascript
+this._showNames = ArrivalSpace.hideNameTags();
+// in destroy(): this._showNames?.();
+```
+
 ---
 
 ### Cleanup
@@ -1007,6 +1046,21 @@ Get all 7 static gates in the current space.
 Get one static gate by index (`0-6`).
 
 **Returns:** `{ id, entity, index, gateLogic } | null`
+
+#### `ArrivalSpace.createGate(options)` / `updateGate(id, changes)` / `removeGate(id)`
+
+`await createGate({ link, title, position, rotation })` places a new gate to another space on every
+call: `link` is a space id (`"42485456_80s"`), `title` is shown on it, `position` is world, `rotation`
+Euler degrees. The gate's front faces its local +Z, so a gate at `G` faces a point `P` with
+`y = Math.atan2(P.x - G.x, P.z - G.z) * 180 / Math.PI`. Returns `{ id, entity, persisted }`, or `null`
+without a link.
+
+`await updateGate(id, { link, title, position, rotation })` relinks, retitles or moves a gate - one from
+`createGate`, one placed in the editor, or a static gate (`getStaticGates()` ids; link and title only).
+`await removeGate(id)` deletes a placed gate. Both return `true` once saved.
+
+All three are saved and shown to everyone only when `canEditSpace()`; otherwise the change exists in
+this client until reload. Requires `ArrivalSpace.VERSION >= 1.35.0`.
 
 #### `ArrivalSpace.getCenterAsset()`
 
@@ -1229,6 +1283,43 @@ An annotation is an `AnnotationEntity` entity; its data:
   {"type":"paragraph","version":1,"children":[{"type":"text","version":1,"text":"Shelf A","format":1}]},
   {"type":"paragraph","version":1,"children":[{"type":"text","version":1,"text":"Tools and spare parts"}]}
 ]}}
+```
+
+#### `ArrivalSpace.getScreenShares()` / `onScreenSharesChanged()` / `startScreenShare()` / `stopScreenShare()`
+
+A screen-share gate is a `DynamicGate` with `data.dynamicGate.screenShare: true` (`screenShareVisitors: true`
+lets any visitor take it, otherwise only people who can edit the space). `getScreenShares()` returns the
+shares live on those gates, one per sharer and kind, the local player's own included:
+`{ gateId, kind: "screen" | "camera", userName, socketId, isLocal, stream }`. `stream` is the share's video
+as a `MediaStream`, for a vibe's own `<video>` - a 2D panel at the edge of the screen, a row of call-style
+tiles. The gate keeps showing the share and keeps playing its sound (at the gate's position unless
+`dynamicGate.screenShareSpatialAudio` is `false`, then plainly for everyone), so the vibe's element is muted.
+`socketId` matches `ArrivalSpace.net.getPlayers()`. `onScreenSharesChanged(cb)` calls `cb(shares)` whenever
+a share starts, ends, moves to another gate or gets a new stream (sometimes without a change) and returns
+the unsubscribe.
+
+`await startScreenShare(gateId, "screen" | "camera")` shares the local player's screen or camera to a
+screen-share gate, as clicking the gate does: the browser asks for the screen or the camera, so call it
+from a click. It resolves `true` once the share is live, `false` when it was refused (the gate is taken or
+host-only, no voice connection - said on screen), cancelled in the browser's picker, or `gateId` is no
+screen-share gate. One share per gate; a new share of a kind ends this player's previous one of that kind.
+`stopScreenShare(kind)` ends one, `stopScreenShare()` all of them. Requires `ArrivalSpace.VERSION >= 1.39.0`.
+
+```javascript
+// pin every share to the right edge of the screen
+this._panel = this.createUI("div", { style: { position: "fixed", top: "80px", right: "16px", width: "320px",
+    display: "flex", flexDirection: "column", gap: "8px", zIndex: "1000" } });
+const show = (shares) => {
+    this._panel.replaceChildren(...shares.map((s) => {
+        const v = document.createElement("video");
+        Object.assign(v, { muted: true, autoplay: true, playsInline: true, srcObject: s.stream });
+        v.style.cssText = "width:100%;border-radius:8px;background:#000";
+        return v;
+    }));
+};
+this._offShares = ArrivalSpace.onScreenSharesChanged(show);
+show(ArrivalSpace.getScreenShares());
+// destroy(): this._offShares(); this.removeUI();
 ```
 
 #### `ArrivalSpace.getDefaultSpawnPoint()`
@@ -2527,5 +2618,18 @@ const box = new pc.Entity("Box");
 box.addComponent("render", { type: "box" });
 this.entity.addChild(box); // always parent to this.entity for auto-cleanup
 ```
+
+The engine is PlayCanvas v2. The v1 API is gone: no `model` component (use `render`), no
+`pc.createMesh`, no `pc.createScript`; build meshes with `new pc.Mesh(device)` and
+`new pc.MeshInstance(mesh, material)`.
+
+- Mutating the Vec3 that `rigidbody.linearVelocity` returns does not move the body: assign it
+  (`rb.linearVelocity = v`, dynamic bodies only) or use `applyImpulse` / `teleport`.
+- On a child of a compound collider, add the rigidbody before the collision component - otherwise
+  its shape also stays in the parent's compound.
+- Collision shapes ignore entity scale, their own and their parents': size them in world units
+  (`halfExtents`, `radius`, `height`).
+- The plugin's entity takes its entity's position and rotation, never its `data.scale`: size what the
+  vibe creates itself (e.g. `this.createModel(url, { scale })`).
 
 **Note:** Always add sub-entities as children of `this.entity`, not `this.app.root`. Children of your plugin entity are auto-destroyed on unload. `setPosition()` and `setRotation()` set world-space transforms regardless of parent hierarchy, so parenting does not limit positioning.
