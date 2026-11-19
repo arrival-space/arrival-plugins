@@ -1234,9 +1234,45 @@ destroy() {
 `getSpaceContent()` lists the space's content as the editor's Content panel does: every entity as
 `{ id, type, name, folderId, data }` (type `UserModelEntity`, `CustomSoundEntity`, `AnnotationEntity`,
 `SpawnPoint`, `DynamicGate`, ...; `name` as the panel shows it; `data` its saved data, a vibe's params under
-`data.params`); `getEntity(id)` is its scene entity. `getContentFolders()` lists the folders,
-`{ id, name, parentId, hidden, order }`; an entity's `folderId` is its folder, and a hidden folder hides
-everything in it and its sub-folders.
+`data.params`; `data.hidden` its eye in the Content panel); `getEntity(id)` is its scene entity.
+`getContentFolders()` lists the folders, `{ id, name, parentId, hidden, order }`; an entity's
+`folderId` is its folder, and a hidden folder hides everything in it and its sub-folders.
+
+#### `ArrivalSpace.getEntity(id)` / `setEntityVisible(id, visible)` / `onEntityTrigger(entity, { enter, leave })`
+
+`getEntity(id)` is the scene entity of a space entity (an id from `getSpaceContent()` or an
+`editor: "entity"` param), hidden ones too; `null` while the space has no entity of that id.
+
+`setEntityVisible(id, visible)` shows or hides a space entity in this client, for this visit: it is not
+saved and other visitors do not see it, so run it in each client (a trigger fires in every visitor's
+app). An entity hidden in the space (its eye in the Content panel, Enabled off in the PlayCanvas Editor)
+is not loaded until it is shown: a large model or splat appears once it has loaded. A hidden folder
+still hides what is in it.
+
+`onEntityTrigger(entity, { enter, leave })` calls `enter(other)` / `leave(other)` when an entity with a
+rigidbody enters or leaves a space entity's trigger: one with `data.collision` and no `data.rigidbody`
+(Collision without Rigid Body in the PlayCanvas Editor). The local player is `ArrivalSpace.getPlayer()`.
+It returns the unsubscribe. Requires `ArrivalSpace.VERSION >= 1.40.0`.
+
+```javascript
+// a hidden entity appears once the visitor walks onto a pad
+padId = "";
+surpriseId = "";
+static properties = {
+    padId: { title: "Trigger", editor: "entity" },
+    surpriseId: { title: "Appears", editor: "entity" },
+};
+initialize() {
+    const pad = ArrivalSpace.getEntity(this.padId);
+    if (!pad) return;
+    this._off = ArrivalSpace.onEntityTrigger(pad, {
+        enter: (other) => other === ArrivalSpace.getPlayer() && ArrivalSpace.setEntityVisible(this.surpriseId, true),
+    });
+}
+destroy() {
+    this._off?.();
+}
+```
 
 `getSounds()` returns the sound entities to control from a vibe: `{ id, name, url, folderId, playing,
 play(), pause(), stop(), setVolume(volume) }`. A sound plays while the visitor is within its

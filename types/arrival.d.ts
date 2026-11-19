@@ -49,6 +49,7 @@ declare namespace pc {
     }
 
     class Entity {
+        constructor(name?: string);
         name: string;
         enabled: boolean;
         parent: Entity | null;
@@ -2339,8 +2340,14 @@ declare namespace ArrivalSpace {
      * @example
      * ArrivalSpace.teleportPlayer({ x: 0, y: 1, z: 5 }, { forward: { x: 0, y: 0, z: -1 } });
      */
-    /** The space's content as the editor's Content panel lists it; getEntity(id) is the scene entity. VERSION ≥ 1.37.0 */
+    /** The space's content as the editor's Content panel lists it; getEntity(id) is the scene entity, data.hidden its eye. VERSION ≥ 1.37.0 */
     function getSpaceContent(): Array<{ id: string; type: string; name: string; folderId: string | null; data: Record<string, any> }>;
+    /** The scene entity of a space entity (getSpaceContent, an `editor: "entity"` param), hidden ones too; null while there is none. VERSION ≥ 1.40.0 */
+    function getEntity(id: string): pc.Entity | null;
+    /** Show or hide a space entity in this client for this visit (not saved, not seen by others). A hidden entity loads when shown; a hidden folder still hides it. VERSION ≥ 1.40.0 */
+    function setEntityVisible(id: string, visible: boolean): void;
+    /** Something entering or leaving a space entity's trigger (collision shape without rigidbody); the local player is getPlayer(). Returns the unsubscribe. VERSION ≥ 1.40.0 */
+    function onEntityTrigger(entity: pc.Entity, handlers: { enter?: (other: pc.Entity) => void; leave?: (other: pc.Entity) => void }): () => void;
     /** The content folders; a hidden folder hides its contents and sub-folders. VERSION ≥ 1.37.0 */
     function getContentFolders(): Array<{ id: string; name: string; parentId: string | null; hidden: boolean; order?: number }>;
     /** The annotations (the editor's info markers): text = what the popup shows; open/close in this client only (API 1.37.0). */

@@ -184,8 +184,7 @@ external URL is still allowed, so validate the URL at runtime if it matters.
 
 Set `editor: 'entity'` on a string property to render an **entity picker**. The
 stored value is the picked entity's id, which you resolve to a live entity at
-runtime (e.g. `ArrivalSpace.getCutsceneScript(id)`, or
-`app.root.findByName("GateServer")?.script?.gateServer?.getEntity(id)`).
+runtime (e.g. `ArrivalSpace.getEntity(id)`, or `ArrivalSpace.getCutsceneScript(id)`).
 Restrict the list with `filterTypes`:
 
 ```javascript
