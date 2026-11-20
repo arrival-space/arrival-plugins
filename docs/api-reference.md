@@ -1610,6 +1610,36 @@ Defaults: `width=1024`, `height=768`
 
 **Returns:** `Promise<{ success: boolean, url?: string, error?: string }>`
 
+#### `ArrivalSpace.profile(seconds?)`
+
+Measure this page's frames for `seconds` (default 3, 0.5–30) and return where the time went. Numbers
+are this browser's on this device: the same space runs at other rates on a phone, a laptop or a
+headless browser without a GPU (`device.gpu` names the GPU; "SwiftShader" / "llvmpipe" is a software
+renderer). Requires `ArrivalSpace.VERSION >= 1.41.0`.
+
+**Returns:** `Promise<object>`
+
+| Field | Meaning |
+|-------|---------|
+| `frames`, `fps` | Frames drawn in the sample and their rate (the browser caps it at the display's refresh rate) |
+| `device` | `{ renderer: "webgpu" \| "webgl2", gpu, canvas: "WxH", pixelRatio }` |
+| `frameMs` | Frame time `{ avg, p50, p95, max }` in ms |
+| `cpuMs` | Avg ms per frame: `scriptUpdate`, `scriptPostUpdate` (all scripts, the platform's included), `animUpdate`, `physics`, `render` (CPU side of drawing), `gsplatSort` |
+| `gpuMs` | GPU time per frame `{ avg, p50, p95, max }`; `null` when the device has no GPU timer queries |
+| `gpuPassMs` | Avg GPU ms per render pass: `Forward` (the scene), `ShadowMap*` (shadow maps), `Prepass`, `Ssao`, `Downsample` / `Upsample` (bloom), `Compose`, … WebGL reports only the frame total (`GpuFrame`) |
+| `drawCalls` | `{ avg, p50, p95, max }` per frame |
+| `gsplats` | Most Gaussian splats drawn in one frame |
+| `vramMB` | `{ textures, geometry, buffers }` |
+| `vibes` | Per vibe `{ entityId, script, avgMs, maxMs }`, slowest first: time inside its `update` / `postUpdate` per frame. Work in handlers it registered elsewhere (`app.on('update')`, timers, events) and what its objects cost to draw are not in it |
+
+```javascript
+const r = await ArrivalSpace.profile(5);
+console.log(r.fps, r.frameMs.p95, r.gpuPassMs, r.vibes[0]);
+```
+
+The address flag `?profiler` shows the engine's live overlay (frame, CPU, GPU per pass, draw calls,
+VRAM, splats) at the bottom left; a click on it changes its size.
+
 ---
 
 ### Character Animation

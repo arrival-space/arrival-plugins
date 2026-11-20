@@ -1333,6 +1333,41 @@ declare namespace ArrivalSpace {
      */
     function captureView(width?: number, height?: number): Promise<CaptureViewResult>;
 
+    /** `{ avg, p50, p95, max }` over the sampled frames */
+    interface ProfileSummary { avg: number; p50: number; p95: number; max: number }
+
+    /** Result from profile */
+    interface ProfileResult {
+        seconds: number;
+        frames: number;
+        fps: number;
+        /** gpu: the browser's name for the GPU ("SwiftShader" / "llvmpipe" = software renderer) */
+        device: { renderer: "webgpu" | "webgl2"; gpu: string; canvas: string; pixelRatio: number };
+        frameMs: ProfileSummary | null;
+        /** Avg ms per frame: scriptUpdate, scriptPostUpdate, animUpdate, physics, render, gsplatSort */
+        cpuMs: Record<string, number> | null;
+        /** null without GPU timer queries */
+        gpuMs: ProfileSummary | null;
+        /** Avg GPU ms per render pass (Forward, ShadowMap2D_DEPTH, Ssao, Compose, …); WebGL: GpuFrame only */
+        gpuPassMs: Record<string, number> | null;
+        drawCalls: ProfileSummary | null;
+        /** Most splats drawn in one frame */
+        gsplats: number;
+        vramMB: { textures: number; geometry: number; buffers: number };
+        /** Time inside each vibe's update/postUpdate per frame, slowest first */
+        vibes: Array<{ entityId: string; script: string; avgMs: number; maxMs: number }>;
+    }
+
+    /**
+     * Measure this page's frames for `seconds` (0.5-30): fps, frame time, CPU per category, GPU per
+     * render pass, draw calls, VRAM, each vibe's update/postUpdate. This device's numbers only.
+     * `?profiler` on the address shows the live overlay. VERSION ≥ 1.41.0
+     * @example
+     * const r = await ArrivalSpace.profile(5);
+     * console.log(r.fps, r.frameMs.p95, r.vibes[0]);
+     */
+    function profile(seconds?: number): Promise<ProfileResult>;
+
     // ═══════════════════════════════════════════════════════════════════════════
     // SPACE LOADING
     // ═══════════════════════════════════════════════════════════════════════════

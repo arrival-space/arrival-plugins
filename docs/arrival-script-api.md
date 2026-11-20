@@ -235,6 +235,7 @@ Distilled reference for the ArrivalScript / ArrivalSpace runtime API (PlayCanvas
 - `setPostEffects(params: PostEffectsParams)` — Override post-effect parameters (hdrEnabled, toneMapping, saturation, contrast, brightness, sharpness, bloom*, gamma), merging with room defaults so only provided keys change.
 - `getPostEffects()` — Return the current effective post-effect parameters (a copy of room defaults / active overrides).
 - `captureView(width = 1024, height = 768)` — Capture the current camera view via the ScreenshotEntity, upload it, and return the image URL.
+- `profile(seconds = 3)` — Measure this page's frames: fps, frame time, CPU per category, GPU per render pass, draw calls, VRAM, and each vibe's update/postUpdate ms. This device's numbers only; `?profiler` on the address shows the live overlay. Requires VERSION ≥ 1.41.0.
   - _gotcha:_ Resolves {success:false,error} rather than throwing when the screenshot system is unavailable or capture fails.
 
 ## Room & user
