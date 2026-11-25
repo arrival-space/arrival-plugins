@@ -2441,13 +2441,14 @@ itself, and a positional voice would hear itself through the speakers and interr
 | `onReply` | `(text) => void` | - | What it answered |
 | `onStateChange` | `(state) => void` | - | `'connecting'`, `'listening'`, `'speaking'`, `'ended'` |
 
-**Returns:** `{ done, stop(), say(text), sendText(text), setMicMuted(muted), talk(down), hasMicrophone, state, level, error }`
+**Returns:** `{ done, stop(), say(text), sendText(text), setMicMuted(muted), talk(down), hasMicrophone, state, level, error, output }`
 - `done`: `Promise<void>`, resolves when the conversation ends. Never rejects.
 - `say(text)`: the plugin's own words in the conversation, e.g. what the visitor clicked or an event ("[they walked out]").
 - `sendText(text)`: the visitor typing instead of speaking; counts as their words (`onUserText`, the transcript). 1.26.0.
 - `talk(down)`: push to talk, the key or button pressed (`true`) and let go (`false`); with `pushToTalk` the turn ends when it is let go (a moment later: the last syllable is still on its way), without it the microphone is just opened and shut. 1.33.0.
 - `hasMicrophone`: `false` when there is no microphone or access was refused - it connects all the same and answers typed text aloud; `null` until known. 1.26.0.
 - `level`: its voice's loudness `0..1` while speaking, e.g. for a mouth.
+- `output`: its voice as an `AudioNode` on the engine's sound context (`pc.app.systems.sound.context`), there from state `'listening'` on (`null` before): connect it to an analyser or a lip-sync worklet of your own. It plays already - connect nothing to the destination. 1.42.0.
 - `error`: why it ended early (`null` otherwise), in words for the visitor: sign up to talk, the space's plan or its voice minutes, the visitor's conversations today, connection lost. Before 1.26.0 also: no microphone.
 
 OpenAI's usage policy requires telling visitors that the voice is AI-generated.
