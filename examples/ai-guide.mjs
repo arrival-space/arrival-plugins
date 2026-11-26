@@ -55,7 +55,7 @@ export class AiGuide extends ArrivalScript {
         provider: {
             title: "AI provider (typed chat)",
             options: [
-                { label: "GPT-6 Luna (free)", value: "luna" },
+                { label: "Arrival Intelligence (free)", value: "luna" },
                 { label: "OpenAI (own key)", value: "openai" },
                 { label: "Anthropic (own key)", value: "anthropic" },
                 { label: "GLM (own key)", value: "glm" },
