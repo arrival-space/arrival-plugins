@@ -625,6 +625,8 @@ declare namespace ArrivalSpace {
         onError?: (error: Error) => void;
         /** Progress callback (0-1) */
         onProgress?: (progress: number) => void;
+        /** false: every part keeps its own render (default true: a static model of 32+ mesh instances is drawn as one MergedMesh per material, its named nodes without a render component). 1.43.0 */
+        mergeMeshes?: boolean;
     }
 
     interface LoadTextureOptions {

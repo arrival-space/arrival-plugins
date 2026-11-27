@@ -498,6 +498,7 @@ Load a GLB/GLTF 3D model.
 | `position` | `{x,y,z}` | - | Local position |
 | `rotation` | `{x,y,z}` | - | Euler rotation |
 | `transparentDepthPrepass` | `boolean` | `false` | Texture-transparent parts draw only where they are the model's front-most layer, so a model whose solid parts use a blended material doesn't show its own far side or inside (the model entity's Transparent Depth Prepass setting; Blender's "Transparency Overlap" off). Plain glass with one overall opacity is not affected. 1.38.0 |
+| `mergeMeshes` | `boolean` | `true` | A model of 32+ mesh instances without animations is drawn as one `MergedMesh` per material: its named nodes stay, but without their render component, so moving, hiding or recolouring a part changes nothing. `false` keeps every part drawn by its own node. 1.43.0 |
 
 **Returns:** `Promise<{ entity: pc.Entity, asset: pc.Asset }>`
 
