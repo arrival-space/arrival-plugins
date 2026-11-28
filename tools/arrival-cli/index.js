@@ -8,6 +8,7 @@
 //   arrival pull <spaceId>        download a space into ./<spaceId>/
 //   arrival validate              server-side dry-run of the current workspace
 //   arrival push                  apply the current workspace to the live space
+//   arrival chat list|read|post   your chats on chat.arrival.space
 //
 // A pulled workspace is a git-friendly repo of files under space/. Edit them with your own
 // editor, `arrival validate`, then `arrival push`. See ../arrival-cli phase notes / ARRIVAL_CLI_PLAN.
@@ -66,6 +67,7 @@ Good to know:
   No hot reload — reload the browser tab to see a push. Last-writer-wins: pull fresh before big
   edits (every push snapshots server-side first, so a bad push is undoable in-app). Assets <= 25 MB.
   Big splat/model/image: \`arrival upload <file>\` prints a CDN URL for an entity's glbUrl.
+  Chat as you: \`arrival chat list\`, \`arrival chat read <chatId>\`, \`arrival chat post <chatId|userId> "text"\`.
 
 Docs: https://codex.arrival.space/api/cli
 Token: ${config.CONFIG_FILE} (it is your API key; \`logout\` only forgets it locally)
@@ -398,6 +400,67 @@ avatar
                 assign: !!opts.assign, brightness: opts.brightness,
             });
             console.log(`✓ avatar ${d.id || d.avatarId || "?"}${opts.assign ? " is now your active avatar" : " registered"}${d.url ? ` — ${d.url}` : ""}`);
+        } catch (e) { fail(e); }
+    });
+
+// arrival chat — your conversations on chat.arrival.space, as you (DMs and groups). End-to-end-
+// encrypted groups stay in the chat app: the server never has their key.
+const chat = program.command("chat").description("your chats on chat.arrival.space (DMs and groups)");
+
+function chatName(c) {
+    if (c.groupName) return c.groupName;
+    if (c.isSelfDm) return "Notes to self";
+    return (c.otherUser && c.otherUser.name) || "?";
+}
+
+chat
+    .command("list")
+    .description("your conversations: chat id, name, unread count")
+    .option("--json", "print them as JSON (for tools)")
+    .action(async (opts) => {
+        try {
+            const chats = await api.listChats(config.load());
+            if (opts.json) { console.log(JSON.stringify(chats)); return; }
+            if (!chats.length) { console.log("(no chats)"); return; }
+            const w = Math.max(...chats.map((c) => c.spaceId.length));
+            for (const c of chats) {
+                const flags = [c.unread ? `${c.unread} unread` : "", c.enc ? "encrypted" : ""].filter(Boolean).join(", ");
+                console.log(`${c.spaceId.padEnd(w)}  ${chatName(c)}${flags ? `  (${flags})` : ""}`);
+            }
+        } catch (e) { fail(e); }
+    });
+
+chat
+    .command("read")
+    .description("the latest messages of a conversation, oldest first (does not mark it read)")
+    .argument("<chatId>", "a chat id from `arrival chat list`")
+    .option("--limit <n>", "how many (default 25, max 100)", (v) => parseInt(v, 10))
+    .option("--before <id>", "only messages older than this message id", (v) => parseInt(v, 10))
+    .option("--json", "print them as JSON (for tools)")
+    .action(async (chatId, opts) => {
+        try {
+            const { messages, hasMore } = await api.readChat(config.load(), chatId, opts);
+            if (opts.json) { console.log(JSON.stringify({ messages, hasMore })); return; }
+            if (hasMore && messages.length) console.log(`(older: --before ${messages[messages.length - 1].id})`);
+            for (const m of messages.slice().reverse()) {
+                const text = (m.text || "").startsWith("enc:") ? "🔒 encrypted" : m.text;
+                const files = (m.attachments || []).map((a) => `  📎 ${a.name || a.url}`).join("\n");
+                console.log(`[${new Date(m.createdAt).toLocaleString()}] ${m.userName || m.userId}: ${text}${files ? "\n" + files : ""}`);
+            }
+        } catch (e) { fail(e); }
+    });
+
+chat
+    .command("post")
+    .description("send a message as you; text '-' reads it from stdin")
+    .argument("<to>", "a chat id, or a user id to message directly")
+    .argument("<text...>", "the message")
+    .action(async (to, words) => {
+        try {
+            let text = words.join(" ");
+            if (text === "-") text = fs.readFileSync(0, "utf8").trim();
+            const { chatId, message } = await api.postChat(config.load(), to, text);
+            console.log(`✓ sent to ${chatId} (message ${message.id})`);
         } catch (e) { fail(e); }
     });
 

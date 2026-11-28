@@ -228,4 +228,38 @@ async function createGlbAvatar(cfg, glbUrl, { gender, pollMs = 2000, timeoutMs =
     throw new Error("Timed out waiting for the avatar service");
 }
 
-module.exports = { fetchGuide, listSpaces, createSpace, pull, apply, applyChangeset, uploadFile, createSplatAvatar, listAvatars, createGlbAvatar, cleanUrl, avatarThumbnail };
+// chat.arrival.space, as the signed-in user: /api/v1/chats (same routes and answers as the chat app).
+async function chatRequest(cfg, method, apiPath, body) {
+    const { res, json } = await request(cfg, method, "/api/v1/chats" + apiPath, body === undefined ? {} : {
+        body: JSON.stringify(body),
+        headers: { "Content-Type": "application/json" },
+    });
+    if (!res.ok || !json || json.status !== "ok") {
+        throw new Error((json && (json.msg || json.message)) || `Chat request failed (${res.status})`);
+    }
+    return json;
+}
+
+async function listChats(cfg) {
+    return (await chatRequest(cfg, "GET", "")).conversations;
+}
+
+// Newest first, as the server pages them; hasMore: older ones exist (pass the oldest id as before).
+async function readChat(cfg, chatId, { limit, before } = {}) {
+    const qs = new URLSearchParams();
+    if (limit) qs.set("limit", String(limit));
+    if (before) qs.set("before", String(before));
+    const query = qs.toString();
+    const json = await chatRequest(cfg, "GET", `/${encodeURIComponent(chatId)}/messages${query ? "?" + query : ""}`);
+    return { messages: json.comments, hasMore: json.hasMore };
+}
+
+// to: a chat id (dm_… / grp_…) or a user id, whose direct conversation is opened if there is none.
+async function postChat(cfg, to, text) {
+    let chatId = String(to);
+    if (/^\d+$/.test(chatId)) chatId = (await chatRequest(cfg, "POST", `/dm/${chatId}`, {})).spaceId;
+    const json = await chatRequest(cfg, "POST", `/${encodeURIComponent(chatId)}/messages`, { text });
+    return { chatId, message: json.comment };
+}
+
+module.exports = { listChats, readChat, postChat, fetchGuide, listSpaces, createSpace, pull, apply, applyChangeset, uploadFile, createSplatAvatar, listAvatars, createGlbAvatar, cleanUrl, avatarThumbnail };

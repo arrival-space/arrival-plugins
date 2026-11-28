@@ -33,6 +33,14 @@ arrival avatar list [--json]                 # your avatars: id, GLB url, thumbn
 arrival avatar create avatar.glb [--gender female] [--json]   # add a finished GLB as a new avatar
 ```
 
+Chat (chat.arrival.space, sent as you; end-to-end-encrypted groups stay in the chat app):
+
+```bash
+arrival chat list [--json]                   # your DMs and groups: chat id, name, unread
+arrival chat read <chatId> [--limit 50]      # latest messages, oldest first (doesn't mark them read)
+arrival chat post <chatId|userId> "text"     # a user id opens the direct conversation; "-" reads stdin
+```
+
 ### Starting from scratch
 
 `arrival create` mints a space server-side (the id is `<userId>_<4 digits>`) and `--pull` checks it
